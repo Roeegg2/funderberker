@@ -1,0 +1,4 @@
+[build]
+target = "x86_64-unknown-uefi"
+link-args = ["-C", "link-args=/debug:dwarf"] # doesn't actually add debugging symbols, this at least gives us function names
+

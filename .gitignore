@@ -1,0 +1,5 @@
+target
+esp
+OVMF*
+media
+qemu.log
