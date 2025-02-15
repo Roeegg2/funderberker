@@ -1,5 +1,5 @@
 use crate::arch::x86_64::serial::SerialPort;
-use core::{ffi::c_void, mem::MaybeUninit, panic::PanicInfo, slice};
+use core::{ffi::c_void, panic::PanicInfo, slice};
 
 pub type Handle = *mut c_void;
 pub type Guid = (u32, u16, u16, u8, u8, u8, u8, u8, u8, u8, u8);

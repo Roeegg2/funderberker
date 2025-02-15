@@ -35,10 +35,3 @@ impl core::fmt::Write for SerialWriter {
         Ok(())
     }
 }
-
-pub unsafe fn dump_mem(data: *const core::ffi::c_void, len: usize) {
-    let raw: *const u8 = core::mem::transmute(data);
-    for i in 0..len {
-        print!("{:8b} ", *(raw.add(i)));
-    }
-}
