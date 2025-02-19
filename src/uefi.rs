@@ -111,6 +111,7 @@ pub enum MemoryType {
     MaxMemoryType,
 }
 
+// NOTE: Never use sizeof::<MemoryDescriptor>()!!
 #[derive(Debug)]
 #[repr(C)]
 pub struct MemoryDescriptor {
@@ -119,6 +120,8 @@ pub struct MemoryDescriptor {
     pub virt_addr_start: u64,
     pub page_count: u64,
     pub attr: u64,
+    pub _reserved: u64, // added this because for some reason UEFI reports MemoryDescriptor size is 48
+                        // instead of 40, even though the structure here is OK.
 }
 
 #[repr(C)]
@@ -218,7 +221,7 @@ impl ConfigurationTable {
 }
 
 impl SystemTable {
-    pub fn exit_boot_services(&self, handle: Handle) -> *mut MemoryDescriptor {
+    pub fn exit_boot_services(&self, handle: Handle) -> (*mut MemoryDescriptor, usize, usize) {
         let mut mem_map_size: usize = 0;
         let mut mem_map: *mut u8 = core::ptr::null_mut();
         let mut key = 0;
@@ -274,7 +277,7 @@ impl SystemTable {
             );
         }
 
-        mem_map
+        (mem_map, mem_map_size, descr_size)
     }
 }
 
@@ -287,12 +290,20 @@ extern "efiapi" fn efi_main(handle: Handle, system_table: *mut SystemTable) -> !
     // get the system_table as a mut reference
     let system_table = unsafe { system_table.as_mut().unwrap() };
     // exit boot services
-    let mem_map = unsafe { system_table.exit_boot_services(handle).as_mut() }.unwrap();
+
+    let (mem_map, mem_map_size, mem_descr_size) = system_table.exit_boot_services(handle);
+
     log!("exited boot services successfully!");
     let config_tables = unsafe { system_table.config_tables.as_mut() }.unwrap();
 
     // start funderberker!
-    crate::funderberker_main(mem_map, config_tables, system_table.num_of_config_tables);
+    crate::funderberker_main(
+        mem_map,
+        mem_map_size,
+        mem_descr_size,
+        config_tables,
+        system_table.num_of_config_tables,
+    );
 
     loop {}
 }

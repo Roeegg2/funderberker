@@ -3,6 +3,7 @@
 mod cpu;
 mod gdt;
 mod interrupts;
+pub mod paging;
 pub mod serial;
 
 #[repr(C, packed)]
@@ -22,4 +23,8 @@ pub fn load_idt_and_gdt() {
     log!("loaded IDT successfully");
 
     unsafe { cpu::sti() }; // now pesky interrupts are free to interrupt us
+
+    paging::setup_paging();
+    log!("paging setup successfully");
+
 }

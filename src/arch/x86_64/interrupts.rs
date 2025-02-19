@@ -1,6 +1,10 @@
-use core::{arch::asm, mem::size_of};
+use core::{arch::asm, cell::UnsafeCell, mem::size_of};
 
-static mut IDT: [GateDescriptor; 255] = [GateDescriptor::DEFAULT; 255];
+// should always be 255 but eh
+const IDT_ENTRIES_NUM: usize = 255;
+
+//static IDT: UnsafeCell<[GateDescriptor; IDT_ENTRIES_NUM]> = UnsafeCell::new([GateDescriptor::DEFAULT; 255]);
+static mut IDT: [GateDescriptor; IDT_ENTRIES_NUM] = [GateDescriptor::DEFAULT; 255];
 
 #[derive(Debug)]
 #[repr(C, packed)]
@@ -39,8 +43,8 @@ impl GateDescriptor {
 
 pub(super) fn load_idt() {
     let idtr = super::DescriptorTablePtr {
-        base: &raw const IDT as *const [GateDescriptor; 255] as u64, // address of IDT
-        limit: (size_of::<[GateDescriptor; 255]>() - 1) as u16,      // size of IDT -1
+        base: &raw const IDT as *const [GateDescriptor; IDT_ENTRIES_NUM] as u64, // address of IDT
+        limit: (size_of::<[GateDescriptor; IDT_ENTRIES_NUM]>() - 1) as u16,      // size of IDT -1
     };
 
     unsafe {
