@@ -12,13 +12,18 @@ QEMU := qemu-system-x86_64 \
 # Actually build Funderberker
 .PHONY: funderberker
 funderberker:
+ifeq ($(RUST_PROFILE), debug)
 	RUSTFLAGS="-C relocation-model=static" cargo +nightly build --target x86_64-unknown-none
-	cp target/x86_64-unknown-none/$(RUST_PROFILE)/funderberker funderberker
+	cp target/x86_64-unknown-none/debug/funderberker funderberker
+else
+	RUSTFLAGS="-C relocation-model=static" cargo +nightly build --release --target x86_64-unknown-none
+	cp target/x86_64-unknown-none/release/funderberker funderberker
+endif
 
 .PHONY: build
 build: $(IMAGE_NAME).iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
 
-# Build & run with QEMU 
+# Build & run with QEMU
 .PHONY: run
 run: $(IMAGE_NAME).iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
 	$(QEMU)
