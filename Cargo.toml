@@ -11,5 +11,5 @@ default = ["limine", "serial"]
 # boot options
 limine = ["dep:limine"]
 # logging options
-gop = []
 serial = []
+framebuffer = []

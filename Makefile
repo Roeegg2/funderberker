@@ -1,13 +1,13 @@
 RUST_PROFILE := debug
 IMAGE_NAME := funderberker
 QEMU := qemu-system-x86_64 \
+		-nographic \
 		-nodefaults \
-		-no-reboot \
 		-serial stdio \
+		-no-reboot \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
-		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS)
+		-cdrom $(IMAGE_NAME).iso
 
 # Actually build Funderberker
 .PHONY: funderberker

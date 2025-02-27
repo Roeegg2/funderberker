@@ -67,13 +67,6 @@ pub(super) unsafe fn load_idt() {
     dbg!("installed ISRs successfully");
 }
 
-#[cfg(debug_assertions)]
-fn test_interrupts() -> Result<(), ()> {
-    unsafe { asm!("int 38"); };
-
-    Ok(())
-}
-
 /// Installs the ISR handlers in the GDT
 #[inline]
 fn install_isr_handlers() {

@@ -1,12 +1,11 @@
 //! Simple module to provide logging & printing utils
 
-#[cfg(all(feature = "serial", feature = "gop"))]
-compile_error!("Both 'serial' and UEFI 'GOP' logging options are enabled. Please choose only one");
+#[cfg(feature = "framebuffer")]
+pub mod framebuffer;
+#[cfg(feature = "serial")]
+pub mod serial;
 
 /// Empty struct to implement 'core::fmt::Write' on
-#[cfg(feature = "serial")]
-mod serial;
-
 pub struct Writer;
 
 #[macro_export]
@@ -38,23 +37,23 @@ macro_rules! dbg {
     }}
 }
 
-#[cfg(feature = "serial")]
 impl core::fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        // TODO: Implement a global state for all ports, and query ports from there
-        // TODO: Add a mechanism to make sure we called port.init()
-        let port = serial::SerialPort::Comm1;
+        #[cfg(feature = "serial")]
         for byte in s.bytes() {
-            port.write_byte(byte);
+            #[allow(static_mut_refs)]
+            unsafe {
+                serial::SERIAL_WRITER.write_byte_all(byte)
+            };
         }
-        Ok(())
-    }
-}
+        #[cfg(feature = "framebuffer")]
+        for byte in s.as_bytes() {
+            #[allow(static_mut_refs)]
+            unsafe {
+                framebuffer::FRAMEBUFFER_WRITER.draw_char(*byte).unwrap()
+            };
+        }
 
-pub unsafe fn init() {
-    #[cfg(feature = "serial")]
-    {
-        unsafe { serial::SerialPort::Comm1.init().unwrap() };
-        log!("initilized serial port COMM1 successfully!");
+        Ok(())
     }
 }

@@ -6,37 +6,6 @@ use core::arch::asm;
 #[allow(unused_imports)]
 pub use core::arch::x86_64;
 
-/// Write from a specific MSR
-#[inline]
-pub unsafe fn read_msr(msr: u32) -> (u32, u32) {
-    let lo: u32;
-    let hi: u32;
-    unsafe {
-        asm! (
-            "rdmsr",
-            in("ecx") msr,
-            out("eax") lo,
-            out("edx") hi,
-        )
-    };
-
-    (lo, hi)
-}
-
-/// Write to a specific MSR
-#[inline]
-pub unsafe fn write_msr(msr: u32, hi: u32, lo: u32) {
-    unsafe {
-        asm! (
-            "wrmsr",
-            in("ecx") msr,
-            in("eax") lo,
-            in("edx") hi,
-            options(nomem, nostack),
-        )
-    };
-}
-
 /// Wrapper for the 'outb' instruction
 #[inline]
 pub unsafe fn outb(port: u16, offset: u16, value: u8) {

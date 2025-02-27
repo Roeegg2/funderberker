@@ -1,9 +1,12 @@
 use core::arch::asm;
 
+use limine::request::{RequestsEndMarker, RequestsStartMarker};
 use limine::BaseRevision;
-use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
 
-use crate::funderberker_main;
+#[cfg(feature = "framebuffer")]
+use limine::request::FramebufferRequest;
+
+use crate::{funderberker_main, print};
 
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.
@@ -13,6 +16,7 @@ use crate::funderberker_main;
 #[unsafe(link_section = ".requests")]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
 
+#[cfg(feature = "framebuffer")]
 #[used]
 #[unsafe(link_section = ".requests")]
 static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
@@ -31,19 +35,28 @@ unsafe extern "C" fn kmain() -> ! {
     // removed by the linker.
     assert!(BASE_REVISION.is_supported());
 
+    #[cfg(feature = "serial")]
+    {
+        #[allow(static_mut_refs)]
+        unsafe {
+            print::serial::SERIAL_WRITER.init().unwrap()
+        };
+    }
+    #[cfg(feature = "framebuffer")]
+    {
+        if let Some(framebuffer_reponse) = FRAMEBUFFER_REQUEST.get_response() {
+            #[allow(static_mut_refs)]
+            unsafe {
+                print::framebuffer::FRAMEBUFFER_WRITER
+                    .init(framebuffer_reponse.framebuffers().next().unwrap())
+            };
+        } else {
+            // TODO:
+            // Can't log
+        }
+    }
+
     funderberker_main();
-    //if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
-    //    if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-    //        for i in 0..100_u64 {
-    //            // Calculate the pixel offset using the framebuffer information we obtained above.
-    //            // We skip `i` scanlines (pitch is provided in bytes) and add `i * 4` to skip `i` pixels forward.
-    //            let pixel_offset = i * framebuffer.pitch() + i * 4;
-    //
-    //            // Write 0xFFFFFFFF to the provided pixel offset to fill it white.
-    //            *(framebuffer.addr().add(pixel_offset as usize) as *mut u32) = 0xFFFFFFFF;
-    //        }
-    //    }
-    //}
 
     hcf();
 }

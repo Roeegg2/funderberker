@@ -1,9 +1,22 @@
 ///! Serial port driver for logging stuff
 use crate::arch::x86_64::cpu;
 
+pub static mut SERIAL_WRITER: SerialWriter = SerialWriter {
+    ports: [
+        Some(SerialPort::Comm1),
+        Some(SerialPort::Comm2),
+        Some(SerialPort::Comm3),
+        Some(SerialPort::Comm4),
+        Some(SerialPort::Comm5),
+        Some(SerialPort::Comm6),
+        Some(SerialPort::Comm7),
+        Some(SerialPort::Comm8),
+    ],
+};
+
 /// Possible errors serial driver could encounter
 #[derive(Debug, Clone, Copy)]
-pub(super) enum SerialError {
+pub enum SerialError {
     FaultySerialPort,
 }
 
@@ -11,7 +24,7 @@ pub(super) enum SerialError {
 #[allow(unused)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u16)]
-pub(super) enum SerialPort {
+enum SerialPort {
     Comm1 = 0x3f8,
     Comm2 = 0x2f8,
     Comm3 = 0x3e8,
@@ -24,7 +37,7 @@ pub(super) enum SerialPort {
 
 impl SerialPort {
     /// Initilize serial port. MUST call this before using any serial port
-    pub unsafe fn init(self) -> Result<(), SerialError> {
+    unsafe fn init(self) -> Result<(), SerialError> {
         unsafe {
             cpu::outb(self as u16, 1, 0x00); // Disable all interrupts
             cpu::outb(self as u16, 3, 0x80); // Enable DLAB (set baud rate divisor)
@@ -48,10 +61,37 @@ impl SerialPort {
     }
 
     /// Write a byte to serial
-    pub fn write_byte(self, byte: u8) {
+    pub(super) fn write_byte(self, byte: u8) {
         if byte == b'\n' {
             unsafe { cpu::outb(self as u16, 0, b'\r') };
         }
         unsafe { cpu::outb(self as u16, 0, byte) };
+    }
+
+}
+
+pub struct SerialWriter {
+    ports: [Option<SerialPort>; 8],
+}
+
+impl SerialWriter {
+    /// Initilize each of the enabled serial ports. If an error occured, mark them as unwriteable
+    pub fn init(&mut self) -> Result<(), SerialError> {
+        for ref mut port_wrapper in self.ports {
+            if let Some(port) = port_wrapper && unsafe { port.init().is_err() }{
+                *port_wrapper = None;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Write a byte to all available serial ports
+    pub(super) fn write_byte_all(&self, byte: u8) {
+        for port in self.ports {
+            if let Some(val) = port {
+                val.write_byte(byte);
+            }
+        }
     }
 }
