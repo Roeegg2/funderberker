@@ -25,7 +25,7 @@ macro_rules! println {
 #[macro_export]
 macro_rules! log {
     ($($arg:tt)*) => {{
-        println!(" -> {}", $($arg)*);
+        println!("-> {}", $($arg)*);
     }}
 }
 
@@ -33,7 +33,7 @@ macro_rules! log {
 macro_rules! dbg {
     ($($arg:tt)*) => {{
         #[cfg(debug_assertions)]
-        println!(" -> (DEBUG) {}", $($arg)*);
+        println!("-> (DEBUG) {}", $($arg)*);
     }}
 }
 

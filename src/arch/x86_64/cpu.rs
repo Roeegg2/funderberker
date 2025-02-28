@@ -47,6 +47,7 @@ pub unsafe fn sti() {
     unsafe { asm!("sti", options(nostack, nomem)) };
 }
 
+// TODO: Possibly rewrite these dogshit macros?
 #[macro_export]
 macro_rules! read_cr {
     (cr0) => {{

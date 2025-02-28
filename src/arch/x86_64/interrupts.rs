@@ -3,9 +3,9 @@ use core::{arch::asm, arch::global_asm, mem::size_of};
 
 const IDT_ENTRIES_NUM: usize = 256;
 
-// TODO: Use Mutex/spinlock for this
+// TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// The IDT
-static mut IDT: [GateDescriptor; IDT_ENTRIES_NUM] = [GateDescriptor::DEFAULT; 256];
+static mut IDT: [GateDescriptor; IDT_ENTRIES_NUM] = [GateDescriptor::DEFAULT; IDT_ENTRIES_NUM];
 
 /// Represents an entry in the IDT.
 #[repr(C, packed)]

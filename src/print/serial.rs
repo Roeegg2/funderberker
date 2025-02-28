@@ -67,7 +67,6 @@ impl SerialPort {
         }
         unsafe { cpu::outb(self as u16, 0, byte) };
     }
-
 }
 
 pub struct SerialWriter {
@@ -78,7 +77,9 @@ impl SerialWriter {
     /// Initilize each of the enabled serial ports. If an error occured, mark them as unwriteable
     pub fn init(&mut self) -> Result<(), SerialError> {
         for ref mut port_wrapper in self.ports {
-            if let Some(port) = port_wrapper && unsafe { port.init().is_err() }{
+            if let Some(port) = port_wrapper
+                && unsafe { port.init().is_err() }
+            {
                 *port_wrapper = None;
             }
         }

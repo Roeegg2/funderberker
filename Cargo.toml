@@ -7,9 +7,19 @@ edition = "2024"
 limine = { version = "0.3.1", optional = true }
 
 [features]
-default = ["limine", "serial"]
-# boot options
+default = ["limine", "serial", "paging_4", "pmm_bump"]
+
+# booting method
 limine = ["dep:limine"]
-# logging options
+
+# logging methods
 serial = []
 framebuffer = []
+
+# paging modes
+paging_4 = []
+paging_5 = [] # NOT SUPPORTED YET!
+
+# PMM page allocator algorithm
+pmm_bump = []
+pmm_buddy = [] # NOT SUPPORTED YET!

@@ -1,7 +1,11 @@
 use core::arch::asm;
 
-use limine::request::{RequestsEndMarker, RequestsStartMarker};
-use limine::BaseRevision;
+use limine::paging;
+use limine::request::{
+    MemoryMapRequest, PagingModeRequest, RequestsEndMarker, RequestsStartMarker,
+};
+use limine::{BaseRevision, memory_map};
+//use limine::{paging, response::PagingModeResponse};
 
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;
@@ -15,6 +19,20 @@ use crate::{funderberker_main, print};
 // The .requests section allows limine to find the requests faster and more safely.
 #[unsafe(link_section = ".requests")]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // x86_64 and AArch64 share the same modes
+#[used]
+#[unsafe(link_section = ".requests")]
+#[cfg(feature = "paging_4")]
+static PAGING_MODE_REQUEST: PagingModeRequest =
+    PagingModeRequest::new().with_mode(paging::Mode::FOUR_LEVEL);
+#[cfg(feature = "paging_5")]
+static PAGING_MODE_REQUEST: PagingModeRequest =
+    PagingModeRequest::new().with_mode(paging::Mode::FIVE_LEVEL);
 
 #[cfg(feature = "framebuffer")]
 #[used]
@@ -56,9 +74,19 @@ unsafe extern "C" fn kmain() -> ! {
         }
     }
 
+    if let Some(mem_map) = MEMORY_MAP_REQUEST.get_response() {
+        init_pmm(mem_map.entries());
+    }
+
     funderberker_main();
 
     hcf();
+}
+
+/// Initilize the PMM
+fn init_pmm(_mem_map: &[&memory_map::Entry]) {
+    #[cfg(feature = "pmm_bump")]
+    {}
 }
 
 #[panic_handler]
