@@ -2,6 +2,7 @@
 
 pub mod cpu;
 mod interrupts;
+pub mod paging;
 
 /// Pointer to some descriptor table (IDTR, GDTR, etc)
 #[repr(C, packed)]

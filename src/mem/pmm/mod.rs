@@ -1,10 +1,10 @@
 //! A simple ring-buffer style bump allocator physical memory manager
 
-use super::{PageId, addr_to_page_id, page_id_to_addr};
+use super::{PageId, PhysAddr, addr_to_page_id, page_id_to_addr};
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// Singleton instance of the bump allocator
-static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator {
+pub static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator {
     bitmap: &mut [],
     ptr: 0,
 };
@@ -17,7 +17,7 @@ pub enum PmmError {
     InvalidAddressAlignment,
 }
 
-struct BumpAllocator {
+pub struct BumpAllocator {
     /// The bitmap representing the status of each page (`1` meaning used, `0` meaning free)
     bitmap: &'static mut [u8],
     /// The ring buffer ptr for finding new pages to allocate
@@ -44,7 +44,11 @@ impl BumpAllocator {
     }
 
     /// Tries to allocates a contiguious block of pages of size `page_count` which satisfy the passed `alignment`. If allocation if successfull, the physical address of the start of the block is returned.
-    pub fn allocate(&mut self, alignment: usize, page_count: usize) -> Result<usize, PmmError> {
+    pub fn allocate_any(
+        &mut self,
+        alignment: usize,
+        page_count: usize,
+    ) -> Result<PhysAddr, PmmError> {
         let mut ptr = self.ptr;
 
         'main: loop {
@@ -73,14 +77,14 @@ impl BumpAllocator {
             // Advance ring buffer
             self.ptr = (ptr + page_count) % self.bitmap.len();
 
-            return Ok(page_id_to_addr(ptr));
+            return Ok(PhysAddr(page_id_to_addr(ptr)));
         }
     }
 
     /// Tries to free a block of pages of size `page_count` starting at `addr`.
     /// NOTE: `addr` must be a page (4096 bytes) aligned address, otherwise an `PmmError::InvalidAddressAlignment` error is returned.
-    pub fn free(&mut self, addr: usize, page_count: usize) -> Result<(), PmmError> {
-        let id = addr_to_page_id(addr).ok_or(PmmError::InvalidAddressAlignment)?;
+    pub fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError> {
+        let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddressAlignment)?;
 
         for i in 0..page_count {
             if self.bitmap[id + i] != 1 {
