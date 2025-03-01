@@ -11,6 +11,6 @@ mod mem;
 
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() {
-    unsafe { arch::init() };
     log!("Starting Funderberker operation...");
+    unsafe { arch::init() };
 }

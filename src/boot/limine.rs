@@ -1,17 +1,18 @@
 use core::arch::asm;
 
 //use limine::memory_map::EntryType;
+use limine::BaseRevision;
 use limine::paging;
 use limine::request::{
-    MemoryMapRequest, PagingModeRequest, RequestsEndMarker, RequestsStartMarker,
+    HhdmRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker, RequestsStartMarker,
 };
-use limine::{BaseRevision, memory_map};
 //use limine::{paging, response::PagingModeResponse};
 
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;
 
-use crate::{funderberker_main, print, println};
+use crate::mem::pmm::BumpAllocator;
+use crate::{funderberker_main, print};
 
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.
@@ -19,8 +20,11 @@ use crate::{funderberker_main, print, println};
 #[used]
 // The .requests section allows limine to find the requests faster and more safely.
 #[unsafe(link_section = ".requests")]
-static BASE_REVISION: BaseRevision = BaseRevision::new();
+static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
+#[used]
+#[unsafe(link_section = ".requests")]
+static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
@@ -75,32 +79,20 @@ unsafe extern "C" fn kmain() -> ! {
         }
     }
 
+    if let Some(hhdm) = HHDM_REQUEST.get_response() {
+        #[allow(static_mut_refs)]
+        unsafe {
+            crate::mem::HHDM_OFFSET = hhdm.offset() as usize;
+        };
+    }
+
     if let Some(mem_map) = MEMORY_MAP_REQUEST.get_response() {
-        init_pmm(mem_map.entries());
+        unsafe { BumpAllocator::init_from_limine(mem_map.entries()) };
     }
 
     funderberker_main();
 
     hcf();
-}
-
-/// Initilize the PMM
-fn init_pmm(mem_map: &[&memory_map::Entry]) {
-    #[cfg(feature = "pmm_bump")]
-    {
-        let mut page_count: u64 = 0;
-        mem_map
-            .iter()
-            .for_each(|&entry| page_count += entry.length / 4096);
-        let bitmap_size = (page_count / 8).next_multiple_of(8);
-        let bitmap_entry = mem_map
-            .iter()
-            .find(|&entry| entry.length >= bitmap_size)
-            .expect("Couldn't find memory area to allocate bitmap!");
-
-        println!("BITMAP PHYS ADDR {}", bitmap_entry.base);
-        // map bitmap_addr to virt
-    }
 }
 
 #[panic_handler]
