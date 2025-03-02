@@ -13,16 +13,16 @@ pub static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator {
 };
 
 /// Errors that the bump allocator might encounter
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum PmmError {
     NoAvailableBlock,
     FreeOfAlreadyFree,
     InvalidAddressAlignment,
 }
 
-pub struct BumpAllocator {
+pub struct BumpAllocator<'a> {
     /// The bitmap representing the status of each page (`1` meaning used, `0` meaning free)
-    bitmap: &'static mut [u8],
+    bitmap: &'a mut [u8],
     /// The ring buffer ptr for finding new pages to allocate
     ptr: PageId,
     /// The size of the used bitmap. Amount of pages doesn't have to be 8 aligned, and in such
@@ -32,7 +32,7 @@ pub struct BumpAllocator {
     bitmap_size: usize,
 }
 
-impl BumpAllocator {
+impl<'a> BumpAllocator<'a> {
     /// Initilizes the singleton page bump allocator. SHOULD ONLY BE CALLED ONCE EARLY AT BOOT!
     #[cfg(feature = "limine")]
     pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
@@ -123,6 +123,10 @@ impl BumpAllocator {
     ) -> Result<PhysAddr, PmmError> {
         let mut ptr = self.ptr;
 
+        if alignment >= self.bitmap_size || alignment == 0 {
+            return Err(PmmError::InvalidAddressAlignment);
+        } 
+
         'main: loop {
             // Couldn't find suitable block
             if ptr == self.ptr {
@@ -196,8 +200,40 @@ impl BumpAllocator {
     }
 }
 
-
 // TODO: Move this to a more fitting place
 const fn inc_ring_buff_ptr(ring_buff: PageId, amount: usize, ring_buff_size: usize) -> PageId {
     (ring_buff + amount) % ring_buff_size
 }
+
+//#[cfg(test)]
+//mod bump_allocator_tests {
+//    use crate::mem::pmm::PmmError;
+//
+//    use super::BumpAllocator;
+//
+//    #[test]
+//    fn allocation_tests() {
+//        let mut bitmap = [0; 37];
+//        let bitmap_size = (37 * 8) -2;
+//        let mut allocator = BumpAllocator {
+//            bitmap: &mut bitmap,
+//            ptr: 0,
+//            bitmap_size: bitmap_size,
+//        };
+//
+//        allocator.allocate_any(1, 8).expect("Allocation failed!");
+//        let mut result = [0; 37]; 
+//        result[0..8].fill(0);
+//
+//        assert_eq!(result, allocator.bitmap);
+//
+//        allocator.allocate_any(14, 4).expect("Allocation failed!");
+//        result[14..18].fill(0);
+//
+//        assert_eq!(result, allocator.bitmap);
+//
+//        assert_eq!(allocator.allocate_any(bitmap_size-1, 4).unwrap_err(), PmmError::NoAvailableBlock);
+//
+//        assert_eq!(allocator.allocate_any(1, 30).unwrap_err(), PmmError::NoAvailableBlock);
+//    }
+//}

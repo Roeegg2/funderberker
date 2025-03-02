@@ -15,9 +15,11 @@ funderberker:
 ifeq ($(RUST_PROFILE), debug)
 	RUSTFLAGS="-C relocation-model=static" cargo +nightly build --target x86_64-unknown-none
 	cp target/x86_64-unknown-none/debug/funderberker funderberker
-else
+else ifeq ($(RUST_PROFILE), release)
 	RUSTFLAGS="-C relocation-model=static" cargo +nightly build --release --target x86_64-unknown-none
 	cp target/x86_64-unknown-none/release/funderberker funderberker
+else
+	exit
 endif
 
 .PHONY: build

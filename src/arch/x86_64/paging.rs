@@ -6,7 +6,7 @@ compiler_error!("Can't have both 4 level and 5 level paging. Choose one of the o
 compiler_error!("No paging level is selected. Choose one of the options");
 
 use crate::{
-    mem::{PhysAddr, VirtAddr, pmm::PmmError},
+    mem::{PhysAddr, VirtAddr, pmm::PmmError,},
     read_cr,
 };
 
@@ -125,8 +125,11 @@ pub struct PageTable([Entry; 512]);
 
 // LATETODO: Try to TCE optimize to each of the recursive function when it's supported by Rust
 impl PageTable {
+    /// Initilize paging
+    /// NOTE: SHOULD ONLY BE CALLED ONCE PRETTY EARLY AT BOOT!
     pub unsafe fn init() {
-        //
+        //#[allow(static_mut_refs)]
+        //let pml = unsafe {crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1)};
     }
 
     // NOTE: Not sure whether this should be static or not...
