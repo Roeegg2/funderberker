@@ -36,11 +36,33 @@ pub enum PagingError {
 #[derive(Debug, Clone, Copy)]
 struct Entry(usize);
 
+// TODO:
+//
+//
+// write:
+// 1. free_pte: // frees a PTE in the current PT
+//      already have most things setup. just turn off P flag, and set AVL LRU bits to 0
+// 2. free_tree // free a page table, and all it's child tables
+//      for each entry, it calls itself. once it reached level 0, call free_pte on each entry
+//
+// change:
+// 1. map_page, map_page_create, map_page_create_to:
+//      don't set the P bit. You want to set the AVL bits and that marks that page as reserved (the
+//      P bit marks in use). That way we can on demand page stuff (ie. the VM (or even we) tries to
+//      access the page, then page fault handler is invoked, and then page fault handler checks if
+//      the entry is reserved in the page table. if it isn't it panics or some shit (tells VMM to kill OS or what not), if it is, then
+//      it turns P flag on and returns to normal execution)
+//
+//
+// only theoretical:
+// 1. 
+
+
 #[allow(dead_code)]
 impl Entry {
     /// Present bit - 0 => not present. 1 => present
     const FLAG_P: usize = 1 << 0;
-    /// Uead/write - 0 => just read. 1 => read + write
+    /// Read/write - 0 => just read. 1 => read + write
     const FLAG_RW: usize = 1 << 1;
     /// User/supervisor - 0 => only CPL0,1,2. 1 => CPL3 as well
     const FLAG_US: usize = 1 << 2;
@@ -62,7 +84,7 @@ impl Entry {
     /// All possible flags turned on
     const FLAG_ALL: usize = 0b0111_1111_1111;
 
-    /// The following flags' meanings are for our use, so I've given them my own meaning:
+    /// The following flags' are for our use, so I've given them my own meaning:
     const FLAG_AVL: usize = 0b111 << 9;
 }
 
@@ -124,13 +146,46 @@ impl<'a> TryFrom<Entry> for &'a mut PageTable {
 pub struct PageTable([Entry; 512]);
 
 // LATETODO: Try to TCE optimize to each of the recursive function when it's supported by Rust
+
 impl PageTable {
-    /// Initilize paging
-    /// NOTE: SHOULD ONLY BE CALLED ONCE PRETTY EARLY AT BOOT!
-    pub unsafe fn init() {
-        //#[allow(static_mut_refs)]
-        //let pml = unsafe {crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1)};
-    }
+    //#[inline]
+    //fn allocate_new_pml() -> Result<&'static mut PageTable, PagingError> {
+    //    // TODO: Memset to 0?
+    //    #[allow(static_mut_refs)]
+    //    let pml_phys_addr = unsafe { crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1) }
+    //        .map_err(|e| PagingError::AllocationError(e))?;
+    //
+    //    let pml_virt_addr = Entry(pml_phys_addr.0).try_into()?;
+    //    Ok(pml_virt_addr)
+    //}
+    //
+    ///// Initilize paging
+    ///// NOTE: SHOULD ONLY BE CALLED ONCE PRETTY EARLY AT BOOT!
+    //#[cfg(feature = "limine")]
+    //pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry], ) -> Result<(), PagingError> {
+    //    let pml = Self::allocate_new_pml();
+    //
+    //    mem_map.iter().for_each(|&entry| {
+    //        match entry.entry_type {
+    //            limine::memory_map::EntryType::KERNEL_AND_MODULES
+    //                | limine::memory_map::EntryType::ACPI_RECLAIMABLE 
+    //                => {
+    //                    pml.get_create_pte_specific()
+    //                },
+    //            // TODO: Find a more compact way to do this
+    //            #[cfg(feature = "framebuffer")]
+    //            limine::memory_map::EntryType::ACPI_RECLAIMABLE => {
+    //
+    //            }
+    //            _ => (),
+    //        }
+    //    });
+    //
+    //    Ok(())
+    //    // allocate new PML
+    //    // memset PML to zero
+    //    // go over each descr and map what you need to page table
+    //}
 
     // NOTE: Not sure whether this should be static or not...
     /// Get the PML4/PML5 (depending on whether 4 or 5 level paging is enabled) from CR3
@@ -172,7 +227,7 @@ impl PageTable {
 
     // TODO: Add a mechanism to keep track of whether we should free the paging structures or
     // rather keep them in memory for a near allocation
-    /// Tries to get the PTE of an **already available** virtual address (ie one that has all of it's tables in memory).
+    /// Marks the the PTE associated with given virtual address as not present and LRU age 0
     /// NOTE: Make sure the entry isn't used before doing any modifications to it!
     fn free_pte_path(&mut self, virt_addr: VirtAddr, level: u8) -> Result<&mut Entry, PagingError> {
         // NOTE: Because of the bitwise and, next index can't be more than 511 so it's safe to
@@ -182,6 +237,7 @@ impl PageTable {
             return Ok(&mut self.0[index]);
         }
 
+        // Can't free an entry which isn't present...
         if !self.0[index].get_flags(Entry::FLAG_P) {
             return Err(PagingError::MissingPagingTable(level));
         }
