@@ -80,6 +80,8 @@ unsafe extern "C" fn kmain() -> ! {
         }
     }
 
+    unsafe { crate::arch::init() };
+
     if let Some(hhdm) = HHDM_REQUEST.get_response() {
         #[allow(static_mut_refs)]
         unsafe {
@@ -89,7 +91,7 @@ unsafe extern "C" fn kmain() -> ! {
 
     if let Some(mem_map) = MEMORY_MAP_REQUEST.get_response() {
         unsafe { BumpAllocator::init_from_limine(mem_map.entries()) };
-        unsafe { x86_64::paging::PageTable::init_from_limine(mem_map.entries()).unwrap() };
+        unsafe { x86_64::paging::init_from_limine(mem_map.entries()).unwrap() };
     }
 
     funderberker_main();
@@ -102,7 +104,7 @@ unsafe extern "C" fn kmain() -> ! {
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     use crate::println;
 
-    println!("{:?}", info);
+    println!("{}", info);
     hcf();
 }
 

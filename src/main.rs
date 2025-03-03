@@ -8,9 +8,12 @@ mod boot;
 mod print;
 mod arch;
 mod mem;
+pub mod utils;
 
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() {
     log!("Starting Funderberker operation...");
-    unsafe { arch::init() };
 }
+
+#[cfg(test)]
+fn main() {}

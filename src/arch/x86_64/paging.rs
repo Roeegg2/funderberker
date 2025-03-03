@@ -90,21 +90,6 @@ impl Entry {
     const fn get_flags(&self, flag: usize) -> usize {
         self.0 & flag
     }
-
-    // NOTE: Again, note sure if `static` is the correct lifetime here
-    // Make the current table entry point to a new PageTable, and return that PageTable
-    fn allocate_table_entry(mut self) -> Result<&'static mut PageTable, PagingError> {
-        // TODO: Memset to 0?
-        #[allow(static_mut_refs)]
-        let next_table_page = unsafe { crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1) }
-            .map_err(|e| PagingError::AllocationError(e))?;
-
-        // Set the physical address of next entry & present flag
-        self.set(next_table_page.0 | Entry::FLAG_P);
-
-        // Convert it to a mut reference to PageTable
-        self.try_into()
-    }
 }
 
 impl From<Entry> for PhysAddr {
@@ -121,14 +106,57 @@ impl<'a> TryFrom<Entry> for &'a mut PageTable {
     /// Convert Entry into an address, and using that address into
     fn try_from(value: Entry) -> Result<Self, Self::Error> {
         unsafe {
-            // Extract the phys addr outside of `value`, add HHDM offset so it's a valid VMM virtual
-            // address
+            // Extract the phys addr outside of `value`, add HHDM offset so it's a valid VMM virtual address
             let ptr = core::ptr::without_provenance_mut::<PageTable>(
                 PhysAddr::from(value).add_hhdm_offset().0,
             );
             ptr.as_mut().ok_or(PagingError::EntryToPageTableFailed)
         }
     }
+}
+
+/// Set up paging using Limine's memory map
+/// NOTE: SHOULD ONLY BE CALLED ONCE DURING BOOT!
+#[cfg(feature = "limine")]
+pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) -> Result<(), PagingError> {
+    let (pml, pml_addr) = PageTable::new()?;
+
+    for entry in mem_map {
+        match entry.entry_type {
+            // TODO: Framebuffer only if #[cfg(feature = "framebuffer")]
+            limine::memory_map::EntryType::ACPI_RECLAIMABLE
+            | limine::memory_map::EntryType::KERNEL_AND_MODULES
+            | limine::memory_map::EntryType::FRAMEBUFFER => {
+                let page_range = {
+                    let start_phys_page = entry.base as usize;
+                    let end_phys_page = start_phys_page + (entry.length as usize);
+
+                    (start_phys_page..end_phys_page).step_by(0x1000)
+                };
+
+                // Map each physical page in the range to it's HHDM virtual page
+                page_range.into_iter().try_for_each(|phys_page| {
+                    let phys_page = PhysAddr(phys_page);
+                    let virt_page = phys_page.add_hhdm_offset();
+                    let pte = pml
+                        .get_create_entry_specific(VirtAddr(virt_page.0 >> 12), PAGING_LEVEL - 1)?;
+                    // Set to actually correct permissions
+                    pte.set(phys_page.0 | Entry::FLAG_P | Entry::FLAG_RW);
+
+                    Ok(())
+                })?;
+            }
+            _ => (),
+        }
+    }
+
+    log!("Filled up page tables successfully!");
+
+    write_cr!(cr3, pml_addr.0);
+
+    log!("Loaded CR3 successfully!");
+
+    Ok(())
 }
 
 #[repr(transparent)]
@@ -140,56 +168,6 @@ pub struct PageTable([Entry; 512]);
 // TODO: Add support for PCIDE
 // TODO: Add support for multiple page sizes
 impl PageTable {
-    #[cfg(feature = "limine")]
-    pub unsafe fn init_from_limine(
-        mem_map: &[&limine::memory_map::Entry],
-    ) -> Result<(), PagingError> {
-        let pml = Entry(0).allocate_table_entry()?;
-
-        for entry in mem_map {
-            match entry.entry_type {
-                // TODO: Framebuffer only if #[cfg(feature = "framebuffer")]
-                limine::memory_map::EntryType::ACPI_RECLAIMABLE
-                | limine::memory_map::EntryType::KERNEL_AND_MODULES
-                | limine::memory_map::EntryType::FRAMEBUFFER => {
-                    let page_range = {
-                        let start_phys_page = entry.base as usize;
-                        let end_phys_page = start_phys_page + (entry.length as usize);
-
-                        (start_phys_page..end_phys_page).step_by(0x1000)
-                    };
-
-                    // Map each physical page in the range to it's HHDM virtual page
-                    page_range.into_iter().try_for_each(|phys_page| {
-                        let phys_page = PhysAddr(phys_page);
-                        let virt_page = phys_page.add_hhdm_offset();
-                        let pte = pml.get_create_entry_specific(
-                            VirtAddr(virt_page.0 >> 12),
-                            PAGING_LEVEL - 1,
-                        )?;
-                        pte.set(phys_page.0 | Entry::FLAG_P);
-
-                        Ok(())
-                    })?;
-                }
-                _ => (),
-            }
-        }
-
-        log!("Filled up page tables successfully!");
-
-        unsafe { pml.set_as_pml() };
-
-        log!("Loaded CR3 successfully!");
-
-        Ok(())
-    }
-
-    unsafe fn set_as_pml(&self) {
-        let phys_addr = VirtAddr(core::ptr::from_ref(self).addr()).subtract_hhdm_offset();
-        write_cr!(cr3, phys_addr.0);
-    }
-
     // NOTE: Not sure whether this should be static or not...
     /// Get the PML4/PML5 (depending on whether 4 or 5 level paging is enabled) from CR3
     #[inline]
@@ -224,7 +202,7 @@ impl PageTable {
         let pml = unsafe { PageTable::get_pml() }?;
         let pte = pml.get_entry_specific(virt_addr, PAGING_LEVEL - 1)?;
 
-        pte.unset_flags(Entry::FLAG_P | Entry::FLAG_RESERVED);
+        pte.unset_flags(Entry::FLAG_P);
 
         Ok(())
     }
@@ -240,7 +218,7 @@ impl PageTable {
     ) -> Result<&mut Entry, PagingError> {
         // NOTE: Because of the bitwise and, next index can't be more than 511 so it's safe to
         // index using it without checks
-        let index = virt_addr.0 & 0b1_1111_1111;
+        let index = (virt_addr.0 >> (level * 9)) & 0b1_1111_1111;
         if level == 0 {
             return Ok(&mut self.0[index]);
         }
@@ -252,7 +230,7 @@ impl PageTable {
 
         // Entry -> physical address -> virtual address -> valid &mut PageTable
         let next_table: &mut PageTable = self.0[index].try_into()?;
-        next_table.get_entry_specific(VirtAddr(virt_addr.0 >> 9), level - 1)
+        next_table.get_entry_specific(virt_addr, level - 1)
     }
 
     /// Tries to get the PTE of a virtual address. Will allocate any tables if it needs to
@@ -265,7 +243,7 @@ impl PageTable {
     ) -> Result<&mut Entry, PagingError> {
         // NOTE: Because of the bitwise and, next index can't be more than 511 so it's safe to
         // index using it without checks
-        let index = virt_addr.0 & 0b1_1111_1111;
+        let index = (virt_addr.0 >> (level * 9)) & 0b1_1111_1111;
         if level == 0 {
             return Ok(&mut self.0[index]);
         }
@@ -276,11 +254,13 @@ impl PageTable {
             if self.0[index].get_flags(Entry::FLAG_P) != 0 {
                 self.0[index].try_into()?
             } else {
-                self.0[index].allocate_table_entry()?
+                let (next_table, phys_addr) = PageTable::new()?;
+                self.0[index].set(phys_addr.0 | Entry::FLAG_P | Entry::FLAG_RW);
+                next_table
             }
         };
 
-        next_table.get_create_entry_specific(VirtAddr(virt_addr.0 >> 9), level - 1)
+        next_table.get_create_entry_specific(virt_addr, level - 1)
     }
 
     /// Tries to get any free PTE. If there isn't one available, it tries to creates one.
@@ -306,7 +286,9 @@ impl PageTable {
                 if entry.1.get_flags(Entry::FLAG_P) != 0 {
                     (*entry.1).try_into()?
                 } else {
-                    entry.1.allocate_table_entry()?
+                    let (next_table, phys_addr) = PageTable::new()?;
+                    entry.1.set(phys_addr.0 | Entry::FLAG_P | Entry::FLAG_RW);
+                    next_table
                 }
             };
 
@@ -323,6 +305,25 @@ impl PageTable {
         // If all further calls return `UnexpectedlyTableFull`, that means all of this tables
         // entries are `UnexpectedlyTableFull` and, so return that error
         Err(PagingError::UnexpectedlyTableFull(level))
+    }
+
+    // NOTE: Again, note sure if `static` is the correct lifetime here
+    // Make the current table entry point to a new PageTable, and return that PageTable
+    fn new() -> Result<(&'static mut PageTable, PhysAddr), PagingError> {
+        #[allow(static_mut_refs)]
+        let phys_addr = unsafe { crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1) }
+            .map_err(|e| PagingError::AllocationError(e))?;
+
+        let ret = unsafe {
+            let ptr = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
+            crate::utils::memset(ptr, 0, 0x1000);
+            // TODO: Change this error to something more meaningfull
+            (ptr as *mut PageTable)
+                .as_mut()
+                .ok_or(PagingError::EntryToPageTableFailed)?
+        };
+
+        Ok((ret, phys_addr))
     }
 }
 

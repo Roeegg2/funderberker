@@ -35,6 +35,11 @@ run: $(IMAGE_NAME).iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
 debug: $(IMAGE_NAME).iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
 	$(QEMU) -d in_asm,int -D qemu.log
 
+# unit test
+.PHONY: test
+test: 
+	RUSTFLAGS="-C relocation-model=static" cargo +nightly test --features test
+
 # Clean everything
 .PHONY: clean
 clean:

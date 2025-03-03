@@ -37,31 +37,31 @@ impl<'a> BumpAllocator<'a> {
     #[cfg(feature = "limine")]
     pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
         // Get the total page count of memory region
-        {
-            let mut page_count: u64 = 0;
-            mem_map.iter().for_each(|&entry| {
-                page_count += entry.length;
-            });
-            page_count /= 0x1000;
+        let mut page_count: u64 = 0;
+        mem_map.iter().for_each(|&entry| {
+            page_count += entry.length;
+        });
+        page_count /= 0x1000;
 
-            // Calculate bitmap size
-            let bitmap_size = (page_count + 7) / 8;
-            // Allocate space for bitmap
-            let bitmap_entry = mem_map
-                .iter()
-                .find(|&entry| entry.length >= bitmap_size)
-                .expect("Couldn't find memory area to allocate bitmap!");
+        // Calculate bitmap size
+        let bitmap_size = (page_count + 7) / 8;
+        // Allocate space for bitmap
+        let bitmap_entry = mem_map
+            .iter()
+            .find(|&entry| entry.length >= bitmap_size)
+            .expect("Couldn't find memory area to allocate bitmap!");
 
-            // XXX: Unsafe casts here!
-            unsafe {
-                BUMP_ALLOCATOR.bitmap_size = page_count as usize;
-                BUMP_ALLOCATOR.bitmap = {
-                    let bitmap_virt_addr = PhysAddr(bitmap_entry.base as usize).add_hhdm_offset();
-                    let ptr = core::ptr::without_provenance_mut::<u8>(bitmap_virt_addr.0);
-                    //memset(ptr, 0, bitmap_size as usize);
-                    from_raw_parts_mut(ptr, bitmap_size as usize)
-                };
-            }
+        // XXX: Unsafe casts here!
+        unsafe {
+            BUMP_ALLOCATOR.bitmap_size = page_count as usize;
+            BUMP_ALLOCATOR.bitmap = {
+                let bitmap_virt_addr = PhysAddr(bitmap_entry.base as usize).add_hhdm_offset();
+                let ptr = core::ptr::without_provenance_mut::<u8>(bitmap_virt_addr.0);
+
+                crate::utils::memset(ptr, 0, bitmap_size as usize);
+
+                from_raw_parts_mut(ptr, bitmap_size as usize)
+            };
         }
 
         mem_map.iter().for_each(|&entry| {
@@ -91,10 +91,22 @@ impl<'a> BumpAllocator<'a> {
                 _ => {
                     page_range.into_iter().for_each(|page| unsafe {
                         #[allow(static_mut_refs)]
-                        BUMP_ALLOCATOR.bitmap_unset(page)
+                        BUMP_ALLOCATOR.bitmap_set(page)
                     });
                 }
             }
+        });
+
+        // Set the bitmap range as taken
+        let page_range = {
+            let start_id = addr_to_page_id(bitmap_entry.base as usize).unwrap();
+            let end_id = start_id + ((bitmap_size + 0x1000 - 1) / 0x1000) as PageId;
+
+            start_id..end_id
+        };
+        page_range.into_iter().for_each(|page| unsafe {
+            #[allow(static_mut_refs)]
+            BUMP_ALLOCATOR.bitmap_set(page)
         });
 
         log!("PMM Bump allocator initilized successfully");
@@ -157,7 +169,7 @@ impl<'a> BumpAllocator<'a> {
             // Check if all entries are available. If at least one isn't, go next
             for i in 0..page_count {
                 if self.bitmap_get(ptr + i) != 0 {
-                    ptr = inc_ring_buff_ptr(ptr, ptr + i + 1, self.bitmap_size);
+                    ptr = inc_ring_buff_ptr(ptr, 1, self.bitmap_size);
                     continue 'main;
                 }
             }
@@ -171,7 +183,7 @@ impl<'a> BumpAllocator<'a> {
             self.bitmap_set(ptr + i);
         }
 
-        self.ptr = inc_ring_buff_ptr(ptr, ptr + page_count, self.bitmap_size);
+        self.ptr = ptr;
 
         return Ok(PhysAddr(page_id_to_addr(ptr)));
     }
@@ -204,36 +216,3 @@ impl<'a> BumpAllocator<'a> {
 const fn inc_ring_buff_ptr(ring_buff: PageId, amount: usize, ring_buff_size: usize) -> PageId {
     (ring_buff + amount) % ring_buff_size
 }
-
-//#[cfg(test)]
-//mod bump_allocator_tests {
-//    use crate::mem::pmm::PmmError;
-//
-//    use super::BumpAllocator;
-//
-//    #[test]
-//    fn allocation_tests() {
-//        let mut bitmap = [0; 37];
-//        let bitmap_size = (37 * 8) -2;
-//        let mut allocator = BumpAllocator {
-//            bitmap: &mut bitmap,
-//            ptr: 0,
-//            bitmap_size: bitmap_size,
-//        };
-//
-//        allocator.allocate_any(1, 8).expect("Allocation failed!");
-//        let mut result = [0; 37];
-//        result[0..8].fill(0);
-//
-//        assert_eq!(result, allocator.bitmap);
-//
-//        allocator.allocate_any(14, 4).expect("Allocation failed!");
-//        result[14..18].fill(0);
-//
-//        assert_eq!(result, allocator.bitmap);
-//
-//        assert_eq!(allocator.allocate_any(bitmap_size-1, 4).unwrap_err(), PmmError::NoAvailableBlock);
-//
-//        assert_eq!(allocator.allocate_any(1, 30).unwrap_err(), PmmError::NoAvailableBlock);
-//    }
-//}
