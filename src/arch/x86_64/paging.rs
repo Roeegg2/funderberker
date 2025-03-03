@@ -6,8 +6,8 @@ compiler_error!("Can't have both 4 level and 5 level paging. Choose one of the o
 compiler_error!("No paging level is selected. Choose one of the options");
 
 use crate::{
-    mem::{PhysAddr, VirtAddr, pmm::PmmError,},
-    read_cr,
+    mem::{PhysAddr, VirtAddr, pmm::PmmError},
+    read_cr, write_cr,
 };
 
 #[cfg(feature = "paging_4")]
@@ -25,8 +25,10 @@ pub enum PagingError {
     AllocationError(PmmError),
     /// Conversion of a PageTable's `Entry` to a `PageTable` failed
     EntryToPageTableFailed,
-    /// Encountered an invalid virtual address during translation at level _
-    InvalidVirtualAddress(u8),
+    /// Virtual address asked to be mapped is already reserved
+    AlreadyReservedVirtualAddress(u8),
+    /// VIrtual address asked to be unmapped is already free
+    AlreadyFreeVirtualAddress(u8),
     /// One (or possibly more) paging tables were found missing during virtual address translation
     /// at level _
     MissingPagingTable(u8),
@@ -35,28 +37,6 @@ pub enum PagingError {
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
 struct Entry(usize);
-
-// TODO:
-//
-//
-// write:
-// 1. free_pte: // frees a PTE in the current PT
-//      already have most things setup. just turn off P flag, and set AVL LRU bits to 0
-// 2. free_tree // free a page table, and all it's child tables
-//      for each entry, it calls itself. once it reached level 0, call free_pte on each entry
-//
-// change:
-// 1. map_page, map_page_create, map_page_create_to:
-//      don't set the P bit. You want to set the AVL bits and that marks that page as reserved (the
-//      P bit marks in use). That way we can on demand page stuff (ie. the VM (or even we) tries to
-//      access the page, then page fault handler is invoked, and then page fault handler checks if
-//      the entry is reserved in the page table. if it isn't it panics or some shit (tells VMM to kill OS or what not), if it is, then
-//      it turns P flag on and returns to normal execution)
-//
-//
-// only theoretical:
-// 1. 
-
 
 #[allow(dead_code)]
 impl Entry {
@@ -84,8 +64,17 @@ impl Entry {
     /// All possible flags turned on
     const FLAG_ALL: usize = 0b0111_1111_1111;
 
-    /// The following flags' are for our use, so I've given them my own meaning:
+    /// The following flags are for our use, so I've given them my own meaning:
     const FLAG_AVL: usize = 0b111 << 9;
+    /// 0 means unreserved, free for use by whoever finds this table.
+    /// NOTE: It thus only makes sense to have `FLAG_AVL == 0` if `FLAG_P == 0` as well. But we can
+    /// definitely have `FLAG_AVL != 0` and `FLAG_P == 0`.
+    /// `FLAG_P` simple means I can access the virtual address/es addressed by this entry. I can
+    /// have an entry be reserved, but not yet accessible.
+    /// `free` is the opposite of `taken`, not `accessible`.
+    const FLAG_RESERVED: usize = 0b1 << 9;
+    /// Some flags I'll use for LRU, not relevant now though
+    const _FLAG_LRU: usize = 0b11 << 10;
 }
 
 impl Entry {
@@ -98,22 +87,23 @@ impl Entry {
         self.0 &= !flags
     }
 
-    const fn get_flags(&self, flag: usize) -> bool {
-        (self.0 | flag) != 0
+    const fn get_flags(&self, flag: usize) -> usize {
+        self.0 & flag
     }
 
-    fn allocate_table_entry(&mut self) -> Result<VirtAddr, PagingError> {
+    // NOTE: Again, note sure if `static` is the correct lifetime here
+    // Make the current table entry point to a new PageTable, and return that PageTable
+    fn allocate_table_entry(mut self) -> Result<&'static mut PageTable, PagingError> {
         // TODO: Memset to 0?
         #[allow(static_mut_refs)]
         let next_table_page = unsafe { crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1) }
             .map_err(|e| PagingError::AllocationError(e))?;
 
-        // Set the entry
-        *(self) = Entry(next_table_page.0);
-        self.set(Entry::FLAG_P);
+        // Set the physical address of next entry & present flag
+        self.set(next_table_page.0 | Entry::FLAG_P);
 
-        let virt_addr: VirtAddr = PhysAddr::from(*self).add_hhdm_offset();
-        Ok(virt_addr)
+        // Convert it to a mut reference to PageTable
+        self.try_into()
     }
 }
 
@@ -145,47 +135,60 @@ impl<'a> TryFrom<Entry> for &'a mut PageTable {
 #[derive(Debug)]
 pub struct PageTable([Entry; 512]);
 
-// LATETODO: Try to TCE optimize to each of the recursive function when it's supported by Rust
-
+// LATETODO: Try to TCE optimize each of the recursive functions
+// LATETODO: Maybe implement `unmap_tree` and `allocate_tree` functions?
+// TODO: Add support for PCIDE
+// TODO: Add support for multiple page sizes
 impl PageTable {
-    //#[inline]
-    //fn allocate_new_pml() -> Result<&'static mut PageTable, PagingError> {
-    //    // TODO: Memset to 0?
-    //    #[allow(static_mut_refs)]
-    //    let pml_phys_addr = unsafe { crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1) }
-    //        .map_err(|e| PagingError::AllocationError(e))?;
-    //
-    //    let pml_virt_addr = Entry(pml_phys_addr.0).try_into()?;
-    //    Ok(pml_virt_addr)
-    //}
-    //
-    ///// Initilize paging
-    ///// NOTE: SHOULD ONLY BE CALLED ONCE PRETTY EARLY AT BOOT!
-    //#[cfg(feature = "limine")]
-    //pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry], ) -> Result<(), PagingError> {
-    //    let pml = Self::allocate_new_pml();
-    //
-    //    mem_map.iter().for_each(|&entry| {
-    //        match entry.entry_type {
-    //            limine::memory_map::EntryType::KERNEL_AND_MODULES
-    //                | limine::memory_map::EntryType::ACPI_RECLAIMABLE 
-    //                => {
-    //                    pml.get_create_pte_specific()
-    //                },
-    //            // TODO: Find a more compact way to do this
-    //            #[cfg(feature = "framebuffer")]
-    //            limine::memory_map::EntryType::ACPI_RECLAIMABLE => {
-    //
-    //            }
-    //            _ => (),
-    //        }
-    //    });
-    //
-    //    Ok(())
-    //    // allocate new PML
-    //    // memset PML to zero
-    //    // go over each descr and map what you need to page table
-    //}
+    #[cfg(feature = "limine")]
+    pub unsafe fn init_from_limine(
+        mem_map: &[&limine::memory_map::Entry],
+    ) -> Result<(), PagingError> {
+        let pml = Entry(0).allocate_table_entry()?;
+
+        for entry in mem_map {
+            match entry.entry_type {
+                // TODO: Framebuffer only if #[cfg(feature = "framebuffer")]
+                limine::memory_map::EntryType::ACPI_RECLAIMABLE
+                | limine::memory_map::EntryType::KERNEL_AND_MODULES
+                | limine::memory_map::EntryType::FRAMEBUFFER => {
+                    let page_range = {
+                        let start_phys_page = entry.base as usize;
+                        let end_phys_page = start_phys_page + (entry.length as usize);
+
+                        (start_phys_page..end_phys_page).step_by(0x1000)
+                    };
+
+                    // Map each physical page in the range to it's HHDM virtual page
+                    page_range.into_iter().try_for_each(|phys_page| {
+                        let phys_page = PhysAddr(phys_page);
+                        let virt_page = phys_page.add_hhdm_offset();
+                        let pte = pml.get_create_entry_specific(
+                            VirtAddr(virt_page.0 >> 12),
+                            PAGING_LEVEL - 1,
+                        )?;
+                        pte.set(phys_page.0 | Entry::FLAG_P);
+
+                        Ok(())
+                    })?;
+                }
+                _ => (),
+            }
+        }
+
+        log!("Filled up page tables successfully!");
+
+        unsafe { pml.set_as_pml() };
+
+        log!("Loaded CR3 successfully!");
+
+        Ok(())
+    }
+
+    unsafe fn set_as_pml(&self) {
+        let phys_addr = VirtAddr(core::ptr::from_ref(self).addr()).subtract_hhdm_offset();
+        write_cr!(cr3, phys_addr.0);
+    }
 
     // NOTE: Not sure whether this should be static or not...
     /// Get the PML4/PML5 (depending on whether 4 or 5 level paging is enabled) from CR3
@@ -198,29 +201,30 @@ impl PageTable {
     /// Tries to map the given physical address to some available virtual address
     pub fn map_page_any(phys_addr: PhysAddr, flags: usize) -> Result<VirtAddr, PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
-        let (pte, virt_addr) = pml.get_create_pte_any(false, PAGING_LEVEL - 1)?;
+        let (pte, virt_addr) = pml.get_create_entry_any(PAGING_LEVEL - 1)?;
         pte.set(phys_addr.0 | flags);
 
         Ok(virt_addr)
     }
 
-    // Tries to map the given physical address to the given virtual address.
+    /// Tries to map the given physical address to the given virtual address.
     pub fn map_page_specific(
         virt_addr: VirtAddr,
         phys_addr: PhysAddr,
         flags: usize,
     ) -> Result<(), PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
-        let pte = pml.get_create_pte_specific(VirtAddr(virt_addr.0 >> 12), PAGING_LEVEL - 1)?;
+        let pte = pml.get_create_entry_specific(VirtAddr(virt_addr.0 >> 12), PAGING_LEVEL - 1)?;
         pte.set(phys_addr.0 | flags);
 
         Ok(())
     }
 
-    // Tries to unmap the given virtual address
-    pub unsafe fn unmap_page(&mut self, virt_addr: VirtAddr) -> Result<(), PagingError> {
-        let pte = self.free_pte_path(virt_addr, PAGING_LEVEL - 1)?;
-        pte.unset_flags(Entry::FLAG_P);
+    pub unsafe fn unmap_page(virt_addr: VirtAddr) -> Result<(), PagingError> {
+        let pml = unsafe { PageTable::get_pml() }?;
+        let pte = pml.get_entry_specific(virt_addr, PAGING_LEVEL - 1)?;
+
+        pte.unset_flags(Entry::FLAG_P | Entry::FLAG_RESERVED);
 
         Ok(())
     }
@@ -229,28 +233,7 @@ impl PageTable {
     // rather keep them in memory for a near allocation
     /// Marks the the PTE associated with given virtual address as not present and LRU age 0
     /// NOTE: Make sure the entry isn't used before doing any modifications to it!
-    fn free_pte_path(&mut self, virt_addr: VirtAddr, level: u8) -> Result<&mut Entry, PagingError> {
-        // NOTE: Because of the bitwise and, next index can't be more than 511 so it's safe to
-        // index using it without checks
-        let index = virt_addr.0 & 0b1_1111_1111;
-        if level == 0 {
-            return Ok(&mut self.0[index]);
-        }
-
-        // Can't free an entry which isn't present...
-        if !self.0[index].get_flags(Entry::FLAG_P) {
-            return Err(PagingError::MissingPagingTable(level));
-        }
-
-        // Entry -> physical address -> virtual address -> valid &mut PageTable
-        let next_table: &mut PageTable = self.0[index].try_into()?;
-        next_table.free_pte_path(VirtAddr(virt_addr.0 >> 9), level - 1)
-    }
-
-    /// Tries to get the PTE of a virtual address. Will allocate any tables if it needs to
-    /// to make given virtual address addressable
-    /// NOTE: Make sure the entry isn't used before doing any modifications to it!
-    fn get_create_pte_specific(
+    fn get_entry_specific(
         &mut self,
         virt_addr: VirtAddr,
         level: u8,
@@ -262,20 +245,46 @@ impl PageTable {
             return Ok(&mut self.0[index]);
         }
 
-        if !self.0[index].get_flags(Entry::FLAG_P) {
-            self.0[index].allocate_table_entry()?;
+        // Can't get an entry which one of the tables in it's path is unmapped...
+        if self.0[index].get_flags(Entry::FLAG_P) == 0 {
+            return Err(PagingError::MissingPagingTable(level));
         }
 
+        // Entry -> physical address -> virtual address -> valid &mut PageTable
         let next_table: &mut PageTable = self.0[index].try_into()?;
-        next_table.get_create_pte_specific(VirtAddr(virt_addr.0 >> 9), level - 1)
+        next_table.get_entry_specific(VirtAddr(virt_addr.0 >> 9), level - 1)
     }
 
-    /// Tries to get the PTE of any available address.
-    fn get_create_pte_any(
+    /// Tries to get the PTE of a virtual address. Will allocate any tables if it needs to
+    /// make given virtual address addressable
+    /// NOTE: Make sure the entry isn't used before doing any modifications to it!
+    fn get_create_entry_specific(
         &mut self,
-        mut newly_mapped: bool,
+        virt_addr: VirtAddr,
         level: u8,
-    ) -> Result<(&mut Entry, VirtAddr), PagingError> {
+    ) -> Result<&mut Entry, PagingError> {
+        // NOTE: Because of the bitwise and, next index can't be more than 511 so it's safe to
+        // index using it without checks
+        let index = virt_addr.0 & 0b1_1111_1111;
+        if level == 0 {
+            return Ok(&mut self.0[index]);
+        }
+
+        // If the current entry is associated with a present entry, use it. Otherwise allocate
+        // a new table
+        let next_table = {
+            if self.0[index].get_flags(Entry::FLAG_P) != 0 {
+                self.0[index].try_into()?
+            } else {
+                self.0[index].allocate_table_entry()?
+            }
+        };
+
+        next_table.get_create_entry_specific(VirtAddr(virt_addr.0 >> 9), level - 1)
+    }
+
+    /// Tries to get any free PTE. If there isn't one available, it tries to creates one.
+    fn get_create_entry_any(&mut self, level: u8) -> Result<(&mut Entry, VirtAddr), PagingError> {
         // If we reached PTE
         if level == 0 {
             // Find the first non present (ie not taken) entry
@@ -283,49 +292,37 @@ impl PageTable {
                 .0
                 .iter_mut()
                 .enumerate()
-                .find(|pte| !pte.1.get_flags(Entry::FLAG_P))
+                .find(|pte| pte.1.get_flags(Entry::FLAG_P) == 0)
                 .ok_or(PagingError::UnexpectedlyTableFull(0))?;
 
             // Return mutable ref to entry, and the index used
             return Ok((entry, VirtAddr(index)));
         }
 
-        // If we didn't map a new table previously, and there's an available entry in the current
-        // table
-        let entry: (usize, &mut Entry);
-        if !newly_mapped
-            && let Some(value) = self
-                .0
-                .iter_mut()
-                .enumerate()
-                .find(|pte| pte.1.get_flags(Entry::FLAG_P) && !pte.1.get_flags(Entry::FLAG_AVL))
-        {
-            entry = value;
-            // If user specified we should create the table if it's missing
-        } else {
-            // Find an unused entry in the current table
-            entry = self
-                .0
-                .iter_mut()
-                .enumerate()
-                .find(|pte| !pte.1.get_flags(Entry::FLAG_P))
-                .ok_or(PagingError::UnexpectedlyTableFull(level))?;
+        for entry in self.0.iter_mut().enumerate() {
+            // If the current entry is associated with a present entry, use it. Otherwise allocate
+            // a new table
+            let next_table = {
+                if entry.1.get_flags(Entry::FLAG_P) != 0 {
+                    (*entry.1).try_into()?
+                } else {
+                    entry.1.allocate_table_entry()?
+                }
+            };
 
-            // Allocate a new entry
-            entry.1.allocate_table_entry()?;
-            newly_mapped = true;
+            // If at the previous level we encountered an `UnexpectedlyTableFull`, try calling the
+            // next. Otherwise, just return whatever the functions below returned
+            match next_table.get_create_entry_any(level - 1) {
+                Err(PagingError::UnexpectedlyTableFull(_)) if entry.0 < ENTRIES_PER_TABLE - 1 => {
+                    continue;
+                }
+                any => return any,
+            };
         }
 
-        let next_table: &mut PageTable = (*entry.1).try_into()?;
-        // Go to next level
-        next_table
-            .get_create_pte_any(newly_mapped, level - 1)
-            .map(|mut ret| {
-                // Construct next index in virtual address
-                ret.1 = VirtAddr((ret.1.0 << 9) | entry.0);
-
-                ret
-            })
+        // If all further calls return `UnexpectedlyTableFull`, that means all of this tables
+        // entries are `UnexpectedlyTableFull` and, so return that error
+        Err(PagingError::UnexpectedlyTableFull(level))
     }
 }
 

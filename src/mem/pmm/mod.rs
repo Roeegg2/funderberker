@@ -121,26 +121,26 @@ impl<'a> BumpAllocator<'a> {
         alignment: usize,
         page_count: usize,
     ) -> Result<PhysAddr, PmmError> {
-        let mut ptr = self.ptr;
+        let mut ptr = inc_ring_buff_ptr(self.ptr, 1, self.bitmap_size);
 
         if alignment >= self.bitmap_size || alignment == 0 {
             return Err(PmmError::InvalidAddressAlignment);
-        } 
+        }
 
         'main: loop {
             // Couldn't find suitable block
             if ptr == self.ptr {
-                return Err(PmmError::NoAvailableBlock); 
+                return Err(PmmError::NoAvailableBlock);
             }
 
             // This is an optimization. Instead of incrememting ptr until it gets to the start
             // of the ring buffer, we set it to 0 now
             if ptr + page_count >= self.bitmap_size {
                 // Taking care of the case in which if we chose to procede with regular
-                // iteration, we would've encountered self.ptr again 
+                // iteration, we would've encountered self.ptr again
                 if ptr + page_count >= self.ptr {
                     return Err(PmmError::NoAvailableBlock);
-                } 
+                }
                 ptr = 0;
                 continue;
             }
@@ -222,7 +222,7 @@ const fn inc_ring_buff_ptr(ring_buff: PageId, amount: usize, ring_buff_size: usi
 //        };
 //
 //        allocator.allocate_any(1, 8).expect("Allocation failed!");
-//        let mut result = [0; 37]; 
+//        let mut result = [0; 37];
 //        result[0..8].fill(0);
 //
 //        assert_eq!(result, allocator.bitmap);
