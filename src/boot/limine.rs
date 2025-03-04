@@ -98,7 +98,7 @@ unsafe extern "C" fn kmain() -> ! {
     {
         unsafe { BumpAllocator::init_from_limine(mem_map.entries()) };
         unsafe {
-            x86_64::paging::init_from_limine(
+            x86_64::paging::setup_from_limine(
                 mem_map.entries(),
                 VirtAddr(kernel_addr.virtual_base() as usize),
                 PhysAddr(kernel_addr.physical_base() as usize),

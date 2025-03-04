@@ -1,26 +1,14 @@
 pub mod pmm;
 
+pub static mut HHDM_OFFSET: usize = 0;
+
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 pub struct VirtAddr(pub usize);
 
-/// Subtract the HHDM offset of VMM to turn a virtual address into a physical one
-/// ONLY VALID TO USE IN VMM SINCE THAT'S THE ONLY MEMORY MAP THAT IS DIRECT MAPPED!
 impl VirtAddr {
     pub fn subtract_hhdm_offset(self) -> PhysAddr {
         unsafe { PhysAddr(self.0 - HHDM_OFFSET) }
-    }
-}
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
-pub struct PhysAddr(pub usize);
-
-pub static mut HHDM_OFFSET: usize = 0;
-
-impl PhysAddr {
-    pub fn add_hhdm_offset(self) -> VirtAddr {
-        unsafe { VirtAddr(self.0 + HHDM_OFFSET) }
     }
 }
 
@@ -33,6 +21,16 @@ impl<T> From<*const T> for VirtAddr {
 impl<T> From<*mut T> for VirtAddr {
     fn from(value: *mut T) -> Self {
         Self(value.addr())
+    }
+}
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+pub struct PhysAddr(pub usize);
+
+impl PhysAddr {
+    pub fn add_hhdm_offset(self) -> VirtAddr {
+        unsafe { VirtAddr(self.0 + HHDM_OFFSET) }
     }
 }
 

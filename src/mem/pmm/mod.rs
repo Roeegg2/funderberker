@@ -2,6 +2,8 @@
 
 use core::slice::from_raw_parts_mut;
 
+use limine::memory_map;
+
 use super::{PageId, PhysAddr, addr_to_page_id, page_id_to_addr};
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
@@ -33,6 +35,9 @@ pub struct BumpAllocator<'a> {
 }
 
 impl<'a> BumpAllocator<'a> {
+    const FREE: u8 = 0;
+    const TAKEN: u8 = 1;
+
     /// Index into the bitmap and unset the status of a page
     const fn bitmap_unset(&mut self, index: PageId) {
         self.bitmap[index / 8] &= !(1 << (index % 8));
@@ -135,48 +140,22 @@ impl<'a> BumpAllocator<'a> {
 
 #[cfg(feature = "limine")]
 impl<'a> BumpAllocator<'a> {
-    unsafe fn set_for_mem_map_entry(&mut self, base: usize, len: usize) {
-        {
-            let start_id = addr_to_page_id(base).unwrap();
-            let end_id = start_id + ((len + 0xfff) / 0x1000);
-
-            start_id..end_id
-        }
-        .into_iter()
-        .for_each(|page_id| self.bitmap_set(page_id));
-    }
-
-    unsafe fn fill_bitmap(
-        &mut self,
-        mem_map: &[&limine::memory_map::Entry],
-        bitmap_entry: &limine::memory_map::Entry,
-        bitmap_alloc_size: usize,
-    ) {
-        for entry in mem_map {
-            match entry.entry_type {
-                limine::memory_map::EntryType::USABLE
-                | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE => unsafe {
-                    self.set_for_mem_map_entry(entry.base as usize, entry.length as usize)
-                },
-                _ => (),
-            }
-        }
-
-        unsafe { self.set_for_mem_map_entry(bitmap_entry.base as usize, bitmap_alloc_size) };
-    }
-
+    // call init_from_limine with Limine memory map
+    // iter().for_each() find suitable entry for bitmap
+    // create ptr, set it with TAKEN, etc return ptr
+    // NOTE: Maybe I should mark the BOOTLOADER as unused later?
+    // for each entry in the mem_map, unmark each entry of type BOOTLOADER and USEABLE as used
+    // mark the region occupied by the bitmap as taken
     pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
         unsafe fn new_bitmap_from_limine<'b, 'c>(
             mem_map: &[&'c limine::memory_map::Entry],
             bitmap_alloc_size: u64,
         ) -> (&'b mut [u8], &'c limine::memory_map::Entry) {
+            // Find a suitable block to allocate the bitmap in.
             let bitmap_entry = mem_map
                 .iter()
                 .find(|&entry| match entry.entry_type {
-                    limine::memory_map::EntryType::USABLE
-                    | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
-                        if entry.length >= bitmap_alloc_size =>
-                    {
+                    limine::memory_map::EntryType::USABLE if entry.length >= bitmap_alloc_size => {
                         true
                     }
                     _ => false,
@@ -184,38 +163,85 @@ impl<'a> BumpAllocator<'a> {
                 .expect("Unreachable, can't find entry for bitmap");
 
             let bitmap = unsafe {
+                // Convert the block's physical address to VirtAddr using HHDM, then convert that
+                // to a valid pointer
                 let bitmap_virt_addr = PhysAddr(bitmap_entry.base as usize).add_hhdm_offset();
                 let ptr = core::ptr::without_provenance_mut::<u8>(bitmap_virt_addr.0);
 
-                crate::utils::memset(ptr, 1, bitmap_alloc_size as usize);
-
+                // Set all of memory to taken by default
+                crate::utils::memset(ptr, BumpAllocator::TAKEN, bitmap_alloc_size as usize);
+                // Convert to a bitmap slice
                 from_raw_parts_mut(ptr, bitmap_alloc_size as usize)
             };
 
             (bitmap, bitmap_entry)
         }
 
+        // Get the last allocatable memory descriptor - that'll decide the bitmap size (yes, we'll
+        // still have some "holes" (ie. reserved & shit memory) but it's negligible. Not worth the
+        // hasstle of maintaining multiple bitmaps etc)
         let page_count = {
             let last_descr = mem_map
                 .iter()
                 .rev()
-                .find(|&entry| entry.base != 0xfd00000000)
+                .find(|&entry| match entry.entry_type {
+                    limine::memory_map::EntryType::USABLE
+                    | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+                    | limine::memory_map::EntryType::ACPI_RECLAIMABLE
+                    | limine::memory_map::EntryType::KERNEL_AND_MODULES => true,
+                    _ => false,
+                })
                 .unwrap();
             (last_descr.base + last_descr.length) as usize
         } / 0x1000;
 
         unsafe {
+            // Get the size we need to allocate to the bitmap (that's `what we use` + `rounding up` to byte alignment)
             #[allow(static_mut_refs)]
             let bitmap_alloc_size = (page_count + 7) / 8;
+            // But set the actual bitmap size to the page count, since these are the pages we can
+            // actually use
             BUMP_ALLOCATOR.used_bitmap_size = page_count;
 
+            // Find a suitable bitmap & initilize it with 1's
             let bitmap_entry: &limine::memory_map::Entry;
             (BUMP_ALLOCATOR.bitmap, bitmap_entry) =
                 new_bitmap_from_limine(mem_map, bitmap_alloc_size as u64);
 
+            // Update the bitmaps contents to the current memory map + entry allocated for the
+            // bitmap
             #[allow(static_mut_refs)]
-            BUMP_ALLOCATOR.fill_bitmap(mem_map, bitmap_entry, bitmap_alloc_size);
+            for entry in mem_map {
+                match entry.entry_type {
+                    // XXX: Not sure about the BOOTLOADER_RECLAIMABLE
+                    memory_map::EntryType::USABLE => {
+                        BUMP_ALLOCATOR
+                            .set_for_mem_map_entry(entry.base as usize, entry.length as usize)
+                            .for_each(|page_id| BUMP_ALLOCATOR.bitmap_unset(page_id));
+                    }
+                    _ => (),
+                }
+            }
+
+            #[allow(static_mut_refs)]
+            BUMP_ALLOCATOR
+                .set_for_mem_map_entry(bitmap_entry.base as usize, bitmap_alloc_size)
+                .for_each(|page_id| BUMP_ALLOCATOR.bitmap_set(page_id));
         }
+    }
+
+    #[inline]
+    unsafe fn set_for_mem_map_entry(&mut self, base: usize, len: usize) -> core::ops::Range<usize> {
+        {
+            let start_id = addr_to_page_id(base).unwrap();
+            // If the length is page aligned, set iterate over the next page as well.
+            // NOTE: This is OK, since this never happens with `USEABLE` or `BOOTLOADER_RECLAIMABLE`. And
+            // it's a must for allocating the page table, since it's almost always not page aligned
+            let end_id = start_id + ((len + 0xfff) / 0x1000);
+
+            start_id..end_id
+        }
+        .into_iter()
     }
 }
 

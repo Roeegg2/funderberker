@@ -5,6 +5,9 @@ compiler_error!("Can't have both 4 level and 5 level paging. Choose one of the o
 #[cfg(not(any(feature = "paging_4", feature = "paging_5")))]
 compiler_error!("No paging level is selected. Choose one of the options");
 
+#[cfg(feature = "limine")]
+use limine::memory_map;
+
 use crate::{
     mem::{PhysAddr, VirtAddr, pmm::PmmError},
     read_cr, write_cr,
@@ -115,21 +118,27 @@ unsafe fn map_page_range(
     let page_range = (0..len).step_by(0x1000);
 
     page_range.into_iter().try_for_each(|offset| {
-        let virt_addr = VirtAddr((virt_addr_start.0 + offset) >> 12);
-        let pte = pml.get_create_entry_specific(virt_addr, PAGING_LEVEL - 1)?;
+        let pte = {
+            // Shift it 12 bits to the left, since it's page aligned address
+            let virt_addr = VirtAddr((virt_addr_start.0 + offset) >> 12);
+            pml.get_create_entry_specific(virt_addr, PAGING_LEVEL - 1)
+        }?;
 
-        let phys_addr = phys_addr_start.0 + offset;
-        pte.set(phys_addr | Entry::FLAG_P | flags);
+        // Populate the PTE with the desired PhysAddr + Flags
+        pte.set((phys_addr_start.0 + offset) | flags);
 
         Ok(())
     })
 }
 
-/// Set up paging using Limine's memory map
-/// NOTE: SHOULD ONLY BE CALLED ONCE DURING BOOT!
-#[cfg(feature = "limine")]
-pub unsafe fn init_from_limine(
-    mem_map: &[&limine::memory_map::Entry],
+#[inline]
+unsafe fn init_paging(pml_addr: PhysAddr) {
+    // TODO: Make sure CRs flags are OK
+    write_cr!(cr3, pml_addr.0);
+}
+
+pub unsafe fn setup_from_limine(
+    mem_map: &[&memory_map::Entry],
     kernel_virt: VirtAddr,
     kernel_phys: PhysAddr,
 ) -> Result<(), PagingError> {
@@ -137,44 +146,51 @@ pub unsafe fn init_from_limine(
 
     for entry in mem_map {
         match entry.entry_type {
-            limine::memory_map::EntryType::KERNEL_AND_MODULES => unsafe {
-                println!("before mapping kernel");
-                map_page_range(pml, kernel_virt, kernel_phys, entry.length as usize, 0)?;
-            },
-            // TODO: Framebuffer only if #[cfg(feature = "framebuffer")]
+            // Although the pages in this entry are also accessible from HHDM, they are mapped to a
+            // different region of virtual memory the kernel, and the kernel executes from there,
+            // so mapping it with HHDM as well won't work.
+            memory_map::EntryType::KERNEL_AND_MODULES => unsafe {
+                map_page_range(
+                    pml,
+                    kernel_virt,
+                    kernel_phys,
+                    entry.length as usize,
+                    Entry::FLAG_RW | Entry::FLAG_P,
+                )
+            }?,
+
+            memory_map::EntryType::ACPI_RECLAIMABLE
+            | memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+            | memory_map::EntryType::USABLE => unsafe {
+                let phys_addr = PhysAddr(entry.base as usize);
+                map_page_range(
+                    pml,
+                    phys_addr.add_hhdm_offset(),
+                    phys_addr,
+                    entry.length as usize,
+                    Entry::FLAG_RW | Entry::FLAG_P,
+                )
+            }?,
             #[cfg(feature = "framebuffer")]
-            limine::memory_map::EntryType::FRAMEBUFFER => unsafe {
-                println!("before mapping framebuffer");
+            memory_map::EntryType::FRAMEBUFFER => unsafe {
                 let phys_addr = PhysAddr(entry.base as usize);
                 map_page_range(
                     pml,
                     phys_addr.add_hhdm_offset(),
                     phys_addr,
                     entry.length as usize,
-                    Entry::FLAG_RW,
-                )?;
-            },
-            limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
-            | limine::memory_map::EntryType::ACPI_RECLAIMABLE => unsafe {
-                println!("before mapping reclaimable");
-                let phys_addr = PhysAddr(entry.base as usize);
-                map_page_range(
-                    pml,
-                    phys_addr.add_hhdm_offset(),
-                    phys_addr,
-                    entry.length as usize,
-                    Entry::FLAG_RW,
-                )?;
-            },
+                    Entry::FLAG_RW | Entry::FLAG_P,
+                )
+            }?,
+
+            // We don't care about the rest of the entries
             _ => (),
         }
     }
 
-    log!("Filled up page tables successfully!");
+    unsafe { init_paging(pml_addr) };
 
-    write_cr!(cr3, pml_addr.0);
-
-    log!("Loaded CR3 successfully!");
+    log!("Setup paging successfully!");
 
     Ok(())
 }
@@ -283,6 +299,7 @@ impl PageTable {
     }
 
     /// Tries to get any free PTE. If there isn't one available, it tries to creates one.
+    /// NOTE: Make sure the entry isn't used before doing any modifications to it!
     fn get_create_entry_any(&mut self, level: u8) -> Result<(&mut Entry, VirtAddr), PagingError> {
         // If we reached PTE
         if level == 0 {
@@ -330,31 +347,22 @@ impl PageTable {
     // Make the current table entry point to a new PageTable, and return that PageTable
     fn new() -> Result<(&'static mut PageTable, PhysAddr), PagingError> {
         #[allow(static_mut_refs)]
+        // Get the physical address reserved for the table (it's exactly 1 table, 1 page alignment)
         let phys_addr = unsafe { crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1) }
             .map_err(|e| PagingError::AllocationError(e))?;
 
-        let ret = unsafe {
+        let page_table = unsafe {
+            // HHDM convert PhysAddr -> VirtAddr and then to a viable pointer
             let ptr = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
+            // Important! Memset to get rid of old data
             crate::utils::memset(ptr, 0, 0x1000);
+
             // TODO: Change this error to something more meaningfull
             (ptr as *mut PageTable)
                 .as_mut()
-                .ok_or(PagingError::EntryToPageTableFailed)?
-        };
+                .ok_or(PagingError::EntryToPageTableFailed)
+        }?;
 
-        Ok((ret, phys_addr))
+        Ok((page_table, phys_addr))
     }
 }
-
-// TODO:
-// flush tlb
-//
-// TOMORROW:
-// 0. fix running on hardware issue
-// 1. TLB
-// 2. multiple page sizes
-// 3. PCIDE
-//
-// DAY LATER:
-// 0. slab allocator
-// 1. acpi

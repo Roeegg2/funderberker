@@ -7,7 +7,7 @@ edition = "2024"
 limine = { version = "0.3.1", optional = true }
 
 [features]
-default = ["limine", "amd", "serial", "paging_4", "pmm_bump"]
+default = ["limine", "amd", "framebuffer", "paging_4", "pmm_bump"]
 
 # x86_64 CPU vendors
 intel = []
