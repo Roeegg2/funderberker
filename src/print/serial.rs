@@ -75,6 +75,7 @@ pub struct SerialWriter {
 
 impl SerialWriter {
     /// Initilize each of the enabled serial ports. If an error occured, mark them as unwriteable
+    #[inline(always)]
     pub fn init(&mut self) -> Result<(), SerialError> {
         for ref mut port_wrapper in self.ports {
             if let Some(port) = port_wrapper

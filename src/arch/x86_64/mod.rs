@@ -13,6 +13,7 @@ pub(super) struct DescriptorTablePtr {
 }
 
 /// Initilize everything arch related!
+#[inline(always)]
 pub(super) unsafe fn init() {
     unsafe {
         // make sure no pesky interrupt interrupt us

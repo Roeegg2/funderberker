@@ -49,97 +49,32 @@ pub unsafe fn sti() {
     unsafe { asm!("sti", options(nostack, nomem)) };
 }
 
-// TODO: Possibly rewrite these dogshit macros?
 #[macro_export]
 macro_rules! read_cr {
-    (cr0) => {{
-        let value: usize;
+    ($cr:ident) => {{
+        #[allow(unused_unsafe)]
         unsafe {
-        core::arch::asm!(
-            "mov {}, cr0",
-            out(reg) value,
-            options(nostack, nomem)
-        );
-        };
-        value
+            let value: usize;
+            core::arch::asm!(
+                concat!("mov {}, ", stringify!($cr)),
+                out(reg) value,
+                options(nostack, nomem)
+            );
+            value
+        }
     }};
-    (cr2) => {{
-        let value: usize;
-        unsafe {
-        core::arch::asm!(
-            "mov {}, cr2",
-            out(reg) value,
-            options(nostack, nomem)
-        );
-        };
-        value
-    }};
-    (cr3) => {{
-        let value: usize;
-        unsafe {
-        core::arch::asm!(
-            "mov {}, cr3",
-            out(reg) value,
-            options(nostack, nomem)
-        );
-        };
-        value
-    }};
-    (cr4) => {{
-        let value: usize;
-        unsafe {
-        core::arch::asm!(
-            "mov {}, cr4",
-            out(reg) value,
-            options(nostack, nomem)
-        );
-        };
-        value
-    }};
-    ($cr:expr) => {
-        compile_error!("Only cr0, cr2, cr3, and cr4 are supported.");
-    };
 }
 
 #[macro_export]
 macro_rules! write_cr {
-    (cr0, $val:expr) => {{
+    ($cr:ident, $val:expr) => {{
+        #[allow(unused_unsafe)]
         unsafe {
-        core::arch::asm!(
-            "mov cr0, {}",
-            in(reg) $val,
-            options(nostack, nomem)
-        );
-        };
+            core::arch::asm!(
+                concat!("mov ", stringify!($cr), ", {}"),
+                in(reg) $val,
+                options(nostack, nomem)
+            );
+        }
     }};
-    (cr2, $val:expr) => {{
-        unsafe {
-        core::arch::asm!(
-            "mov cr2, {}",
-            in(reg) $val,
-            options(nostack, nomem)
-        );
-        };
-    }};
-    (cr3, $val:expr) => {{
-        unsafe {
-        core::arch::asm!(
-            "mov cr3, {}",
-            in(reg) $val,
-            options(nostack, nomem)
-        );
-        };
-    }};
-    (cr4, $val:expr) => {{
-        unsafe {
-        core::arch::asm!(
-            "mov cr4, {}",
-            in(reg) $val,
-            options(nostack, nomem)
-        );
-        };
-    }};
-    () => {
-        compile_error!("Only cr0, cr2, cr3, and cr4 are supported.");
-    };
 }

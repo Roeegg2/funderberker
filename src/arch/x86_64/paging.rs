@@ -9,7 +9,10 @@ compiler_error!("No paging level is selected. Choose one of the options");
 use limine::memory_map;
 
 use crate::{
-    mem::{PhysAddr, VirtAddr, pmm::PmmError},
+    mem::{
+        PhysAddr, VirtAddr,
+        pmm::{PmmAllocator, PmmError},
+    },
     read_cr, write_cr,
 };
 
@@ -95,7 +98,7 @@ impl From<Entry> for PhysAddr {
 impl<'a> TryFrom<Entry> for &'a mut PageTable {
     type Error = PagingError;
 
-    // TODO: Have this marked as `unsafe`? Could result in UB if address inside `value` is invalid
+    // NOTE: Have this marked as `unsafe`? Could result in UB if address inside `value` is invalid
     /// Convert Entry into an address, and using that address into
     fn try_from(value: Entry) -> Result<Self, Self::Error> {
         unsafe {
@@ -135,6 +138,8 @@ unsafe fn map_page_range(
 unsafe fn init_paging(pml_addr: PhysAddr) {
     // TODO: Make sure CRs flags are OK
     write_cr!(cr3, pml_addr.0);
+
+    //write_cr!(cr4, )
 }
 
 pub unsafe fn setup_from_limine(
@@ -199,10 +204,6 @@ pub unsafe fn setup_from_limine(
 #[derive(Debug)]
 pub struct PageTable([Entry; ENTRIES_PER_TABLE]);
 
-// LATETODO: Try to TCE optimize each of the recursive functions
-// LATETODO: Maybe implement `unmap_tree` and `allocate_tree` functions?
-// TODO: Add support for PCIDE
-// TODO: Add support for multiple page sizes
 impl PageTable {
     // NOTE: Not sure whether this should be static or not...
     /// Get the PML4/PML5 (depending on whether 4 or 5 level paging is enabled) from CR3
@@ -348,7 +349,8 @@ impl PageTable {
     fn new() -> Result<(&'static mut PageTable, PhysAddr), PagingError> {
         #[allow(static_mut_refs)]
         // Get the physical address reserved for the table (it's exactly 1 table, 1 page alignment)
-        let phys_addr = unsafe { crate::mem::pmm::BUMP_ALLOCATOR.allocate_any(1, 1) }
+        let phys_addr = crate::mem::pmm::get()
+            .alloc_any(1, 1)
             .map_err(|e| PagingError::AllocationError(e))?;
 
         let page_table = unsafe {
@@ -366,3 +368,9 @@ impl PageTable {
         Ok((page_table, phys_addr))
     }
 }
+
+// PCIDE & TLB
+// 5 level paging
+// different page sizes
+// slab allocator
+// page fault handler

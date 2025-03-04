@@ -14,6 +14,3 @@ pub mod utils;
 pub fn funderberker_main() {
     log!("Starting Funderberker operation...");
 }
-
-#[cfg(test)]
-fn main() {}

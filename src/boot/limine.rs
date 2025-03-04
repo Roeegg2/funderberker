@@ -13,7 +13,7 @@ use limine::request::{
 use limine::request::FramebufferRequest;
 
 use crate::arch::x86_64;
-use crate::mem::{PhysAddr, VirtAddr, pmm::BumpAllocator};
+use crate::mem::{PhysAddr, VirtAddr, pmm};
 use crate::{funderberker_main, print};
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -96,7 +96,7 @@ unsafe extern "C" fn kmain() -> ! {
     if let Some(mem_map) = MEMORY_MAP_REQUEST.get_response()
         && let Some(kernel_addr) = KERNEL_ADDRESS_REQUEST.get_response()
     {
-        unsafe { BumpAllocator::init_from_limine(mem_map.entries()) };
+        unsafe { pmm::init_from_limine(mem_map.entries()) };
         unsafe {
             x86_64::paging::setup_from_limine(
                 mem_map.entries(),

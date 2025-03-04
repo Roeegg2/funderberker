@@ -3,11 +3,14 @@
 use core::mem::MaybeUninit;
 use limine::framebuffer::Framebuffer;
 
+/// Errors the framebuffer might encounter
 #[derive(Debug)]
 pub enum FramebufferError {
+    /// Encountered an invalid character
     InvalidCharacter,
 }
 
+/// A bitmap font for the framebuffer
 #[rustfmt::skip]
 static BITMAP_FONT_8X16: [[u8; 16]; 256] = [
     [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,],
@@ -281,7 +284,8 @@ pub static mut FRAMEBUFFER_WRITER: FramebufferWriter = FramebufferWriter {
 };
 
 impl<'a> FramebufferWriter<'a> {
-    pub fn init(&mut self, fb: Framebuffer<'static>) {
+    #[inline]
+    pub fn init_from_limine(&mut self, fb: Framebuffer<'static>) {
         unsafe { *(self.framebuffer.assume_init_mut()) = fb }
     }
 

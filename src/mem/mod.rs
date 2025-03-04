@@ -7,6 +7,7 @@ pub static mut HHDM_OFFSET: usize = 0;
 pub struct VirtAddr(pub usize);
 
 impl VirtAddr {
+    /// Get the physical address of a virtual address **that is HHDM mapped**
     pub fn subtract_hhdm_offset(self) -> PhysAddr {
         unsafe { PhysAddr(self.0 - HHDM_OFFSET) }
     }
@@ -29,6 +30,7 @@ impl<T> From<*mut T> for VirtAddr {
 pub struct PhysAddr(pub usize);
 
 impl PhysAddr {
+    /// Get the virtual address of a physical address. A Virtual address **that is HHDM mapped**
     pub fn add_hhdm_offset(self) -> VirtAddr {
         unsafe { VirtAddr(self.0 + HHDM_OFFSET) }
     }
