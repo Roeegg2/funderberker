@@ -5,6 +5,8 @@ compiler_error!("Can't have both 4 level and 5 level paging. Choose one of the o
 #[cfg(not(any(feature = "paging_4", feature = "paging_5")))]
 compiler_error!("No paging level is selected. Choose one of the options");
 
+use core::ops::Range;
+
 use crate::{
     mem::{PhysAddr, VirtAddr, pmm::PmmError},
     read_cr, write_cr,
@@ -64,17 +66,7 @@ impl Entry {
     /// All possible flags turned on
     const FLAG_ALL: usize = 0b0111_1111_1111;
 
-    /// The following flags are for our use, so I've given them my own meaning:
     const FLAG_AVL: usize = 0b111 << 9;
-    /// 0 means unreserved, free for use by whoever finds this table.
-    /// NOTE: It thus only makes sense to have `FLAG_AVL == 0` if `FLAG_P == 0` as well. But we can
-    /// definitely have `FLAG_AVL != 0` and `FLAG_P == 0`.
-    /// `FLAG_P` simple means I can access the virtual address/es addressed by this entry. I can
-    /// have an entry be reserved, but not yet accessible.
-    /// `free` is the opposite of `taken`, not `accessible`.
-    const FLAG_RESERVED: usize = 0b1 << 9;
-    /// Some flags I'll use for LRU, not relevant now though
-    const _FLAG_LRU: usize = 0b11 << 10;
 }
 
 impl Entry {
@@ -115,37 +107,64 @@ impl<'a> TryFrom<Entry> for &'a mut PageTable {
     }
 }
 
+unsafe fn map_page_range(
+    pml: &mut PageTable,
+    virt_addr_start: VirtAddr,
+    phys_addr_start: PhysAddr,
+    len: usize,
+    flags: usize,
+) -> Result<(), PagingError> {
+    let page_range = (0..len).step_by(0x1000);
+
+    page_range.into_iter().try_for_each(|offset| {
+        let virt_addr = VirtAddr((virt_addr_start.0 + offset) >> 12);
+        let pte = pml.get_create_entry_specific(virt_addr, PAGING_LEVEL - 1)?;
+
+        let phys_addr = phys_addr_start.0 + offset;
+        pte.set(phys_addr | Entry::FLAG_P | flags);
+
+        Ok(())
+    })
+}
+
 /// Set up paging using Limine's memory map
 /// NOTE: SHOULD ONLY BE CALLED ONCE DURING BOOT!
 #[cfg(feature = "limine")]
-pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) -> Result<(), PagingError> {
+pub unsafe fn init_from_limine(
+    mem_map: &[&limine::memory_map::Entry],
+    kernel_virt: VirtAddr,
+    kernel_phys: PhysAddr,
+) -> Result<(), PagingError> {
     let (pml, pml_addr) = PageTable::new()?;
 
     for entry in mem_map {
         match entry.entry_type {
+            limine::memory_map::EntryType::KERNEL_AND_MODULES => unsafe {
+                map_page_range(pml, kernel_virt, kernel_phys, entry.length as usize, 0)?;
+            },
             // TODO: Framebuffer only if #[cfg(feature = "framebuffer")]
-            limine::memory_map::EntryType::ACPI_RECLAIMABLE
-            | limine::memory_map::EntryType::KERNEL_AND_MODULES
-            | limine::memory_map::EntryType::FRAMEBUFFER => {
-                let page_range = {
-                    let start_phys_page = entry.base as usize;
-                    let end_phys_page = start_phys_page + (entry.length as usize);
-
-                    (start_phys_page..end_phys_page).step_by(0x1000)
-                };
-
-                // Map each physical page in the range to it's HHDM virtual page
-                page_range.into_iter().try_for_each(|phys_page| {
-                    let phys_page = PhysAddr(phys_page);
-                    let virt_page = phys_page.add_hhdm_offset();
-                    let pte = pml
-                        .get_create_entry_specific(VirtAddr(virt_page.0 >> 12), PAGING_LEVEL - 1)?;
-                    // Set to actually correct permissions
-                    pte.set(phys_page.0 | Entry::FLAG_P | Entry::FLAG_RW);
-
-                    Ok(())
-                })?;
-            }
+            #[cfg(feature = "framebuffer")]
+            limine::memory_map::EntryType::FRAMEBUFFER => unsafe {
+                let phys_addr = PhysAddr(entry.base as usize);
+                map_page_range(
+                    pml,
+                    phys_addr.add_hhdm_offset(),
+                    phys_addr,
+                    entry.length as usize,
+                    Entry::FLAG_RW,
+                )?;
+            },
+            limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+            | limine::memory_map::EntryType::ACPI_RECLAIMABLE => unsafe {
+                let phys_addr = PhysAddr(entry.base as usize);
+                map_page_range(
+                    pml,
+                    phys_addr.add_hhdm_offset(),
+                    phys_addr,
+                    entry.length as usize,
+                    Entry::FLAG_RW,
+                )?;
+            },
             _ => (),
         }
     }
@@ -161,7 +180,7 @@ pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) -> Result
 
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct PageTable([Entry; 512]);
+pub struct PageTable([Entry; ENTRIES_PER_TABLE]);
 
 // LATETODO: Try to TCE optimize each of the recursive functions
 // LATETODO: Maybe implement `unmap_tree` and `allocate_tree` functions?
@@ -228,7 +247,6 @@ impl PageTable {
             return Err(PagingError::MissingPagingTable(level));
         }
 
-        // Entry -> physical address -> virtual address -> valid &mut PageTable
         let next_table: &mut PageTable = self.0[index].try_into()?;
         next_table.get_entry_specific(virt_addr, level - 1)
     }

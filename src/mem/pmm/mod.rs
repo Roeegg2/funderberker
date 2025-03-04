@@ -65,7 +65,25 @@ impl<'a> BumpAllocator<'a> {
         }
 
         mem_map.iter().for_each(|&entry| {
-            // NOTE: On AMD processors, this is the start of CPU hypertransport memory map
+            // printing entry
+            println!(
+                "start: {:x} len {:x} type {:x}",
+                entry.base,
+                entry.length,
+                match entry.entry_type {
+                    limine::memory_map::EntryType::USABLE => 0,
+                    limine::memory_map::EntryType::RESERVED => 1,
+                    limine::memory_map::EntryType::ACPI_RECLAIMABLE => 2,
+                    limine::memory_map::EntryType::ACPI_NVS => 3,
+                    limine::memory_map::EntryType::BAD_MEMORY => 4,
+                    limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE => 5,
+                    limine::memory_map::EntryType::KERNEL_AND_MODULES => 6,
+                    limine::memory_map::EntryType::FRAMEBUFFER => 7,
+                    _ => 42,
+                }
+            );
+
+            // On AMD processors, this is the start of CPU hypertransport memory map
             #[cfg(feature = "amd")]
             if entry.base == 0xfd00000000 {
                 return;

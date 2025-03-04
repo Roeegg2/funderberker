@@ -4,7 +4,8 @@ use core::arch::asm;
 use limine::BaseRevision;
 use limine::paging;
 use limine::request::{
-    HhdmRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker, RequestsStartMarker,
+    HhdmRequest, KernelAddressRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
+    RequestsStartMarker,
 };
 //use limine::{paging, response::PagingModeResponse};
 
@@ -12,7 +13,10 @@ use limine::request::{
 use limine::request::FramebufferRequest;
 
 use crate::arch::x86_64;
+use crate::mem::HHDM_OFFSET;
 use crate::mem::pmm::BumpAllocator;
+use crate::mem::{PhysAddr, VirtAddr};
+use crate::println;
 use crate::{funderberker_main, print};
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -23,6 +27,9 @@ use crate::{funderberker_main, print};
 #[unsafe(link_section = ".requests")]
 static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
+#[used]
+#[unsafe(link_section = ".requests")]
+static KERNEL_ADDRESS_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
@@ -86,12 +93,22 @@ unsafe extern "C" fn kmain() -> ! {
         #[allow(static_mut_refs)]
         unsafe {
             crate::mem::HHDM_OFFSET = hhdm.offset() as usize;
+            println!("this is HHDM {:x}", HHDM_OFFSET);
         };
     }
 
-    if let Some(mem_map) = MEMORY_MAP_REQUEST.get_response() {
+    if let Some(mem_map) = MEMORY_MAP_REQUEST.get_response()
+        && let Some(kernel_addr) = KERNEL_ADDRESS_REQUEST.get_response()
+    {
         unsafe { BumpAllocator::init_from_limine(mem_map.entries()) };
-        unsafe { x86_64::paging::init_from_limine(mem_map.entries()).unwrap() };
+        unsafe {
+            x86_64::paging::init_from_limine(
+                mem_map.entries(),
+                VirtAddr(kernel_addr.virtual_base() as usize),
+                PhysAddr(kernel_addr.physical_base() as usize),
+            )
+            .unwrap()
+        };
     }
 
     funderberker_main();
