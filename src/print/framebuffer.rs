@@ -289,7 +289,7 @@ impl<'a> FramebufferWriter<'a> {
         let framebuffer = unsafe { self.framebuffer.assume_init_ref() };
 
         y *= framebuffer.pitch();
-        x *= ((framebuffer.bpp() / 8) as u64);
+        x *= (framebuffer.bpp() / 8) as u64;
 
         unsafe { *(framebuffer.addr().add((x + y) as usize) as *mut u32) = color };
     }

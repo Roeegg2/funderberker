@@ -1,6 +1,6 @@
 RUST_PROFILE := debug
 IMAGE_NAME := funderberker
-QEMU := qemu-system-x86_64 -m 4G \
+QEMU := qemu-system-x86_64 \
 		-nographic \
 		-nodefaults \
 		-serial stdio \

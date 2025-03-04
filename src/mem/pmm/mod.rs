@@ -9,7 +9,7 @@ use super::{PageId, PhysAddr, addr_to_page_id, page_id_to_addr};
 pub static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator {
     bitmap: &mut [],
     ptr: 0,
-    bitmap_size: 0,
+    used_bitmap_size: 0,
 };
 
 /// Errors that the bump allocator might encounter
@@ -29,107 +29,10 @@ pub struct BumpAllocator<'a> {
     /// case, we allocate an additional entry that has some entries which aren't used.
     /// NOTE: WHEN EVER REFERING TO ADDERSABLE/VALID ENTRIES, **ALWAYS** USE THIS VALUE. NOT THE
     /// BIMTAP SLICE LENGTH!!!
-    bitmap_size: usize,
+    used_bitmap_size: usize,
 }
 
 impl<'a> BumpAllocator<'a> {
-    /// Initilizes the singleton page bump allocator. SHOULD ONLY BE CALLED ONCE EARLY AT BOOT!
-    #[cfg(feature = "limine")]
-    pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
-        // Get the total page count of memory region
-        let mut page_count: u64 = 0;
-        mem_map.iter().for_each(|&entry| {
-            page_count += entry.length;
-        });
-        page_count /= 0x1000;
-
-        // Calculate bitmap size
-        let bitmap_size = (page_count + 7) / 8;
-        // Allocate space for bitmap
-        let bitmap_entry = mem_map
-            .iter()
-            .find(|&entry| entry.length >= bitmap_size)
-            .expect("Couldn't find memory area to allocate bitmap!");
-
-        // XXX: Unsafe casts here!
-        unsafe {
-            BUMP_ALLOCATOR.bitmap_size = page_count as usize;
-            BUMP_ALLOCATOR.bitmap = {
-                let bitmap_virt_addr = PhysAddr(bitmap_entry.base as usize).add_hhdm_offset();
-                let ptr = core::ptr::without_provenance_mut::<u8>(bitmap_virt_addr.0);
-
-                crate::utils::memset(ptr, 0, bitmap_size as usize);
-
-                from_raw_parts_mut(ptr, bitmap_size as usize)
-            };
-        }
-
-        mem_map.iter().for_each(|&entry| {
-            // printing entry
-            println!(
-                "start: {:x} len {:x} type {:x}",
-                entry.base,
-                entry.length,
-                match entry.entry_type {
-                    limine::memory_map::EntryType::USABLE => 0,
-                    limine::memory_map::EntryType::RESERVED => 1,
-                    limine::memory_map::EntryType::ACPI_RECLAIMABLE => 2,
-                    limine::memory_map::EntryType::ACPI_NVS => 3,
-                    limine::memory_map::EntryType::BAD_MEMORY => 4,
-                    limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE => 5,
-                    limine::memory_map::EntryType::KERNEL_AND_MODULES => 6,
-                    limine::memory_map::EntryType::FRAMEBUFFER => 7,
-                    _ => 42,
-                }
-            );
-
-            // On AMD processors, this is the start of CPU hypertransport memory map
-            #[cfg(feature = "amd")]
-            if entry.base == 0xfd00000000 {
-                return;
-            }
-
-            // Get the range of pages this entry maps
-            let page_range = {
-                let start_id = addr_to_page_id(entry.base as usize).unwrap();
-                let end_id = start_id + addr_to_page_id(entry.length as usize).unwrap();
-
-                start_id..end_id
-            };
-
-            // Mark it as used/unused in the bitmap depending on the type
-            match entry.entry_type {
-                limine::memory_map::EntryType::USABLE
-                | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE => {
-                    page_range.into_iter().for_each(|page| unsafe {
-                        #[allow(static_mut_refs)]
-                        BUMP_ALLOCATOR.bitmap_unset(page)
-                    });
-                }
-                _ => {
-                    page_range.into_iter().for_each(|page| unsafe {
-                        #[allow(static_mut_refs)]
-                        BUMP_ALLOCATOR.bitmap_set(page)
-                    });
-                }
-            }
-        });
-
-        // Set the bitmap range as taken
-        let page_range = {
-            let start_id = addr_to_page_id(bitmap_entry.base as usize).unwrap();
-            let end_id = start_id + ((bitmap_size + 0x1000 - 1) / 0x1000) as PageId;
-
-            start_id..end_id
-        };
-        page_range.into_iter().for_each(|page| unsafe {
-            #[allow(static_mut_refs)]
-            BUMP_ALLOCATOR.bitmap_set(page)
-        });
-
-        log!("PMM Bump allocator initilized successfully");
-    }
-
     /// Index into the bitmap and unset the status of a page
     const fn bitmap_unset(&mut self, index: PageId) {
         self.bitmap[index / 8] &= !(1 << (index % 8));
@@ -151,9 +54,9 @@ impl<'a> BumpAllocator<'a> {
         alignment: usize,
         page_count: usize,
     ) -> Result<PhysAddr, PmmError> {
-        let mut ptr = inc_ring_buff_ptr(self.ptr, 1, self.bitmap_size);
+        let mut ptr = inc_ring_buff_ptr(self.ptr, 1, self.used_bitmap_size);
 
-        if alignment >= self.bitmap_size || alignment == 0 {
+        if alignment >= self.used_bitmap_size || alignment == 0 {
             return Err(PmmError::InvalidAddressAlignment);
         }
 
@@ -165,7 +68,7 @@ impl<'a> BumpAllocator<'a> {
 
             // This is an optimization. Instead of incrememting ptr until it gets to the start
             // of the ring buffer, we set it to 0 now
-            if ptr + page_count >= self.bitmap_size {
+            if ptr + page_count >= self.used_bitmap_size {
                 // Taking care of the case in which if we chose to procede with regular
                 // iteration, we would've encountered self.ptr again
                 if ptr + page_count >= self.ptr {
@@ -179,7 +82,7 @@ impl<'a> BumpAllocator<'a> {
             {
                 let diff = ptr % alignment;
                 if diff != 0 {
-                    ptr = inc_ring_buff_ptr(ptr, diff, self.bitmap_size);
+                    ptr = inc_ring_buff_ptr(ptr, diff, self.used_bitmap_size);
                     continue;
                 }
             }
@@ -187,7 +90,7 @@ impl<'a> BumpAllocator<'a> {
             // Check if all entries are available. If at least one isn't, go next
             for i in 0..page_count {
                 if self.bitmap_get(ptr + i) != 0 {
-                    ptr = inc_ring_buff_ptr(ptr, 1, self.bitmap_size);
+                    ptr = inc_ring_buff_ptr(ptr, 1, self.used_bitmap_size);
                     continue 'main;
                 }
             }
@@ -208,10 +111,10 @@ impl<'a> BumpAllocator<'a> {
 
     /// Tries to free a block of pages of size `page_count` starting at `addr`.
     /// NOTE: `addr` must be a page (4096 bytes) aligned address, otherwise an `PmmError::InvalidAddressAlignment` error is returned.
-    pub fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError> {
+    pub fn _free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddressAlignment)?;
 
-        if id + page_count >= self.bitmap_size {
+        if id + page_count >= self.used_bitmap_size {
             return Err(PmmError::NoAvailableBlock);
         }
 
@@ -227,6 +130,92 @@ impl<'a> BumpAllocator<'a> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "limine")]
+impl<'a> BumpAllocator<'a> {
+    unsafe fn set_for_mem_map_entry(&mut self, base: usize, len: usize) {
+        {
+            let start_id = addr_to_page_id(base).unwrap();
+            let end_id = start_id + ((len + 0xfff) / 0x1000);
+
+            start_id..end_id
+        }
+        .into_iter()
+        .for_each(|page_id| self.bitmap_set(page_id));
+    }
+
+    unsafe fn fill_bitmap(
+        &mut self,
+        mem_map: &[&limine::memory_map::Entry],
+        bitmap_entry: &limine::memory_map::Entry,
+        bitmap_alloc_size: usize,
+    ) {
+        for entry in mem_map {
+            match entry.entry_type {
+                limine::memory_map::EntryType::USABLE
+                | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE => unsafe {
+                    self.set_for_mem_map_entry(entry.base as usize, entry.length as usize)
+                },
+                _ => (),
+            }
+        }
+
+        unsafe { self.set_for_mem_map_entry(bitmap_entry.base as usize, bitmap_alloc_size) };
+    }
+
+    pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
+        unsafe fn new_bitmap_from_limine<'b, 'c>(
+            mem_map: &[&'c limine::memory_map::Entry],
+            bitmap_alloc_size: u64,
+        ) -> (&'b mut [u8], &'c limine::memory_map::Entry) {
+            let bitmap_entry = mem_map
+                .iter()
+                .find(|&entry| match entry.entry_type {
+                    limine::memory_map::EntryType::USABLE
+                    | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+                        if entry.length >= bitmap_alloc_size =>
+                    {
+                        true
+                    }
+                    _ => false,
+                })
+                .expect("Unreachable, can't find entry for bitmap");
+
+            let bitmap = unsafe {
+                let bitmap_virt_addr = PhysAddr(bitmap_entry.base as usize).add_hhdm_offset();
+                let ptr = core::ptr::without_provenance_mut::<u8>(bitmap_virt_addr.0);
+
+                crate::utils::memset(ptr, 1, bitmap_alloc_size as usize);
+
+                from_raw_parts_mut(ptr, bitmap_alloc_size as usize)
+            };
+
+            (bitmap, bitmap_entry)
+        }
+
+        let page_count = {
+            let last_descr = mem_map
+                .iter()
+                .rev()
+                .find(|&entry| entry.base != 0xfd00000000)
+                .unwrap();
+            (last_descr.base + last_descr.length) as usize
+        } / 0x1000;
+
+        unsafe {
+            #[allow(static_mut_refs)]
+            let bitmap_alloc_size = (page_count + 7) / 8;
+            BUMP_ALLOCATOR.used_bitmap_size = page_count;
+
+            let bitmap_entry: &limine::memory_map::Entry;
+            (BUMP_ALLOCATOR.bitmap, bitmap_entry) =
+                new_bitmap_from_limine(mem_map, bitmap_alloc_size as u64);
+
+            #[allow(static_mut_refs)]
+            BUMP_ALLOCATOR.fill_bitmap(mem_map, bitmap_entry, bitmap_alloc_size);
+        }
     }
 }
 

@@ -7,6 +7,7 @@ use core::arch::asm;
 pub use core::arch::x86_64;
 
 /// Wrapper for the 'outb' instruction
+#[cfg(feature = "serial")]
 #[inline]
 pub unsafe fn outb(port: u16, offset: u16, value: u8) {
     unsafe {
@@ -20,6 +21,7 @@ pub unsafe fn outb(port: u16, offset: u16, value: u8) {
 }
 
 /// Wrapper for the 'in' instruction
+#[cfg(feature = "serial")]
 #[inline]
 pub unsafe fn inb(port: u16, offset: u16) -> u8 {
     let res: u8;

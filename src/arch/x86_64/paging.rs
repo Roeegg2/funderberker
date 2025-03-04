@@ -5,8 +5,6 @@ compiler_error!("Can't have both 4 level and 5 level paging. Choose one of the o
 #[cfg(not(any(feature = "paging_4", feature = "paging_5")))]
 compiler_error!("No paging level is selected. Choose one of the options");
 
-use core::ops::Range;
-
 use crate::{
     mem::{PhysAddr, VirtAddr, pmm::PmmError},
     read_cr, write_cr,
@@ -140,11 +138,13 @@ pub unsafe fn init_from_limine(
     for entry in mem_map {
         match entry.entry_type {
             limine::memory_map::EntryType::KERNEL_AND_MODULES => unsafe {
+                println!("before mapping kernel");
                 map_page_range(pml, kernel_virt, kernel_phys, entry.length as usize, 0)?;
             },
             // TODO: Framebuffer only if #[cfg(feature = "framebuffer")]
             #[cfg(feature = "framebuffer")]
             limine::memory_map::EntryType::FRAMEBUFFER => unsafe {
+                println!("before mapping framebuffer");
                 let phys_addr = PhysAddr(entry.base as usize);
                 map_page_range(
                     pml,
@@ -156,6 +156,7 @@ pub unsafe fn init_from_limine(
             },
             limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
             | limine::memory_map::EntryType::ACPI_RECLAIMABLE => unsafe {
+                println!("before mapping reclaimable");
                 let phys_addr = PhysAddr(entry.base as usize);
                 map_page_range(
                     pml,
@@ -347,3 +348,13 @@ impl PageTable {
 
 // TODO:
 // flush tlb
+//
+// TOMORROW:
+// 0. fix running on hardware issue
+// 1. TLB
+// 2. multiple page sizes
+// 3. PCIDE
+//
+// DAY LATER:
+// 0. slab allocator
+// 1. acpi
