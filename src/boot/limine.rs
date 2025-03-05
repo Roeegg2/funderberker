@@ -14,6 +14,7 @@ use limine::request::FramebufferRequest;
 
 use crate::arch::x86_64;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
+use crate::println;
 use crate::{funderberker_main, print};
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -37,12 +38,12 @@ static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // x86_64 and AArch64 share the same modes
 #[used]
 #[unsafe(link_section = ".requests")]
-#[cfg(feature = "paging_4")]
-static PAGING_MODE_REQUEST: PagingModeRequest =
-    PagingModeRequest::new().with_mode(paging::Mode::FOUR_LEVEL);
 #[cfg(feature = "paging_5")]
 static PAGING_MODE_REQUEST: PagingModeRequest =
     PagingModeRequest::new().with_mode(paging::Mode::FIVE_LEVEL);
+#[cfg(feature = "paging_4")]
+static PAGING_MODE_REQUEST: PagingModeRequest =
+    PagingModeRequest::new().with_mode(paging::Mode::FOUR_LEVEL);
 
 #[cfg(feature = "framebuffer")]
 #[used]
@@ -72,40 +73,57 @@ unsafe extern "C" fn kmain() -> ! {
     }
     #[cfg(feature = "framebuffer")]
     {
-        if let Some(framebuffer_reponse) = FRAMEBUFFER_REQUEST.get_response() {
-            #[allow(static_mut_refs)]
-            unsafe {
-                print::framebuffer::FRAMEBUFFER_WRITER
-                    .init(framebuffer_reponse.framebuffers().next().unwrap())
-            };
-        } else {
-            // TODO:
-            // Can't log
-        }
+        let framebuffer_reponse = FRAMEBUFFER_REQUEST
+            .get_response()
+            .expect("Can't get Limine framebuffer feature response");
+        #[allow(static_mut_refs)]
+        unsafe {
+            print::framebuffer::FRAMEBUFFER_WRITER
+                .init_from_limine(framebuffer_reponse.framebuffers().next().unwrap())
+        };
     }
 
     unsafe { crate::arch::init() };
 
-    if let Some(hhdm) = HHDM_REQUEST.get_response() {
-        #[allow(static_mut_refs)]
-        unsafe {
-            crate::mem::HHDM_OFFSET = hhdm.offset() as usize;
-        };
+    let hhdm = HHDM_REQUEST
+        .get_response()
+        .expect("Can't get Limine framebuffer feature response");
+    #[allow(static_mut_refs)]
+    unsafe {
+        crate::mem::HHDM_OFFSET = hhdm.offset() as usize;
+    };
+
+    let mem_map = MEMORY_MAP_REQUEST
+        .get_response()
+        .expect("Can't get Limine memory map feature");
+    let kernel_addr = KERNEL_ADDRESS_REQUEST
+        .get_response()
+        .expect("Can't get Limine kernel address feature");
+    let paging_mode = PAGING_MODE_REQUEST
+        .get_response()
+        .expect("Can't get Limine paging mode feature");
+
+    match paging_mode.mode() {
+        #[cfg(feature = "paging_5")]
+        limine::paging::Mode::FOUR_LEVEL => {
+            panic!("Got 5 level paging even though 4 was requested");
+        }
+        #[cfg(feature = "paging_4")]
+        limine::paging::Mode::FIVE_LEVEL => {
+            panic!("Got 4 level paging even though 5 was requested");
+        }
+        _ => (),
     }
 
-    if let Some(mem_map) = MEMORY_MAP_REQUEST.get_response()
-        && let Some(kernel_addr) = KERNEL_ADDRESS_REQUEST.get_response()
-    {
-        unsafe { pmm::init_from_limine(mem_map.entries()) };
-        unsafe {
-            x86_64::paging::setup_from_limine(
-                mem_map.entries(),
-                VirtAddr(kernel_addr.virtual_base() as usize),
-                PhysAddr(kernel_addr.physical_base() as usize),
-            )
-            .unwrap()
-        };
-    }
+    unsafe { pmm::init_from_limine(mem_map.entries()) };
+    unsafe {
+        x86_64::paging::init_from_limine(
+            mem_map.entries(),
+            VirtAddr(kernel_addr.virtual_base() as usize),
+            PhysAddr(kernel_addr.physical_base() as usize),
+        )
+        .unwrap()
+    };
 
     funderberker_main();
 
@@ -113,7 +131,7 @@ unsafe extern "C" fn kmain() -> ! {
 }
 
 #[panic_handler]
-fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     use crate::println;
 
     println!("{}", info);

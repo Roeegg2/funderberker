@@ -33,7 +33,7 @@ macro_rules! log {
 macro_rules! dbg {
     ($($arg:tt)*) => {{
         #[cfg(debug_assertions)]
-        println!("-> (DEBUG) {}", $($arg)*);
+        log!($($arg)*);
     }}
 }
 

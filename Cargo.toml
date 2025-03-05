@@ -22,7 +22,7 @@ framebuffer = []
 
 # paging modes
 paging_4 = []
-paging_5 = [] # NOT SUPPORTED YET!
+paging_5 = [] # UNTESTED
 
 # PMM page allocator algorithm
 pmm_bump = []

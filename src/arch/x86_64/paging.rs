@@ -19,7 +19,7 @@ use crate::{
 #[cfg(feature = "paging_4")]
 const PAGING_LEVEL: u8 = 4;
 #[cfg(feature = "paging_5")]
-const PAGING_LEVEL: usize = 5;
+const PAGING_LEVEL: u8 = 5;
 
 const ENTRIES_PER_TABLE: usize = 512;
 
@@ -135,19 +135,24 @@ unsafe fn map_page_range(
 }
 
 #[inline]
-unsafe fn init_paging(pml_addr: PhysAddr) {
-    // TODO: Make sure CRs flags are OK
+unsafe fn final_init(pml_addr: PhysAddr) {
+    // TODO: Make sure CRs flags are OK (if we're not booting with Limine)
     write_cr!(cr3, pml_addr.0);
 
     //write_cr!(cr4, )
 }
 
-pub unsafe fn setup_from_limine(
+pub unsafe fn init_from_limine(
     mem_map: &[&memory_map::Entry],
     kernel_virt: VirtAddr,
     kernel_phys: PhysAddr,
 ) -> Result<(), PagingError> {
     let (pml, pml_addr) = PageTable::new()?;
+
+    #[cfg(feature = "paging_5")]
+    (read_cr!(cr4) | (1 << 12) != 0)
+        .then(|| ())
+        .expect("5 level paging requested, but not supported");
 
     for entry in mem_map {
         match entry.entry_type {
@@ -193,7 +198,7 @@ pub unsafe fn setup_from_limine(
         }
     }
 
-    unsafe { init_paging(pml_addr) };
+    unsafe { final_init(pml_addr) };
 
     log!("Setup paging successfully!");
 
