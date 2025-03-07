@@ -4,7 +4,7 @@ use core::mem::MaybeUninit;
 use limine::framebuffer::Framebuffer;
 
 /// Errors the framebuffer might encounter
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum FramebufferError {
     /// Encountered an invalid character
     InvalidCharacter,

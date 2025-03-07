@@ -5,7 +5,7 @@ use super::PhysAddr;
 mod bump;
 
 /// Errors that the PMM might encounter
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PmmError {
     OutOfBounds,
     NoAvailableBlock,
@@ -23,7 +23,7 @@ pub fn get() -> &'static mut impl PmmAllocator {
     }
 }
 
-/// Initilizes the used PMM form limine
+/// Initilizes the used PMM from limine
 #[cfg(feature = "limine")]
 pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
     #[cfg(feature = "pmm_bump")]
@@ -42,7 +42,7 @@ pub trait PmmAllocator {
 
     /// Tries to free a contiguous block of pages.
     #[allow(dead_code)]
-    fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError>;
+    unsafe fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError>;
 
     /// Returns true if a page if free, false if it's not. If an error is encountered, an error is
     /// returned.

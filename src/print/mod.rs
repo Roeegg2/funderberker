@@ -29,14 +29,6 @@ macro_rules! log {
     }}
 }
 
-#[macro_export]
-macro_rules! dbg {
-    ($($arg:tt)*) => {{
-        #[cfg(debug_assertions)]
-        log!($($arg)*);
-    }}
-}
-
 impl core::fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         #[cfg(feature = "serial")]

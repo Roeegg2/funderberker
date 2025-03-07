@@ -1,4 +1,4 @@
-RUST_PROFILE := debug
+RUST_PROFILE := release
 IMAGE_NAME := funderberker
 QEMU := qemu-system-x86_64 \
 		-nographic \

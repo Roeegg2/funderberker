@@ -169,6 +169,9 @@ pub unsafe fn init_from_limine(
                 )
             }?,
 
+            // TODO: Instead of just mapping THE WHOLE physical address as HHDM, just map the page
+            // tables + ACPI tables. When the kernel will need more memory, it'll ask for it to be
+            // mapped regurarly with HHDM offset
             memory_map::EntryType::ACPI_RECLAIMABLE
             | memory_map::EntryType::BOOTLOADER_RECLAIMABLE
             | memory_map::EntryType::USABLE => unsafe {
@@ -362,7 +365,7 @@ impl PageTable {
             // HHDM convert PhysAddr -> VirtAddr and then to a viable pointer
             let ptr = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
             // Important! Memset to get rid of old data
-            crate::utils::memset(ptr, 0, 0x1000);
+            crate::lib::mem::memset(ptr, 0, 0x1000);
 
             // TODO: Change this error to something more meaningfull
             (ptr as *mut PageTable)
