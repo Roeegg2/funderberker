@@ -35,15 +35,18 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[unsafe(link_section = ".requests")]
 static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
+#[cfg(feature = "paging_4")]
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // x86_64 and AArch64 share the same modes
 #[used]
 #[unsafe(link_section = ".requests")]
-#[cfg(feature = "paging_5")]
-static PAGING_MODE_REQUEST: PagingModeRequest =
-    PagingModeRequest::new().with_mode(paging::Mode::FIVE_LEVEL);
-#[cfg(feature = "paging_4")]
 static PAGING_MODE_REQUEST: PagingModeRequest =
     PagingModeRequest::new().with_mode(paging::Mode::FOUR_LEVEL);
+#[cfg(feature = "paging_5")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // x86_64 and AArch64 share the same modes
+#[used]
+#[unsafe(link_section = ".requests")]
+static PAGING_MODE_REQUEST: PagingModeRequest =
+    PagingModeRequest::new().with_mode(paging::Mode::FIVE_LEVEL);
 
 #[cfg(feature = "framebuffer")]
 #[used]

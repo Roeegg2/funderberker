@@ -5,7 +5,7 @@ use super::PhysAddr;
 mod bump;
 
 /// Errors that the PMM might encounter
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PmmError {
     OutOfBounds,
     NoAvailableBlock,
