@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(let_chains)]
+#![feature(nonnull_provenance)]
 
 mod boot;
 #[macro_use]

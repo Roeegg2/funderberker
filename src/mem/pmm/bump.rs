@@ -108,7 +108,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
     }
 
     /// NOTE: `addr` must be a page (4096 bytes) aligned address, otherwise an `PmmError::InvalidAddressAlignment` error is returned.
-    fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), super::PmmError> {
+    unsafe fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
         // For each page ID in the range, try freeing the value. If an error is encountered, stop

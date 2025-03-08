@@ -169,6 +169,9 @@ pub unsafe fn init_from_limine(
                 )
             }?,
 
+            // TODO: Instead of just mapping THE WHOLE physical address as HHDM, just map the page
+            // tables + ACPI tables. When the kernel will need more memory, it'll ask for it to be
+            // mapped regurarly with HHDM offset
             memory_map::EntryType::ACPI_RECLAIMABLE
             | memory_map::EntryType::BOOTLOADER_RECLAIMABLE
             | memory_map::EntryType::USABLE => unsafe {

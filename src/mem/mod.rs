@@ -1,5 +1,5 @@
 pub mod pmm;
-pub mod slab;
+pub mod vmm;
 
 pub static mut HHDM_OFFSET: usize = 0;
 
