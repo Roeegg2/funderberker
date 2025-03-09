@@ -9,7 +9,7 @@ mod boot;
 mod print;
 mod arch;
 mod mem;
-pub mod utils;
+pub mod lib;
 
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() {
