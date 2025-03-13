@@ -1,4 +1,5 @@
 //! Bitmap data structure and wrappers
+// TODO: Add memsetting, iter, etc
 
 pub struct Bitmap<'a> {
     entries: &'a mut [u8],
@@ -18,7 +19,7 @@ impl<'a> Bitmap<'a> {
     }
 
     /// Construct a new bitmap
-    pub const fn new(entries: &'a mut[u8], used_bits_count: usize) -> Self {
+    pub const fn new(entries: &'a mut [u8], used_bits_count: usize) -> Self {
         Self {
             entries,
             used_bits_count,

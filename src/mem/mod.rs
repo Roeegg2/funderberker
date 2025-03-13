@@ -1,3 +1,5 @@
+use core::ptr::NonNull;
+
 pub mod pmm;
 pub mod vmm;
 
@@ -23,6 +25,11 @@ impl<T> From<*const T> for VirtAddr {
 impl<T> From<*mut T> for VirtAddr {
     fn from(value: *mut T) -> Self {
         Self(value.addr())
+    }
+}
+impl<T> From<NonNull<T>> for VirtAddr {
+    fn from(value: NonNull<T>) -> Self {
+        Self(value.as_ptr().addr())
     }
 }
 

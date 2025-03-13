@@ -207,8 +207,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
             let bitmap_alloc_size = (page_count + 7) / 8;
 
             // Find a suitable bitmap & initilize it with 1's
-            let (bitmap, bitmap_entry) =
-                new_bitmap_from_limine(mem_map, bitmap_alloc_size as u64);
+            let (bitmap, bitmap_entry) = new_bitmap_from_limine(mem_map, bitmap_alloc_size as u64);
 
             // Set the actual bitmap size to the page count, since these are the pages we can
             // actually use
