@@ -3,7 +3,6 @@
 use core::{alloc::{GlobalAlloc, Layout}, array, cell::UnsafeCell, ffi::c_void, mem::MaybeUninit, ptr::{null_mut, NonNull}};
 use crate::mem::vmm::slab::SlabAllocator;
 
-
 #[global_allocator]
 pub(super) static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocator::new();
 

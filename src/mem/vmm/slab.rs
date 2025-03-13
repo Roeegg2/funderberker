@@ -1,6 +1,5 @@
 use core::{ffi::c_void, ptr::NonNull, slice::from_raw_parts_mut, usize};
-
-use crate::lib::linked_list::{self, LinkedList};
+use alloc::collections::linked_list::LinkedList;
 
 trait SlabConstructable {
     fn slab_init() {}
@@ -111,42 +110,14 @@ impl SlabAllocator {
     }
 
     pub fn alloc(&mut self) -> Option<NonNull<c_void>> {
-        while let Some(mut slab) = self.partial_slabs.front() {
-            let ret = slab.alloc()?;
-            if slab.obj_count() == 0 {
-                self.partial_slabs.
-                //self.full_slabs.push_front(self.partial_slabs.pop_front()?);
-                //self.partial_slabs = partial.next;
-                //partial.next = self.full_slabs;
-                //self.full_slabs = Some(partial_ptr);
-            }
-
-            return ret;
-        }
-
-        if self.free_slabs.is_none() {
-            self.cache_grow();
-        }
-
-        let mut free_ptr = self.free_slabs.expect("Something is fucked up with cache_grow");
-        let free = unsafe {free_ptr.as_mut()};
-        let ret = free.alloc();
-
-        self.free_slabs = free.next;
-        free.next = self.partial_slabs;
-        self.partial_slabs = Some(free_ptr);
-
-        ret
-        // if there are partial slabs left:
-        //      return partial slab.alloc
-        //      len--
-        // else if there are free slabs:
-        //      return free slab.alloc
-        //      move that slab to partial list
-        //      len--
-        // else:
-        //      call cache grow
-        //      goto if there are free slabs...
+        // try finding a slab from partial_slabs, and then try allocating from it. if you encounter
+        // an error then return it.
+        // otherwise, convert the allocated value to a Box and return it
+        // if the new len is now 0, move the slab to full
+        // try doing the same for free_slab (except after allocating, move the slab to the partial
+        // slab list)
+        //
+        // otherwise, return error
     }
 
     pub unsafe fn free(&mut self, ptr: NonNull<c_void>) -> Option<()> {
