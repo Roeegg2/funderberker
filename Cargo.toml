@@ -29,3 +29,9 @@ paging_5 = [] # UNTESTED
 # PMM page allocator algorithm
 pmm_bump = []
 pmm_buddy = [] # NOT SUPPORTED YET!
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

@@ -1,5 +1,9 @@
-use core::{ffi::c_void, ptr::NonNull, slice::from_raw_parts_mut, usize};
-use alloc::collections::linked_list::LinkedList;
+use alloc::boxed::Box;
+use core::{alloc::Layout, ffi::c_void, ptr::NonNull, usize};
+
+use crate::utils::stacklist::{Node, StackList};
+
+use crate::arch::x86_64::paging::PagingError;
 
 trait SlabConstructable {
     fn slab_init() {}
@@ -11,24 +15,44 @@ trait SlabConstructable {
 //
 //}
 
-static mut SLAB_SLAB_ALLOCATOR: SlabAllocator = SlabAllocator::new(size_of::<Slab>(), true);
+static mut SLAB_SLAB_ALLOCATOR: SlabAllocator =
+    SlabAllocator::new(Layout::new::<Node<Slab>>(), ObjectStoringScheme::Embedded);
 
-//static mut SLAB_OBJECT_ALLOCATOR: SlabAllocator = SlabAllocator {
-//    free_slabs: None,
-//    partial_slabs: None,
-//    full_slabs: None,
-//    obj_size: size_of::<Object>()
-//};
+static mut SLAB_OBJECT_ALLOCATOR: SlabAllocator =
+    SlabAllocator::new(Layout::new::<Node<Object>>(), ObjectStoringScheme::Embedded);
+
+/// Represents the way the slab allocator will store the `Object` structs, each of which represent a free object available for allocation in the slab.
+#[derive(Debug, Copy, Clone)]
+pub enum ObjectStoringScheme {
+    /// Embed the `Object` struct inside the object's buffer.
+    /// This makes the slab allocator more memory efficient, but in turn makes the slab allocator
+    /// not able to pre initialize the objects.
+    Embedded,
+    /// Store the `Object` struct in a separate buffer.
+    /// This makes the slab allocator less memory efficient, but in turn makes the slab allocator
+    /// able to pre initialize the objects, thus saving precious CPU cycles, performing trivial
+    /// initilizations.
+    External,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum SlabError {
+    BadPtrAlignment,
+    BadPtrRange,
+    DoubleFree,
+    SlabFullInternalError,
+    PageAllocationError(PagingError),
+}
 
 pub struct SlabAllocator {
-    free_slabs: LinkedList<Slab>,
-    partial_slabs: LinkedList<Slab>,
-    full_slabs: LinkedList<Slab>,
+    free_slabs: StackList<Slab>,
+    partial_slabs: StackList<Slab>,
+    full_slabs: StackList<Slab>,
     pages_per_slab: usize,
-    obj_size: usize,
+    obj_layout: Layout,
     obj_count: usize,
     slab_embed: bool,
-    obj_embed: bool,
+    obj_storing_scheme: ObjectStoringScheme,
 }
 
 impl SlabAllocator {
@@ -57,7 +81,7 @@ impl SlabAllocator {
         //    r - d * x       1
         // -------------- <= ---
         // 0x1000 * c * x     8
-        // 
+        //
         // (where `x` is the amount of `c` blocks we want to find)
         //
         // To this:
@@ -70,179 +94,202 @@ impl SlabAllocator {
         // And then after we calculated x, to get the actual final page amount we return
         // (rounded up `x`) * c
         //
-        usize::div_ceil(r, (512*c) + d) * c
+        usize::div_ceil(r, (512 * c) + d) * c
     }
 
     const fn calc_slab_embed_n_obj_count(pages_per_slab: usize, obj_size: usize) -> (bool, usize) {
-        let slab_embed =(pages_per_slab * 0x1000 % obj_size) >= size_of::<Slab>(); 
+        //let slab_embed = (pages_per_slab * 0x1000 % obj_size) >= size_of::<Slab>();
+        let slab_embed = true;
         if slab_embed {
-            return (slab_embed, ((pages_per_slab * 0x1000)-size_of::<Slab>()) / obj_size);
+            return (
+                slab_embed,
+                ((pages_per_slab * 0x1000) - size_of::<Slab>()) / obj_size,
+            );
         }
-        
-        (slab_embed,(pages_per_slab * 0x1000) / obj_size)
+
+        (slab_embed, (pages_per_slab * 0x1000) / obj_size)
     }
 
-    //fn init(&mut self, obj_size: usize) {
-    //    self.obj_size = obj_size;
-    //    self.full_slabs = None;
-    //    self.partial_slabs = None;
-    //    self.
-    //    //self.free_slabs = ;
-    //}
+    pub const fn new(layout: Layout, obj_storing_scheme: ObjectStoringScheme) -> SlabAllocator {
+        let pages_per_slab = Self::calc_pages_per_slab(layout.size());
+        let (slab_embed, obj_count) =
+            Self::calc_slab_embed_n_obj_count(pages_per_slab, layout.size());
 
-    pub const fn new(obj_size: usize, obj_embed: bool) -> SlabAllocator {
-        let pages_per_slab = Self::calc_pages_per_slab(obj_size);
-        let (slab_embed, obj_count) = Self::calc_slab_embed_n_obj_count(pages_per_slab, obj_size);
         SlabAllocator {
-            full_slabs: LinkedList::new(),
-            partial_slabs: LinkedList::new(),
-            free_slabs: LinkedList::new(),
+            full_slabs: StackList::new(),
+            partial_slabs: StackList::new(),
+            free_slabs: StackList::new(),
             pages_per_slab,
-            obj_size,
+            obj_layout: layout,
             obj_count,
             slab_embed,
-            obj_embed,
+            obj_storing_scheme,
         }
-        // set obj_size
-        // full_slabs = None
-        // partial_slabs = None
-        // cache_grow() // to set free_slabs
     }
 
-    pub fn alloc(&mut self) -> Option<NonNull<c_void>> {
-        // try finding a slab from partial_slabs, and then try allocating from it. if you encounter
-        // an error then return it.
-        // otherwise, convert the allocated value to a Box and return it
-        // if the new len is now 0, move the slab to full
-        // try doing the same for free_slab (except after allocating, move the slab to the partial
-        // slab list)
-        //
-        // otherwise, return error
-    }
+    pub fn alloc(&mut self) -> Result<NonNull<c_void>, SlabError> {
+        // First, try allocating from the partial slabs
+        if let Some(slab_node) = self.partial_slabs.front_mut() {
+            if let ret @ Ok(_) = slab_node.alloc() {
+                // If the allocation resulted in the slab being empty, move it to the full slabs
+                if slab_node.objects.is_empty() {
+                    // move top slab from partial to full
+                    unsafe {
+                        let slab = Box::into_non_null(self.partial_slabs.pop_front_node().unwrap());
+                        // doesn't matter if we push to front or back
+                        self.full_slabs.push_front_node(slab);
+                    };
+                }
 
-    pub unsafe fn free(&mut self, ptr: NonNull<c_void>) -> Option<()> {
-        let curr_slab_opt = self.full_slabs;
-        while let Some(mut slab_ptr) = curr_slab_opt {
-            let slab = unsafe {slab_ptr.as_mut()};
-            if ptr.addr() >= slab.ptr.addr() && ptr.as_ptr().addr() < slab.ptr.as_ptr().addr() + self.pages_per_slab * 0x1000 {
+                return ret;
+            }
+        }
+
+        // If also the free slabs are all empty, grow the cache
+        if self.free_slabs.is_empty() {
+            self.cache_grow()?;
+        }
+
+        // Try allocating from a free slab
+        if let Some(slab_node) = self.free_slabs.front_mut() {
+            if let ret @ Ok(_) = slab_node.alloc() {
+                // If the allocation was successful, move the slab to the partial slabs
                 unsafe {
-                    super::kalloc::kfree_pages(ptr, self.pages_per_slab)
+                    let slab = Box::into_non_null(self.free_slabs.pop_front_node().unwrap());
+                    self.partial_slabs.push_front_node(slab);
                 };
+                return ret;
             }
         }
-        // for each full_slab:
-        //      if it's in the slabs range:
-        //          call free on the slab with that address
-        //          move full to partial
-        //          return
-        // for each partial_slab:
-        //      if it's in the slabs range:
-        //          call free on the slab with that daddress
-        //          if new count is 0, move slab to free
-        //          return
-        // error
+
+        unreachable!("No slab was able to allocate an object!");
     }
 
+    pub unsafe fn free(&mut self, ptr: NonNull<c_void>) -> Result<(), SlabError> {
+        // TODO: Maybe trying the partial slabs first would be better?
+
+        // Make sure `ptr` alignment is correct
+        if ptr.as_ptr() as usize % self.obj_layout.align() != 0 {
+            return Err(SlabError::BadPtrAlignment);
+        }
+
+        // Check if the slab to whom `ptr` belongs is in the full slabs list
+        for slab in self.full_slabs.iter_mut() {
+            if slab.ptr <= ptr && ptr < unsafe { slab.ptr.add(self.pages_per_slab * 0x1000) } {
+                // If it is, free the object and move the slab to the partial slabs
+                unsafe { slab.free(ptr) }?;
+                unsafe {
+                    let slab = Box::into_non_null(self.full_slabs.pop_front_node().unwrap());
+                    self.partial_slabs.push_front_node(slab);
+                };
+
+                return Ok(());
+            }
+        }
+
+        // Check the partial slabs
+        for slab in self.partial_slabs.iter_mut() {
+            if slab.ptr <= ptr && ptr < unsafe { slab.ptr.add(self.pages_per_slab * 0x1000) } {
+                // Again, free the ptr. Then check if the slab is now completely free, and if so,
+                // move it to the free slabs
+                unsafe { slab.free(ptr) }?;
+                if slab.objects.len() == self.obj_count {
+                    unsafe {
+                        let slab = Box::into_non_null(self.partial_slabs.pop_front_node().unwrap());
+                        self.free_slabs.push_front_node(slab);
+                    };
+                }
+
+                return Ok(());
+            }
+        }
+
+        // Some invalid address was passed
+        Err(SlabError::BadPtrRange)
+    }
+
+    // TODO: Maybe pass in the amount of memory needed instead of freeing everything?
     pub fn reap(&mut self) {
-        if self.slab_embed {
-            while let Some(free_slab) = self.free_slabs {
-                unsafe {super::kalloc::kfree_pages(free_slab.cast::<c_void>(), self.pages_per_slab)};
-            }
-        } else {
-            unreachable!("only support for slab embed reap");
+        while let Some(slab) = self.free_slabs.pop_front() {
+            unsafe { super::kernel::free_pages(slab.ptr.cast::<c_void>(), self.pages_per_slab) }
+                .unwrap();
         }
-        // for each node in `free_slabs` list:
-        //      SLAB_SLAB_ALLOCATOR.free(node)
     }
 
-    pub fn cache_grow(&mut self) -> Option<()> {
-        let ptr = super::kalloc::kalloc_pages_any(self.pages_per_slab, 1).ok()?;
+    pub fn cache_grow(&mut self) -> Result<(), SlabError> {
+        println!("pages_per_slab: {}", self.pages_per_slab);
+        let ptr = super::kernel::alloc_pages_any(self.pages_per_slab, 1)
+            .map_err(|e| SlabError::PageAllocationError(e))?;
 
-        let mut slab_ptr: NonNull<Slab>;
+        let mut slab_ptr: NonNull<Node<Slab>>;
         if self.slab_embed {
+            let offset_to_slab = self.pages_per_slab * 0x1000 - size_of::<Node<Slab>>();
             // SAFETY: This is OK since ptr is pointing to a valid, contigious memory of
-            // `self.pages_per_slab` bytes.
-            let offset_to_slab = self.obj_count * self.obj_size;
-            slab_ptr = unsafe {
-                ptr.cast::<u8>().add(offset_to_slab).cast::<Slab>()
-            };
+            slab_ptr = unsafe { ptr.cast::<u8>().add(offset_to_slab).cast::<Node<Slab>>() };
         } else {
             unreachable!("only support for slab embed cache grow");
-            //slab_ptr = unsafe {SLAB_SLAB_ALLOCATOR.alloc().cast::<Slab>()};
         }
 
-        unsafe {*(slab_ptr.as_mut()) = Slab::new(ptr.cast::<Object>(), self.obj_count, self.obj_embed, self.free_slabs)?};
+        unsafe {
+            *(slab_ptr.as_mut()) = Node::<Slab>::new(Slab::new(
+                ptr.cast::<u8>(),
+                self.obj_count,
+                self.obj_layout.size(),
+            ))
+        };
 
-        self.free_slabs = Some(slab_ptr);
+        unsafe { self.free_slabs.push_front_node(slab_ptr) };
 
-        Some(())
-        // if obj_size < 2MB * 1/8:
-        //      set end of page to Slab struct
-        // else
-        //      call SLAB_SLAB_ALLOCATOR.alloc()
-        // call slab::new()
-        // add the returned slab to the free slab list
-        //
-        //
+        Ok(())
     }
 }
+
+type Object = c_void;
 
 struct Slab {
     ptr: NonNull<c_void>,
-    objects: Option<NonNull<Object>>,
-    obj_count: usize,
-    next: Option<NonNull<Slab>>,
+    objects: StackList<Object>,
 }
 
 impl Slab {
-    fn new(ptr: NonNull<Object>, obj_count: usize, obj_embed: bool, next: Option<NonNull<Slab>>) -> Option<Slab> {
-        let objects = unsafe { from_raw_parts_mut(ptr.as_ptr(), obj_count) };
-        if obj_embed {
-            for i in 0..obj_count-1 {
-                objects[i].next = Some(NonNull::<Object>::new(core::ptr::from_mut(&mut objects[i+1]))?); 
+    #[inline]
+    fn new(ptr: NonNull<u8>, obj_count: usize, obj_size: usize) -> Slab {
+        let mut objects = StackList::new();
+        for i in 0..obj_count {
+            unsafe {
+                let node = ptr.add(i * obj_size).cast::<Node<Object>>();
+                objects.push_front_node(node);
             }
-            objects[obj_count-1].next = None;
-        } else {
-            todo!("Implement not embeding Object inside itself!");
         }
 
-        Some(Self {
+        Self {
             ptr: ptr.cast::<c_void>(),
-            objects: Some(NonNull::<Object>::new(objects.as_mut_ptr())?),
-            obj_count,
-            next,
-        })
-        // ptr = alloc new page(s)
-        // for each obj:
-        //      add new entry to objects lists
-        //      call slab_init on that object
-        //
+            objects,
+        }
     }
 
     // TODO: Add support for not embedded objects
-    fn alloc(&mut self) -> Option<NonNull<c_void>> {
-        let ret = self.objects?; 
-        self.objects = unsafe {ret.as_ref().next};
-        self.obj_count -= 1;
-        Some(ret.cast::<c_void>())
-        // return the head of `objects` list
+    fn alloc(&mut self) -> Result<NonNull<c_void>, SlabError> {
+        self.objects
+            .pop_front_node()
+            .map(|node| Box::into_non_null(node).cast::<c_void>())
+            .ok_or(SlabError::SlabFullInternalError)
     }
 
-    unsafe fn free(&mut self, ptr: NonNull<c_void>) {
-        let mut new_obj = ptr.cast::<Object>();
-        unsafe {new_obj.as_mut()}.next = self.objects;
-        self.objects = Some(new_obj);
-        self.obj_count -= 1;
-        // add node to end of `object` list
-    }
+    unsafe fn free(&mut self, ptr: NonNull<c_void>) -> Result<(), SlabError> {
+        if self
+            .objects
+            .iter()
+            .find(|&node| core::ptr::from_ref(node).addr() == ptr.addr().into())
+            .is_some()
+        {
+            return Err(SlabError::DoubleFree); // Double free
+        }
 
-    const fn obj_count(&self) -> usize {
-        self.obj_count
+        println!("freeing ptr: {:?}", ptr);
+
+        unsafe { self.objects.push_front_node(ptr.cast::<Node<Object>>()) };
+
+        Ok(())
     }
 }
-
-struct Object {
-    next: Option<NonNull<Object>>,
-}
-
-

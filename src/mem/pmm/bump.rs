@@ -6,7 +6,7 @@ use limine::memory_map;
 
 use super::super::{PageId, addr_to_page_id, page_id_to_addr};
 use super::{PhysAddr, PmmAllocator, PmmError};
-use crate::lib::bitmap::Bitmap;
+use crate::utils::bitmap::Bitmap;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// Singleton instance of the bump allocator
@@ -175,7 +175,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                 let ptr = core::ptr::without_provenance_mut::<u8>(bitmap_virt_addr.0);
 
                 // Set all of memory to taken by default
-                crate::lib::mem::memset(ptr, Bitmap::BLOCK_TAKEN, bitmap_alloc_size as usize);
+                crate::utils::mem::memset(ptr, Bitmap::BLOCK_TAKEN, bitmap_alloc_size as usize);
                 // Convert to a bitmap slice
                 from_raw_parts_mut(ptr, bitmap_alloc_size as usize)
             };

@@ -23,7 +23,7 @@ const PAGING_LEVEL: u8 = 5;
 
 const ENTRIES_PER_TABLE: usize = 512;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum PagingError {
     /// All entries are marked as full even though the PT is said to have free slots (AVL bits aren't set)
     UnexpectedlyTableFull(u8),
@@ -365,7 +365,7 @@ impl PageTable {
             // HHDM convert PhysAddr -> VirtAddr and then to a viable pointer
             let ptr = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
             // Important! Memset to get rid of old data
-            crate::lib::mem::memset(ptr, 0, 0x1000);
+            crate::utils::mem::memset(ptr, 0, 0x1000);
 
             // TODO: Change this error to something more meaningfull
             (ptr as *mut PageTable)

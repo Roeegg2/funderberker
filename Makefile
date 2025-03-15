@@ -1,4 +1,4 @@
-RUST_PROFILE := release
+RUST_PROFILE := debug
 IMAGE_NAME := funderberker
 QEMU := qemu-system-x86_64 \
 		-nographic \
@@ -44,7 +44,8 @@ test:
 .PHONY: clean
 clean:
 	cargo clean
-	rm funderberker
+	rm funderberker.iso
+	rm -rf iso_root
 
 # Getting UEFI firmware code
 ovmf/ovmf-code-x86_64.fd:
