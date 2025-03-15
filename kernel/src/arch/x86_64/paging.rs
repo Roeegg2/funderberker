@@ -365,7 +365,7 @@ impl PageTable {
             // HHDM convert PhysAddr -> VirtAddr and then to a viable pointer
             let ptr = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
             // Important! Memset to get rid of old data
-            crate::utils::mem::memset(ptr, 0, 0x1000);
+            utils::mem::memset(ptr, 0, 0x1000);
 
             // TODO: Change this error to something more meaningfull
             (ptr as *mut PageTable)

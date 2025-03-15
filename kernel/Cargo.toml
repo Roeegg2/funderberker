@@ -1,15 +1,15 @@
 [package]
-name = "funderberker"
+name = "kernel"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 limine = { version = "0.3.1", optional = true }
-
 alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc"}
+utils = { path = "../utils" }
 
 [features]
-default = ["limine", "amd", "serial", "paging_4", "pmm_bump"]
+default = ["limine", "amd", "framebuffer", "paging_4", "pmm_bump"]
 
 # x86_64 CPU vendors
 intel = []

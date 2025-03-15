@@ -1,5 +1,5 @@
+TEST_CRATES := utils
 RUST_PROFILE := debug
-IMAGE_NAME := funderberker
 QEMU := qemu-system-x86_64 \
 		-nographic \
 		-nodefaults \
@@ -7,45 +7,47 @@ QEMU := qemu-system-x86_64 \
 		-no-reboot \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
-		-cdrom $(IMAGE_NAME).iso
+		-cdrom funderberker.iso
 
 # Actually build Funderberker
 .PHONY: funderberker
 funderberker:
 ifeq ($(RUST_PROFILE), debug)
-	RUSTFLAGS="-C relocation-model=static" cargo +nightly build --target x86_64-unknown-none
-	cp target/x86_64-unknown-none/debug/funderberker funderberker
+	cd kernel && RUSTFLAGS="-C relocation-model=static" cargo +nightly build --target x86_64-unknown-none
 else ifeq ($(RUST_PROFILE), release)
-	RUSTFLAGS="-C relocation-model=static" cargo +nightly build --release --target x86_64-unknown-none
-	cp target/x86_64-unknown-none/release/funderberker funderberker
+	cd kernel && RUSTFLAGS="-C relocation-model=static" cargo +nightly build --release --target x86_64-unknown-none
 else
 	exit
 endif
+	cp kernel/target/x86_64-unknown-none/$(RUST_PROFILE)/kernel funderberker
 
 .PHONY: build
-build: $(IMAGE_NAME).iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
+build: funderberker.iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
 
 # Build & run with QEMU
 .PHONY: run
-run: $(IMAGE_NAME).iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
+run: funderberker.iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
 	$(QEMU)
 
 # Build & run with QEMU logging stuff
 .PHONY: debug
-debug: $(IMAGE_NAME).iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
+debug: funderberker.iso ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd
 	$(QEMU) -d in_asm,int -D qemu.log
 
 # unit test
 .PHONY: test
 test: 
-	RUSTFLAGS="-C relocation-model=static" cargo +nightly test --features test
+	for crate in $(TEST_CRATES); do \
+		(cd $$crate && cargo test) \
+	done
 
 # Clean everything
 .PHONY: clean
 clean:
-	cargo clean
+	rm funderberker
 	rm funderberker.iso
 	rm -rf iso_root
+	cd kernel && cargo clean
 
 # Getting UEFI firmware code
 ovmf/ovmf-code-x86_64.fd:
@@ -63,7 +65,7 @@ limine/limine:
 	$(MAKE) -C limine
 
 # Create the ISO
-$(IMAGE_NAME).iso: funderberker limine/limine
+funderberker.iso: funderberker limine/limine
 	rm -rf iso_root
 	mkdir -p iso_root/boot
 	cp -v funderberker iso_root/boot/
@@ -77,5 +79,5 @@ $(IMAGE_NAME).iso: funderberker limine/limine
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o $(IMAGE_NAME).iso
-	./limine/limine bios-install $(IMAGE_NAME).iso
+		iso_root -o funderberker.iso
+	./limine/limine bios-install funderberker.iso

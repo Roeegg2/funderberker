@@ -6,7 +6,12 @@ use core::{
     ptr::NonNull,
 };
 
+#[cfg(not(test))]
 use alloc::boxed::Box;
+#[cfg(not(test))]
+extern crate alloc;
+#[cfg(test)]
+use std::boxed::Box;
 
 pub struct Iter<'a, T: 'a> {
     head: Option<NonNull<Node<T>>>,

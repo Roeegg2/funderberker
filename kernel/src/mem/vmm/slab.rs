@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::{alloc::Layout, ffi::c_void, ptr::NonNull, usize};
 
-use crate::utils::stacklist::{Node, StackList};
+use utils::collections::stacklist::{Node, StackList};
 
 use crate::arch::x86_64::paging::PagingError;
 

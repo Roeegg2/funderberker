@@ -1,6 +1,7 @@
 //! A global heap allocator for the kernel. Structured as a bunch of uninitable object slab allocators
 
-use crate::mem::vmm::slab::{SlabAllocator, ObjectStoringScheme};
+use super::slab::{SlabAllocator, ObjectStoringScheme};
+
 use core::{
     alloc::{GlobalAlloc, Layout},
     cell::UnsafeCell,
@@ -51,7 +52,6 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Use the allocator that is closest to the total size layout requires
         let index = layout.size().next_power_of_two().ilog2() as usize;
-        println!("index is {}", index);
         // Try accessing allocators, and then also try to allocate
         if let Some(allocators) = unsafe { self.0.get().as_mut() }
             && let Ok(ptr) = allocators[index].alloc()

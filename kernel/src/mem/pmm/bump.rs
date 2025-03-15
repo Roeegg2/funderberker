@@ -6,14 +6,13 @@ use limine::memory_map;
 
 use super::super::{PageId, addr_to_page_id, page_id_to_addr};
 use super::{PhysAddr, PmmAllocator, PmmError};
-use crate::utils::bitmap::Bitmap;
+use utils::collections::bitmap::Bitmap;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// Singleton instance of the bump allocator
 pub(super) static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator {
     bitmap: Bitmap::uninit(),
     ptr: 0,
-    //used_bitmap_size: 0,
 };
 
 /// Singleton ring-buffer bump allocator implemented using bitmap
@@ -22,11 +21,6 @@ pub(super) struct BumpAllocator<'a> {
     bitmap: Bitmap<'a>,
     /// The ring buffer ptr for finding new pages to allocate
     ptr: PageId,
-    ///// The size of the used bitmap. Amount of pages doesn't have to be 8 aligned, and in such
-    ///// case, we allocate an additional entry that has some entries which aren't used.
-    ///// NOTE: WHEN EVER REFERING TO ADDERSABLE/VALID ENTRIES, **ALWAYS** USE THIS VALUE. NOT THE
-    ///// BIMTAP SLICE LENGTH!!!
-    ////used_bitmap_size: usize,
 }
 
 impl<'a> PmmAllocator for BumpAllocator<'a> {
@@ -175,7 +169,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                 let ptr = core::ptr::without_provenance_mut::<u8>(bitmap_virt_addr.0);
 
                 // Set all of memory to taken by default
-                crate::utils::mem::memset(ptr, Bitmap::BLOCK_TAKEN, bitmap_alloc_size as usize);
+                utils::mem::memset(ptr, Bitmap::BLOCK_TAKEN, bitmap_alloc_size as usize);
                 // Convert to a bitmap slice
                 from_raw_parts_mut(ptr, bitmap_alloc_size as usize)
             };

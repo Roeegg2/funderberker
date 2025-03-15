@@ -11,7 +11,6 @@ mod boot;
 mod print;
 mod arch;
 mod mem;
-pub mod utils;
 
 use alloc::boxed::Box;
 

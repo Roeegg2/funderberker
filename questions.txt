@@ -1,3 +1,0 @@
-1. how often do new invocations really initilize a value to something known beforehand?
-  (IE. mutex and things like that, I get. But other fields and types, most of them are known only at runtime and differ between calls)
-2. possibly introduces a HUGE security vulnerability (ie user not keeping track of what fields it should init or not, and using them before having them initilized)

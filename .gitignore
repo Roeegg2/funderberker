@@ -1,4 +1,5 @@
-/target
+/kernel/target
+/utils/target
 /iso_root
 /limine
 /ovmf
