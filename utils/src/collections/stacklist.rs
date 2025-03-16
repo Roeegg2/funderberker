@@ -77,6 +77,11 @@ impl<T> StackList<T> {
     }
 
     #[inline]
+    pub fn pop_back(&mut self) -> Option<T> {
+        self.pop_back_node().map(|node| node.data)
+    }
+
+    #[inline]
     pub fn push_front(&mut self, data: T) {
         unsafe { self.push_front_node(Box::leak(Box::new(Node::new(data))).into()) }
     }
@@ -121,22 +126,40 @@ impl<T> StackList<T> {
             .map(|node| unsafe { &mut node.as_mut().data })
     }
 
+    #[inline]
+    pub fn back(&self) -> Option<&T> {
+        self.tail
+            .as_ref()
+            .map(|node| unsafe { &node.as_ref().data })
+    }
+
+    #[inline]
+    pub fn back_mut(&mut self) -> Option<&mut T> {
+        self.tail
+            .as_mut()
+            .map(|node| unsafe { &mut node.as_mut().data })
+    }
+
     pub fn pop_back_node(&mut self) -> Option<Box<Node<T>>> {
+        let prev_tail = {
+            let mut prev_tail = self.head;
+            while let Some(node) = prev_tail {
+                if unsafe { node.as_ref().next == self.tail } {
+                    break;
+                }
+                prev_tail = unsafe { node.as_ref().next };
+            }
+            prev_tail
+        };
+
         self.tail.map(|node| {
             self.len -= 1;
-            self.tail = {
-                // XXX: THIS CODE MIGHT BE WRONG!
-                let mut current = self.head;
-                while let Some(next) = current.map(|node| unsafe { node.as_ref().next }) {
-                    if next == self.tail {
-                        break;
-                    }
-                    current = next;
-                }
-                current
-            };
-            if self.len < 2 {
-                self.head = self.tail;
+            if let Some(mut prev_tail) = prev_tail {
+                unsafe { prev_tail.as_mut().next = None };
+                self.tail = Some(prev_tail);
+            } else {
+                self.head = None;
+                self.tail = None;
             }
             // SAFETY: node is valid and not aliased.
             unsafe { Box::from_raw(node.as_ptr()) }
@@ -228,5 +251,108 @@ impl<'a, T> Iterator for IterMut<'a, T> {
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
+    }
+}
+
+mod tests {
+    #[test]
+    fn test_stacklist() {
+        let mut list = super::StackList::new();
+        assert_eq!(list.len(), 0);
+        assert_eq!(list.is_empty(), true);
+
+        list.push_front(1);
+        list.push_front(2);
+        list.push_front(3);
+        list.push_front(4);
+        list.push_front(5);
+
+        assert_eq!(list.len(), 5);
+        assert_eq!(list.is_empty(), false);
+
+        assert_eq!(list.pop_front(), Some(5));
+        assert_eq!(list.pop_front(), Some(4));
+        assert_eq!(list.pop_front(), Some(3));
+        assert_eq!(list.pop_front(), Some(2));
+        assert_eq!(list.pop_front(), Some(1));
+        assert_eq!(list.pop_front(), None);
+
+        assert_eq!(list.len(), 0);
+        assert_eq!(list.is_empty(), true);
+
+        list.push_back(1);
+        list.push_back(2);
+        list.push_back(3);
+        list.push_back(4);
+        list.push_back(5);
+
+        assert_eq!(list.len(), 5);
+        assert_eq!(list.is_empty(), false);
+
+        assert_eq!(list.pop_back(), Some(5));
+        assert_eq!(list.pop_back(), Some(4));
+        assert_eq!(list.pop_back(), Some(3));
+        assert_eq!(list.pop_back(), Some(2));
+        assert_eq!(list.pop_back(), Some(1));
+        assert_eq!(list.pop_back(), None);
+
+        assert_eq!(list.len(), 0);
+        assert_eq!(list.is_empty(), true);
+    }
+
+    #[test]
+    fn test_stacklist_iter() {
+        let mut list = super::StackList::new();
+        list.push_front(1);
+        list.push_front(2);
+        list.push_front(3);
+        list.push_front(4);
+        list.push_front(23);
+        list.push_front(673);
+        list.push_front(435);
+        list.push_front(56453);
+        list.push_front(3435);
+        list.push_front(21545);
+        list.push_front(2452);
+        list.push_front(353456);
+
+        let mut iter = list.iter();
+        assert_eq!(iter.next().unwrap().data, 353456);
+        assert_eq!(iter.next().unwrap().data, 2452);
+        assert_eq!(iter.next().unwrap().data, 21545);
+        assert_eq!(iter.next().unwrap().data, 3435);
+        assert_eq!(iter.next().unwrap().data, 56453);
+        assert_eq!(iter.next().unwrap().data, 435);
+        assert_eq!(iter.next().unwrap().data, 673);
+        assert_eq!(iter.next().unwrap().data, 23);
+        assert_eq!(iter.next().unwrap().data, 4);
+        assert_eq!(iter.next().unwrap().data, 3);
+        assert_eq!(iter.next().unwrap().data, 2);
+        assert_eq!(iter.next().unwrap().data, 1);
+    }
+
+    #[test]
+    fn test_stacklist_string() {
+        let mut list = super::StackList::new();
+        list.push_back("hello");
+        list.push_back("there");
+        list.push_back("general");
+        list.push_back("kenobi");
+        
+        assert_eq!(list.front(), Some(&"hello"));
+        assert_eq!(list.back(), Some(&"kenobi"));
+        assert_eq!(list.len(), 4);
+        assert_eq!(list.pop_front(), Some("hello"));
+        assert_eq!(list.pop_back(), Some("kenobi"));
+
+        assert_eq!(list.front(), Some(&"there"));
+        assert_eq!(list.back(), Some(&"general"));
+        assert_eq!(list.len(), 2);
+        assert_eq!(list.pop_front(), Some("there"));
+        assert_eq!(list.pop_back(), Some("general"));
+
+        assert_eq!(list.front(), None);
+        assert_eq!(list.back(), None);
+        assert_eq!(list.len(), 0);
     }
 }

@@ -1,6 +1,5 @@
 use bump::BumpAllocator;
-
-use super::PhysAddr;
+use super::{PhysAddr, PageId};
 
 mod bump;
 
@@ -33,10 +32,14 @@ pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
 }
 
 pub trait PmmAllocator {
-    /// Tries to allocates a contiguious block of pages of size `page_count` which satisfy the passed `alignment`. If allocation if successfull, the physical address of the start of the block is returned.
-    fn alloc_any(&mut self, alignment: usize, page_count: usize) -> Result<PhysAddr, PmmError>;
+    /// Tries to allocates a **physically** contiguious block of pages of size `page_count` 
+    /// which satisfy the passed `alignment` page alignment. 
+    /// If allocation if successfull, the physical address of the start of the block is returned.
+    ///
+    /// NOTE: `alignment should be passed as page granularity. (e.g. 1 for 4KB, 2 for 8KB, etc.)`
+    fn alloc_any(&mut self, alignment: PageId, page_count: usize) -> Result<PhysAddr, PmmError>;
 
-    /// Tries to allocate a contiguous block of memory at a specific address
+    /// Tries to allocate a **physically** contiguous block of memory at a specific address
     #[allow(dead_code)]
     fn alloc_at(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError>;
 
@@ -45,11 +48,11 @@ pub trait PmmAllocator {
     unsafe fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError>;
 
     /// Returns true if a page if free, false if it's not. If an error is encountered, an error is
-    /// returned.
+    /// returned instead.
     #[allow(dead_code)]
     fn is_page_free(&self, addr: PhysAddr) -> Result<bool, PmmError>;
 
-    /// Initilizes the PMM when using Limine using limine memory map.
+    /// Initilizes the PMM when using Limine using limine's memory map.
     #[cfg(feature = "limine")]
     unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]);
 }

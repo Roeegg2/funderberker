@@ -1,7 +1,7 @@
 //! VMM which provides high level paging wrappers
 
 pub mod slab;
-mod allocator;
+mod heap;
 
 // TODO: Remove x86_64 dependencies here
 

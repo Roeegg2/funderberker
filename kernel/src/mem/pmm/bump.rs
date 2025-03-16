@@ -1,4 +1,4 @@
-//! A simple ring-buffer style bump allocator physical memory manager
+//! A simple bump allocator physical memory manager
 
 use core::slice::from_raw_parts_mut;
 
@@ -10,94 +10,54 @@ use utils::collections::bitmap::Bitmap;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// Singleton instance of the bump allocator
-pub(super) static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator {
-    bitmap: Bitmap::uninit(),
-    ptr: 0,
-};
+pub(super) static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator(Bitmap::uninit());
 
-/// Singleton ring-buffer bump allocator implemented using bitmap
-pub(super) struct BumpAllocator<'a> {
-    /// The bitmap representing the status of each page (`1` meaning used, `0` meaning free)
-    bitmap: Bitmap<'a>,
-    /// The ring buffer ptr for finding new pages to allocate
-    ptr: PageId,
-}
+/// Singleton bump allocator implemented using bitmap
+pub(super) struct BumpAllocator<'a>(Bitmap<'a>);
 
 impl<'a> PmmAllocator for BumpAllocator<'a> {
-    fn alloc_any(&mut self, alignment: usize, page_count: usize) -> Result<PhysAddr, PmmError> {
-        let mut ptr = inc_ring_buff_ptr(self.ptr, 1, self.bitmap.used_bits_count());
-
-        if alignment >= self.bitmap.used_bits_count() || alignment == 0 {
-            return Err(PmmError::InvalidAlignment);
-        }
-
-        'main: loop {
-            // Couldn't find suitable block
-            if ptr == self.ptr {
-                return Err(PmmError::NoAvailableBlock);
+    fn alloc_any(&mut self, alignment: PageId, page_count: usize) -> Result<PhysAddr, PmmError> {
+        'main: for i in (0..self.0.used_bits_count()).step_by(alignment) {
+            // If we would go out of bounds, break
+            if i + page_count >= self.0.used_bits_count() {
+                break;
             }
 
-            // This is an optimization. Instead of incrememting ptr until it gets to the start
-            // of the ring buffer, we set it to 0 now
-            if ptr + page_count >= self.bitmap.used_bits_count() {
-                // Taking care of the case in which if we chose to procede with regular
-                // iteration, we would've encountered self.ptr again
-                if ptr + page_count >= self.ptr {
-                    return Err(PmmError::NoAvailableBlock);
-                }
-                ptr = 0;
-                continue;
-            }
-
-            // If alignment doesn't match, go to next alignment available block
-            {
-                let diff = ptr % alignment;
-                if diff != 0 {
-                    ptr = inc_ring_buff_ptr(ptr, diff, self.bitmap.used_bits_count());
-                    continue;
-                }
-            }
-
-            // Check if all entries are available. If at least one isn't, go next
-            for i in 0..page_count {
-                if self.bitmap.get(ptr + i) != Bitmap::FREE {
-                    ptr = inc_ring_buff_ptr(ptr, 1, self.bitmap.used_bits_count());
+            // Check if the block is free. If it isn't go next
+            for j in 0..page_count {
+                if self.0.get(i + j) != Bitmap::FREE {
                     continue 'main;
                 }
             }
 
-            // We can allocate! So break out of loop
-            break;
+            // If it is, set the block as taken and return the address
+            for j in 0..page_count {
+                self.0.set(i + j);
+            }
+
+            return Ok(PhysAddr(page_id_to_addr(i)));
         }
 
-        // They are, so mark them as taken
-        for i in 0..page_count {
-            self.bitmap.set(ptr + i);
-        }
-
-        self.ptr = ptr;
-
-        return Ok(PhysAddr(page_id_to_addr(ptr)));
+        Err(PmmError::NoAvailableBlock)
     }
 
     fn alloc_at(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
+        if (id + page_count-1) >= self.0.used_bits_count() {
+            return Err(PmmError::OutOfBounds);
+        }
+
         // Make sure we can allocate the block. If we can't we propergate the error
-        (id..(id + page_count)).try_for_each(|i| {
-            if i >= self.bitmap.used_bits_count() {
-                return Err(PmmError::OutOfBounds);
-            } else if self.bitmap.get(id) != Bitmap::FREE {
+        for i in 0..page_count {
+            if self.0.get(id + i) != Bitmap::FREE {
                 return Err(PmmError::NoAvailableBlock);
             }
+        }
 
-            Ok(())
-        })?;
-
-        // If we can, then we do!
-        (id..page_count).for_each(|page_id| {
-            self.bitmap.set(page_id);
-        });
+        for i in 0..page_count {
+            self.0.set(id + i);
+        }
 
         Ok(())
     }
@@ -106,29 +66,33 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
     unsafe fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
+        if (id + page_count-1) >= self.0.used_bits_count() {
+            return Err(PmmError::OutOfBounds);
+        }
+
         // For each page ID in the range, try freeing the value. If an error is encountered, stop
         // and return
-        (id..(id + page_count)).try_for_each(|page_id| {
-            if page_id >= self.bitmap.used_bits_count() {
-                return Err(PmmError::OutOfBounds);
-            } else if self.bitmap.get(id) == Bitmap::FREE {
+        for i in 0..page_count {
+            if self.0.get(id + i) == Bitmap::FREE {
                 return Err(PmmError::FreeOfAlreadyFree);
             }
+        }
 
-            self.bitmap.unset(page_id);
+        for i in 0..page_count {
+            self.0.unset(id + i);
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 
     fn is_page_free(&self, addr: PhysAddr) -> Result<bool, super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
-        if id >= self.bitmap.used_bits_count() {
+        if id >= self.0.used_bits_count() {
             return Err(PmmError::OutOfBounds);
         }
 
-        Ok(self.bitmap.get(id) == Bitmap::FREE)
+        Ok(self.0.get(id) == Bitmap::FREE)
     }
 
     #[inline]
@@ -205,7 +169,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
 
             // Set the actual bitmap size to the page count, since these are the pages we can
             // actually use
-            BUMP_ALLOCATOR.bitmap = Bitmap::new(bitmap, page_count);
+            BUMP_ALLOCATOR.0 = Bitmap::new(bitmap, page_count);
 
             // Update the bitmaps contents to the current memory map + entry allocated for the
             // bitmap
@@ -215,7 +179,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                     // XXX: Not sure about the BOOTLOADER_RECLAIMABLE
                     memory_map::EntryType::USABLE => {
                         set_for_mem_map_entry(entry.base as usize, entry.length as usize)
-                            .for_each(|page_id| BUMP_ALLOCATOR.bitmap.unset(page_id));
+                            .for_each(|page_id| BUMP_ALLOCATOR.0.unset(page_id));
                     }
                     _ => (),
                 }
@@ -223,12 +187,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
 
             #[allow(static_mut_refs)]
             set_for_mem_map_entry(bitmap_entry.base as usize, bitmap_alloc_size)
-                .for_each(|page_id| BUMP_ALLOCATOR.bitmap.set(page_id));
+                .for_each(|page_id| BUMP_ALLOCATOR.0.set(page_id));
         }
     }
-}
-
-// TODO: Move this to a more fitting place
-const fn inc_ring_buff_ptr(ring_buff: PageId, amount: usize, ring_buff_size: usize) -> PageId {
-    (ring_buff + amount) % ring_buff_size
 }

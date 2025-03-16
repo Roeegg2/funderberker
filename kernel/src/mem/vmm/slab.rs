@@ -5,21 +5,54 @@ use utils::collections::stacklist::{Node, StackList};
 
 use crate::arch::x86_64::paging::PagingError;
 
-trait SlabConstructable {
+pub trait SlabConstructable {
     fn slab_init() {}
 
     fn slab_free() {}
 }
 
-//struct SlabAllocatorWrapper<T> where T: Sized + SlabConstructable {
-//
-//}
+pub struct SlabAllocator<T> where T: SlabConstructable {
+    slab_allocator: SlabAllocatorInternal,
+    _phantom: core::marker::PhantomData<T>,
+}
 
-static mut SLAB_SLAB_ALLOCATOR: SlabAllocator =
-    SlabAllocator::new(Layout::new::<Node<Slab>>(), ObjectStoringScheme::Embedded);
+impl<T> SlabAllocator<T> where T: SlabConstructable {
+    const fn get_layout(obj_storing_scheme: ObjectStoringScheme) -> Layout {
+        match obj_storing_scheme {
+            ObjectStoringScheme::Embedded => Layout::new::<Node<T>>(),
+            ObjectStoringScheme::External => Layout::new::<T>(),
+        }
+    }
 
-static mut SLAB_OBJECT_ALLOCATOR: SlabAllocator =
-    SlabAllocator::new(Layout::new::<Node<Object>>(), ObjectStoringScheme::Embedded);
+    #[inline(always)]
+    pub const fn new(obj_storing_scheme: ObjectStoringScheme) -> SlabAllocator<T> {
+        SlabAllocator {
+            slab_allocator: SlabAllocatorInternal::new(Self::get_layout(obj_storing_scheme), obj_storing_scheme),
+            _phantom: core::marker::PhantomData,
+        }
+    }
+
+    #[inline(always)]
+    pub fn alloc(&mut self) -> Result<NonNull<c_void>, SlabError> {
+        self.slab_allocator.alloc()
+    }
+
+    #[inline(always)]
+    pub unsafe fn free(&mut self, ptr: Box<>) -> Result<(), SlabError> {
+        self.slab_allocator.free(ptr)
+    }
+
+    #[inline(always)]
+    pub fn reap(&mut self) {
+        self.slab_allocator.reap()
+    }
+}
+
+static mut SLAB_SLAB_ALLOCATOR: SlabAllocatorInternal =
+    SlabAllocatorInternal::new(Layout::new::<Node<Slab>>(), ObjectStoringScheme::Embedded);
+
+static mut SLAB_OBJECT_ALLOCATOR: SlabAllocatorInternal =
+    SlabAllocatorInternal::new(Layout::new::<Node<Object>>(), ObjectStoringScheme::Embedded);
 
 /// Represents the way the slab allocator will store the `Object` structs, each of which represent a free object available for allocation in the slab.
 #[derive(Debug, Copy, Clone)]
@@ -44,7 +77,7 @@ pub enum SlabError {
     PageAllocationError(PagingError),
 }
 
-pub struct SlabAllocator {
+pub(super) struct SlabAllocatorInternal {
     free_slabs: StackList<Slab>,
     partial_slabs: StackList<Slab>,
     full_slabs: StackList<Slab>,
@@ -55,7 +88,7 @@ pub struct SlabAllocator {
     obj_storing_scheme: ObjectStoringScheme,
 }
 
-impl SlabAllocator {
+impl SlabAllocatorInternal {
     const SLAB_EMBED_THRESHOLD: usize = 4 * 1024_usize.pow(2) / 8;
 
     const fn calc_pages_per_slab(obj_size: usize) -> usize {
@@ -110,12 +143,12 @@ impl SlabAllocator {
         (slab_embed, (pages_per_slab * 0x1000) / obj_size)
     }
 
-    pub const fn new(layout: Layout, obj_storing_scheme: ObjectStoringScheme) -> SlabAllocator {
+    pub const fn new(layout: Layout, obj_storing_scheme: ObjectStoringScheme) -> SlabAllocatorInternal {
         let pages_per_slab = Self::calc_pages_per_slab(layout.size());
         let (slab_embed, obj_count) =
             Self::calc_slab_embed_n_obj_count(pages_per_slab, layout.size());
 
-        SlabAllocator {
+        SlabAllocatorInternal {
             full_slabs: StackList::new(),
             partial_slabs: StackList::new(),
             free_slabs: StackList::new(),

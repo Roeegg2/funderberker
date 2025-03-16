@@ -9,7 +9,7 @@ alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc"}
 utils = { path = "../utils" }
 
 [features]
-default = ["limine", "amd", "framebuffer", "paging_4", "pmm_bump"]
+default = ["limine", "amd", "serial", "paging_4", "pmm_bump", "test"]
 
 # x86_64 CPU vendors
 intel = []
@@ -29,6 +29,9 @@ paging_5 = [] # UNTESTED
 # PMM page allocator algorithm
 pmm_bump = []
 pmm_buddy = [] # NOT SUPPORTED YET!
+
+# enable in order to run tests
+test = []
 
 [profile.dev]
 panic = "abort"

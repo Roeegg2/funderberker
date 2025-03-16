@@ -355,7 +355,6 @@ impl PageTable {
     // NOTE: Again, note sure if `static` is the correct lifetime here
     // Make the current table entry point to a new PageTable, and return that PageTable
     fn new() -> Result<(&'static mut PageTable, PhysAddr), PagingError> {
-        #[allow(static_mut_refs)]
         // Get the physical address reserved for the table (it's exactly 1 table, 1 page alignment)
         let phys_addr = crate::mem::pmm::get()
             .alloc_any(1, 1)
