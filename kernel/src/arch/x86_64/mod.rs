@@ -1,5 +1,6 @@
 //! Everything specific to x86_64 arch
 
+#[macro_use]
 pub mod cpu;
 mod interrupts;
 pub mod paging;

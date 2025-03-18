@@ -120,7 +120,7 @@ extern "C" fn vec_int_13() {
 
 #[unsafe(no_mangle)]
 extern "C" fn vec_int_14() {
-    println!("got page fault!");
+    println!("got page fault! address: {:#x}", read_cr!(cr2));
 }
 
 #[unsafe(no_mangle)]

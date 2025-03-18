@@ -44,7 +44,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
     fn alloc_at(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
-        if (id + page_count-1) >= self.0.used_bits_count() {
+        if (id + page_count - 1) >= self.0.used_bits_count() {
             return Err(PmmError::OutOfBounds);
         }
 
@@ -66,7 +66,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
     unsafe fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
-        if (id + page_count-1) >= self.0.used_bits_count() {
+        if (id + page_count - 1) >= self.0.used_bits_count() {
             return Err(PmmError::OutOfBounds);
         }
 

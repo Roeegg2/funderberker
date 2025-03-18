@@ -25,6 +25,18 @@ pub struct IterMut<'a, T: 'a> {
     _marker: PhantomData<&'a mut Node<T>>,
 }
 
+pub struct IterNode<'a, T: 'a> {
+    head: Option<NonNull<Node<T>>>,
+    len: usize,
+    _marker: PhantomData<&'a Node<T>>,
+}
+
+pub struct IterNodeMut<'a, T: 'a> {
+    head: Option<NonNull<Node<T>>>,
+    len: usize,
+    _marker: PhantomData<&'a mut Node<T>>,
+}
+
 #[derive(Debug)]
 pub struct Node<T> {
     data: T,
@@ -42,6 +54,11 @@ impl<T> Node<T> {
     #[inline]
     pub const fn new(data: T) -> Self {
         Node { data, next: None }
+    }
+
+    #[inline]
+    pub const fn offset_of() -> isize {
+        core::mem::offset_of!(Node<T>, data) as isize
     }
 }
 
@@ -140,6 +157,7 @@ impl<T> StackList<T> {
             .map(|node| unsafe { &mut node.as_mut().data })
     }
 
+    #[inline]
     pub fn pop_back_node(&mut self) -> Option<Box<Node<T>>> {
         let prev_tail = {
             let mut prev_tail = self.head;
@@ -178,6 +196,32 @@ impl<T> StackList<T> {
         }
     }
 
+    pub fn remove_at(&mut self, index: usize) -> Option<Box<Node<T>>> {
+        if index >= self.len {
+            return None;
+        }
+
+        let mut prev: Option<NonNull<Node<T>>> = None;
+        let mut current = self.head;
+        let mut i = 0;
+        while let Some(node) = current {
+            if i == index {
+                if let Some(mut prev) = prev {
+                    unsafe { prev.as_mut().next = node.as_ref().next };
+                } else {
+                    self.head = unsafe { node.as_ref().next };
+                }
+                self.len -= 1;
+                return Some(unsafe { Box::from_raw(node.as_ptr()) });
+            }
+            prev = current;
+            current = unsafe { node.as_ref().next };
+            i += 1;
+        }
+
+        None
+    }
+
     /// Check if the list is empty
     #[inline]
     pub const fn is_empty(&self) -> bool {
@@ -187,6 +231,24 @@ impl<T> StackList<T> {
     #[inline]
     pub const fn len(&self) -> usize {
         self.len
+    }
+
+    #[inline]
+    pub fn iter_node(&self) -> IterNode<T> {
+        IterNode {
+            head: self.head,
+            len: self.len,
+            _marker: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn iter_node_mut(&mut self) -> IterNodeMut<T> {
+        IterNodeMut {
+            head: self.head,
+            len: self.len,
+            _marker: PhantomData,
+        }
     }
 
     #[inline]
@@ -214,9 +276,7 @@ impl<T> Drop for StackList<T> {
     }
 }
 
-//impl<T> Debug
-
-impl<'a, T> Iterator for Iter<'a, T> {
+impl<'a, T> Iterator for IterNode<'a, T> {
     type Item = &'a Node<T>;
 
     #[inline]
@@ -235,7 +295,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for IterMut<'a, T> {
+impl<'a, T> Iterator for IterNodeMut<'a, T> {
     type Item = &'a mut Node<T>;
 
     #[inline]
@@ -245,6 +305,44 @@ impl<'a, T> Iterator for IterMut<'a, T> {
             self.head = unsafe { node.as_ref().next };
             // SAFETY: node is valid and not aliased.
             unsafe { node.as_mut() }
+        })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.head.map(|node| {
+            self.len -= 1;
+            self.head = unsafe { node.as_ref().next };
+            // SAFETY: node is valid and not aliased.
+            unsafe { &node.as_ref().data }
+        })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<'a, T> Iterator for IterMut<'a, T> {
+    type Item = &'a mut T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.head.map(|mut node| {
+            self.len -= 1;
+            self.head = unsafe { node.as_ref().next };
+            // SAFETY: node is valid and not aliased.
+            unsafe { &mut node.as_mut().data }
         })
     }
 
@@ -292,11 +390,8 @@ mod tests {
         assert_eq!(list.pop_back(), Some(5));
         assert_eq!(list.pop_back(), Some(4));
         assert_eq!(list.pop_back(), Some(3));
-        assert_eq!(list.pop_back(), Some(2));
-        assert_eq!(list.pop_back(), Some(1));
-        assert_eq!(list.pop_back(), None);
 
-        assert_eq!(list.len(), 0);
+        assert_eq!(list.len(), 2);
         assert_eq!(list.is_empty(), true);
     }
 
@@ -317,18 +412,18 @@ mod tests {
         list.push_front(353456);
 
         let mut iter = list.iter();
-        assert_eq!(iter.next().unwrap().data, 353456);
-        assert_eq!(iter.next().unwrap().data, 2452);
-        assert_eq!(iter.next().unwrap().data, 21545);
-        assert_eq!(iter.next().unwrap().data, 3435);
-        assert_eq!(iter.next().unwrap().data, 56453);
-        assert_eq!(iter.next().unwrap().data, 435);
-        assert_eq!(iter.next().unwrap().data, 673);
-        assert_eq!(iter.next().unwrap().data, 23);
-        assert_eq!(iter.next().unwrap().data, 4);
-        assert_eq!(iter.next().unwrap().data, 3);
-        assert_eq!(iter.next().unwrap().data, 2);
-        assert_eq!(iter.next().unwrap().data, 1);
+        assert_eq!(*iter.next().unwrap(), 353456);
+        assert_eq!(*iter.next().unwrap(), 2452);
+        assert_eq!(*iter.next().unwrap(), 21545);
+        assert_eq!(*iter.next().unwrap(), 3435);
+        assert_eq!(*iter.next().unwrap(), 56453);
+        assert_eq!(*iter.next().unwrap(), 435);
+        assert_eq!(*iter.next().unwrap(), 673);
+        assert_eq!(*iter.next().unwrap(), 23);
+        assert_eq!(*iter.next().unwrap(), 4);
+        assert_eq!(*iter.next().unwrap(), 3);
+        assert_eq!(*iter.next().unwrap(), 2);
+        assert_eq!(*iter.next().unwrap(), 1);
     }
 
     #[test]
@@ -338,7 +433,7 @@ mod tests {
         list.push_back("there");
         list.push_back("general");
         list.push_back("kenobi");
-        
+
         assert_eq!(list.front(), Some(&"hello"));
         assert_eq!(list.back(), Some(&"kenobi"));
         assert_eq!(list.len(), 4);

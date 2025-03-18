@@ -14,8 +14,8 @@ use limine::request::FramebufferRequest;
 
 use crate::arch::x86_64;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
+use crate::print;
 use crate::println;
-use crate::{funderberker_main, print};
 
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.
@@ -128,7 +128,10 @@ unsafe extern "C" fn kmain() -> ! {
         .unwrap()
     };
 
-    funderberker_main();
+    #[cfg(feature = "test")]
+    crate::test::start_testing();
+    #[cfg(not(feature = "test"))]
+    crate::funderberker_main();
 
     hcf();
 }

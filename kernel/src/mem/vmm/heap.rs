@@ -1,47 +1,52 @@
 //! A global heap allocator for the kernel. Structured as a bunch of uninitable object slab allocators
 
-use super::slab::{SlabAllocatorInternal, ObjectStoringScheme};
+use super::slab::{InternalSlabAllocator, Object};
 
 use core::{
     alloc::{GlobalAlloc, Layout},
     cell::UnsafeCell,
-    ffi::c_void,
     ptr::{NonNull, null_mut},
 };
 
 #[global_allocator]
 pub(super) static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocator::new();
 
-pub(super) struct KernelHeapAllocator(UnsafeCell<[SlabAllocatorInternal; Self::SLAB_ALLOCATOR_COUNT]>);
+#[derive(Debug)]
+pub(super) struct KernelHeapAllocator(
+    UnsafeCell<[InternalSlabAllocator; Self::SLAB_ALLOCATOR_COUNT]>,
+);
 
 impl KernelHeapAllocator {
     // TODO: Set this to the actual sizes
-    const MIN_OBJ_SIZE: usize = 1;
-    const MAX_OBJ_SIZE: usize = 18;
-    const SLAB_ALLOCATOR_COUNT: usize = Self::MAX_OBJ_SIZE - Self::MIN_OBJ_SIZE + 1;
+    const MIN_OBJ_SIZE: usize = 8;
+    const MAX_OBJ_SIZE: usize = 29;
+    const SLAB_ALLOCATOR_COUNT: usize = Self::MAX_OBJ_SIZE - Self::MIN_OBJ_SIZE;
 
     #[rustfmt::skip]
     const fn new() -> Self {
         // TODO: Use a const array::from_fn here!
         Self(UnsafeCell::new([
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(1)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(2)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(3)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(4)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(5)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(6)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(7)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(8)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(9)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(10)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(11)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(12)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(13)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(14)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(15)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(16)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(17)]>(), ObjectStoringScheme::Embedded),
-            SlabAllocatorInternal::new(Layout::new::<[u8; 2_usize.pow(18)]>(), ObjectStoringScheme::Embedded),
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(8)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(9)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(10)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(11)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(12)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(13)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(14)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(15)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(16)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(17)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(19)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(20)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(21)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(22)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(23)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(24)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(25)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(26)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(27)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(28)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(29)]>(), true)},
         ]))
     }
 }
@@ -69,10 +74,12 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 
         // Convert ptr to a NonNull one + cast, get the allocator and pass the pointer to the
         // allocator
-        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<c_void>())
+        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<Object>())
             && let Some(allocators) = unsafe { self.0.get().as_mut() }
         {
-            unsafe { let _ = allocators[index].free(non_null_ptr); };
+            unsafe {
+                let _ = allocators[index].free(non_null_ptr);
+            };
         }
     }
 }

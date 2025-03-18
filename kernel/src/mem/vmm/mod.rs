@@ -1,7 +1,7 @@
 //! VMM which provides high level paging wrappers
 
-pub mod slab;
 mod heap;
+pub mod slab;
 
 // TODO: Remove x86_64 dependencies here
 
@@ -59,5 +59,12 @@ pub mod kernel {
             .map_err(|e| PagingError::AllocationError(e))?;
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "test")]
+pub mod tests {
+    pub fn test() {
+        super::slab::tests::test();
     }
 }

@@ -1,5 +1,5 @@
+use super::{PageId, PhysAddr};
 use bump::BumpAllocator;
-use super::{PhysAddr, PageId};
 
 mod bump;
 
@@ -32,8 +32,8 @@ pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
 }
 
 pub trait PmmAllocator {
-    /// Tries to allocates a **physically** contiguious block of pages of size `page_count` 
-    /// which satisfy the passed `alignment` page alignment. 
+    /// Tries to allocates a **physically** contiguious block of pages of size `page_count`
+    /// which satisfy the passed `alignment` page alignment.
     /// If allocation if successfull, the physical address of the start of the block is returned.
     ///
     /// NOTE: `alignment should be passed as page granularity. (e.g. 1 for 4KB, 2 for 8KB, etc.)`

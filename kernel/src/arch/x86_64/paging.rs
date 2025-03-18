@@ -245,7 +245,7 @@ impl PageTable {
 
     pub unsafe fn unmap_page(virt_addr: VirtAddr) -> Result<(), PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
-        let pte = pml.get_entry_specific(virt_addr, PAGING_LEVEL - 1)?;
+        let pte = pml.get_entry_specific(VirtAddr(virt_addr.0 >> 12), PAGING_LEVEL - 1)?;
 
         pte.unset_flags(Entry::FLAG_P);
 
@@ -270,6 +270,7 @@ impl PageTable {
 
         // Can't get an entry which one of the tables in it's path is unmapped...
         if self.0[index].get_flags(Entry::FLAG_P) == 0 {
+            println!("Missing table at level {}", level);
             return Err(PagingError::MissingPagingTable(level));
         }
 
