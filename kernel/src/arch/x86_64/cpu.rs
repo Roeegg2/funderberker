@@ -49,6 +49,7 @@ pub unsafe fn sti() {
     unsafe { asm!("sti", options(nostack, nomem)) };
 }
 
+/// Wrapper to read the value of a control register
 #[macro_export]
 macro_rules! read_cr {
     ($cr:ident) => {{
@@ -65,6 +66,7 @@ macro_rules! read_cr {
     }};
 }
 
+/// Wrapper to write a value to a control register
 #[macro_export]
 macro_rules! write_cr {
     ($cr:ident, $val:expr) => {{

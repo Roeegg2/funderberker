@@ -1,6 +1,6 @@
 //! A global heap allocator for the kernel. Structured as a bunch of uninitable object slab allocators
 
-use super::slab::{InternalSlabAllocator, Object};
+use super::slab::{InternalSlabAllocator, ObjectNode};
 
 use core::{
     alloc::{GlobalAlloc, Layout},
@@ -8,9 +8,12 @@ use core::{
     ptr::{NonNull, null_mut},
 };
 
+/// The global instance of the kernel heap allocator
 #[global_allocator]
 pub(super) static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocator::new();
 
+/// A global heap allocator for the kernel. Structured as a bunch of uninitable object slab
+/// allocators
 #[derive(Debug)]
 pub(super) struct KernelHeapAllocator(
     UnsafeCell<[InternalSlabAllocator; Self::SLAB_ALLOCATOR_COUNT]>,
@@ -20,7 +23,7 @@ impl KernelHeapAllocator {
     // TODO: Set this to the actual sizes
     const MIN_OBJ_SIZE: usize = 8;
     const MAX_OBJ_SIZE: usize = 29;
-    const SLAB_ALLOCATOR_COUNT: usize = Self::MAX_OBJ_SIZE - Self::MIN_OBJ_SIZE;
+    const SLAB_ALLOCATOR_COUNT: usize = Self::MAX_OBJ_SIZE - Self::MIN_OBJ_SIZE + 1;
 
     #[rustfmt::skip]
     const fn new() -> Self {
@@ -36,6 +39,7 @@ impl KernelHeapAllocator {
             unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(15)]>(), true)},
             unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(16)]>(), true)},
             unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(17)]>(), true)},
+            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(18)]>(), true)},
             unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(19)]>(), true)},
             unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(20)]>(), true)},
             unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(21)]>(), true)},
@@ -51,12 +55,14 @@ impl KernelHeapAllocator {
     }
 }
 
+// XXX: Make this actually Sync able
 unsafe impl Sync for KernelHeapAllocator {}
 
 unsafe impl GlobalAlloc for KernelHeapAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Use the allocator that is closest to the total size layout requires
         let index = layout.size().next_power_of_two().ilog2() as usize;
+        assert!(index < Self::SLAB_ALLOCATOR_COUNT);
         // Try accessing allocators, and then also try to allocate
         if let Some(allocators) = unsafe { self.0.get().as_mut() }
             && let Ok(ptr) = allocators[index].alloc()
@@ -74,7 +80,7 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 
         // Convert ptr to a NonNull one + cast, get the allocator and pass the pointer to the
         // allocator
-        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<Object>())
+        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<ObjectNode>())
             && let Some(allocators) = unsafe { self.0.get().as_mut() }
         {
             unsafe {

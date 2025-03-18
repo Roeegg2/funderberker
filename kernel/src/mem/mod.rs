@@ -44,12 +44,15 @@ impl PhysAddr {
     }
 }
 
+/// A page ID is a unique identifier for a page
 pub(self) type PageId = usize;
 
+/// Convert a page ID to a physical address
 pub(self) fn page_id_to_addr(page_id: PageId) -> usize {
     page_id * 0x1000
 }
 
+/// Convert a physical address to a page ID
 pub(self) fn addr_to_page_id(addr: usize) -> Option<PageId> {
     if addr % 0x1000 != 0 {
         return None;

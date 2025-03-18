@@ -102,7 +102,7 @@ impl<'a> TryFrom<Entry> for &'a mut PageTable {
     /// Convert Entry into an address, and using that address into
     fn try_from(value: Entry) -> Result<Self, Self::Error> {
         unsafe {
-            // Extract the phys addr outside of `value`, add HHDM offset so it's a valid VMM virtual address
+            // Extract the phys addr outside of `value`, add HHDM offset so it's a valid kernel virtual address
             let ptr = core::ptr::without_provenance_mut::<PageTable>(
                 PhysAddr::from(value).add_hhdm_offset().0,
             );

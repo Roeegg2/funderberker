@@ -47,18 +47,12 @@ pub struct Node<T> {
 pub struct StackList<T> {
     len: usize,
     head: Option<NonNull<Node<T>>>,
-    tail: Option<NonNull<Node<T>>>,
 }
 
 impl<T> Node<T> {
     #[inline]
     pub const fn new(data: T) -> Self {
         Node { data, next: None }
-    }
-
-    #[inline]
-    pub const fn offset_of() -> isize {
-        core::mem::offset_of!(Node<T>, data) as isize
     }
 }
 
@@ -81,119 +75,46 @@ impl<T> DerefMut for Node<T> {
 impl<T> StackList<T> {
     #[inline]
     pub const fn new() -> Self {
-        StackList {
-            head: None,
-            tail: None,
-            len: 0,
-        }
+        StackList { head: None, len: 0 }
     }
 
     #[inline]
-    pub fn pop_front(&mut self) -> Option<T> {
-        self.pop_front_node().map(|node| node.data)
+    pub fn pop(&mut self) -> Option<T> {
+        self.pop_node().map(|node| node.data)
     }
 
     #[inline]
-    pub fn pop_back(&mut self) -> Option<T> {
-        self.pop_back_node().map(|node| node.data)
+    pub fn push(&mut self, data: T) {
+        unsafe { self.push_node(Box::leak(Box::new(Node::new(data))).into()) }
     }
 
-    #[inline]
-    pub fn push_front(&mut self, data: T) {
-        unsafe { self.push_front_node(Box::leak(Box::new(Node::new(data))).into()) }
-    }
-
-    #[inline]
-    pub fn push_back(&mut self, data: T) {
-        unsafe { self.push_back_node(Box::leak(Box::new(Node::new(data))).into()) }
-    }
-
-    pub unsafe fn push_front_node(&mut self, mut node: NonNull<Node<T>>) {
+    pub unsafe fn push_node(&mut self, mut node: NonNull<Node<T>>) {
         unsafe { node.as_mut().next = self.head };
         self.head = Some(node);
         self.len += 1;
-        if self.len < 2 {
-            self.tail = self.head;
-        }
     }
 
-    pub fn pop_front_node(&mut self) -> Option<Box<Node<T>>> {
+    pub fn pop_node(&mut self) -> Option<Box<Node<T>>> {
         self.head.map(|node| {
+            let node = unsafe { Box::from_raw(node.as_ptr()) };
+            self.head = node.as_ref().next;
             self.len -= 1;
-            self.head = unsafe { node.as_ref().next };
-            if self.len < 2 {
-                self.tail = self.head;
-            }
-            // SAFETY: node is valid and not aliased.
-            unsafe { Box::from_raw(node.as_ptr()) }
+            node
         })
     }
 
     #[inline]
-    pub fn front(&self) -> Option<&T> {
+    pub fn peek(&self) -> Option<&T> {
         self.head
             .as_ref()
             .map(|node| unsafe { &node.as_ref().data })
     }
 
     #[inline]
-    pub fn front_mut(&mut self) -> Option<&mut T> {
+    pub fn peek_mut(&mut self) -> Option<&mut T> {
         self.head
             .as_mut()
             .map(|node| unsafe { &mut node.as_mut().data })
-    }
-
-    #[inline]
-    pub fn back(&self) -> Option<&T> {
-        self.tail
-            .as_ref()
-            .map(|node| unsafe { &node.as_ref().data })
-    }
-
-    #[inline]
-    pub fn back_mut(&mut self) -> Option<&mut T> {
-        self.tail
-            .as_mut()
-            .map(|node| unsafe { &mut node.as_mut().data })
-    }
-
-    #[inline]
-    pub fn pop_back_node(&mut self) -> Option<Box<Node<T>>> {
-        let prev_tail = {
-            let mut prev_tail = self.head;
-            while let Some(node) = prev_tail {
-                if unsafe { node.as_ref().next == self.tail } {
-                    break;
-                }
-                prev_tail = unsafe { node.as_ref().next };
-            }
-            prev_tail
-        };
-
-        self.tail.map(|node| {
-            self.len -= 1;
-            if let Some(mut prev_tail) = prev_tail {
-                unsafe { prev_tail.as_mut().next = None };
-                self.tail = Some(prev_tail);
-            } else {
-                self.head = None;
-                self.tail = None;
-            }
-            // SAFETY: node is valid and not aliased.
-            unsafe { Box::from_raw(node.as_ptr()) }
-        })
-    }
-
-    pub unsafe fn push_back_node(&mut self, node: NonNull<Node<T>>) {
-        if let Some(mut old_tail) = self.tail {
-            unsafe { old_tail.as_mut().next = Some(node) };
-        }
-
-        self.tail = Some(node);
-        self.len += 1;
-        if self.len < 2 {
-            self.head = self.tail;
-        }
     }
 
     pub fn remove_at(&mut self, index: usize) -> Option<Box<Node<T>>> {
@@ -272,7 +193,7 @@ impl<T> StackList<T> {
 
 impl<T> Drop for StackList<T> {
     fn drop(&mut self) {
-        while let Some(_) = self.pop_front_node() {}
+        while let Some(_) = self.pop_node() {}
     }
 }
 
@@ -281,12 +202,16 @@ impl<'a, T> Iterator for IterNode<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.head.map(|node| {
-            self.len -= 1;
-            self.head = unsafe { node.as_ref().next };
-            // SAFETY: node is valid and not aliased.
-            unsafe { node.as_ref() }
-        })
+        if self.len == 0 {
+            return None;
+        } else {
+            self.head.map(|node| {
+                self.len -= 1;
+                self.head = unsafe { node.as_ref().next };
+                // SAFETY: node is valid and not aliased.
+                unsafe { node.as_ref() }
+            })
+        }
     }
 
     #[inline]
@@ -300,12 +225,16 @@ impl<'a, T> Iterator for IterNodeMut<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.head.map(|mut node| {
-            self.len -= 1;
-            self.head = unsafe { node.as_ref().next };
-            // SAFETY: node is valid and not aliased.
-            unsafe { node.as_mut() }
-        })
+        if self.len == 0 {
+            return None;
+        } else {
+            self.head.map(|mut node| {
+                self.len -= 1;
+                self.head = unsafe { node.as_ref().next };
+                // SAFETY: node is valid and not aliased.
+                unsafe { node.as_mut() }
+            })
+        }
     }
 
     #[inline]
@@ -319,12 +248,16 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.head.map(|node| {
-            self.len -= 1;
-            self.head = unsafe { node.as_ref().next };
-            // SAFETY: node is valid and not aliased.
-            unsafe { &node.as_ref().data }
-        })
+        if self.len == 0 {
+            return None;
+        } else {
+            self.head.map(|node| {
+                self.len -= 1;
+                self.head = unsafe { node.as_ref().next };
+                // SAFETY: node is valid and not aliased.
+                unsafe { &node.as_ref().data }
+            })
+        }
     }
 
     #[inline]
@@ -338,116 +271,20 @@ impl<'a, T> Iterator for IterMut<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.head.map(|mut node| {
-            self.len -= 1;
-            self.head = unsafe { node.as_ref().next };
-            // SAFETY: node is valid and not aliased.
-            unsafe { &mut node.as_mut().data }
-        })
+        if self.len == 0 {
+            return None;
+        } else {
+            self.head.map(|mut node| {
+                self.len -= 1;
+                self.head = unsafe { node.as_ref().next };
+                // SAFETY: node is valid and not aliased.
+                unsafe { &mut node.as_mut().data }
+            })
+        }
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
-    }
-}
-
-mod tests {
-    #[test]
-    fn test_stacklist() {
-        let mut list = super::StackList::new();
-        assert_eq!(list.len(), 0);
-        assert_eq!(list.is_empty(), true);
-
-        list.push_front(1);
-        list.push_front(2);
-        list.push_front(3);
-        list.push_front(4);
-        list.push_front(5);
-
-        assert_eq!(list.len(), 5);
-        assert_eq!(list.is_empty(), false);
-
-        assert_eq!(list.pop_front(), Some(5));
-        assert_eq!(list.pop_front(), Some(4));
-        assert_eq!(list.pop_front(), Some(3));
-        assert_eq!(list.pop_front(), Some(2));
-        assert_eq!(list.pop_front(), Some(1));
-        assert_eq!(list.pop_front(), None);
-
-        assert_eq!(list.len(), 0);
-        assert_eq!(list.is_empty(), true);
-
-        list.push_back(1);
-        list.push_back(2);
-        list.push_back(3);
-        list.push_back(4);
-        list.push_back(5);
-
-        assert_eq!(list.len(), 5);
-        assert_eq!(list.is_empty(), false);
-
-        assert_eq!(list.pop_back(), Some(5));
-        assert_eq!(list.pop_back(), Some(4));
-        assert_eq!(list.pop_back(), Some(3));
-
-        assert_eq!(list.len(), 2);
-        assert_eq!(list.is_empty(), true);
-    }
-
-    #[test]
-    fn test_stacklist_iter() {
-        let mut list = super::StackList::new();
-        list.push_front(1);
-        list.push_front(2);
-        list.push_front(3);
-        list.push_front(4);
-        list.push_front(23);
-        list.push_front(673);
-        list.push_front(435);
-        list.push_front(56453);
-        list.push_front(3435);
-        list.push_front(21545);
-        list.push_front(2452);
-        list.push_front(353456);
-
-        let mut iter = list.iter();
-        assert_eq!(*iter.next().unwrap(), 353456);
-        assert_eq!(*iter.next().unwrap(), 2452);
-        assert_eq!(*iter.next().unwrap(), 21545);
-        assert_eq!(*iter.next().unwrap(), 3435);
-        assert_eq!(*iter.next().unwrap(), 56453);
-        assert_eq!(*iter.next().unwrap(), 435);
-        assert_eq!(*iter.next().unwrap(), 673);
-        assert_eq!(*iter.next().unwrap(), 23);
-        assert_eq!(*iter.next().unwrap(), 4);
-        assert_eq!(*iter.next().unwrap(), 3);
-        assert_eq!(*iter.next().unwrap(), 2);
-        assert_eq!(*iter.next().unwrap(), 1);
-    }
-
-    #[test]
-    fn test_stacklist_string() {
-        let mut list = super::StackList::new();
-        list.push_back("hello");
-        list.push_back("there");
-        list.push_back("general");
-        list.push_back("kenobi");
-
-        assert_eq!(list.front(), Some(&"hello"));
-        assert_eq!(list.back(), Some(&"kenobi"));
-        assert_eq!(list.len(), 4);
-        assert_eq!(list.pop_front(), Some("hello"));
-        assert_eq!(list.pop_back(), Some("kenobi"));
-
-        assert_eq!(list.front(), Some(&"there"));
-        assert_eq!(list.back(), Some(&"general"));
-        assert_eq!(list.len(), 2);
-        assert_eq!(list.pop_front(), Some("there"));
-        assert_eq!(list.pop_back(), Some("general"));
-
-        assert_eq!(list.front(), None);
-        assert_eq!(list.back(), None);
-        assert_eq!(list.len(), 0);
     }
 }

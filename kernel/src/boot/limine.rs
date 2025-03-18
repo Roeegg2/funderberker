@@ -1,13 +1,13 @@
+//! Everything needed to boot the kernel with Limine.
+
 use core::arch::asm;
 
-//use limine::memory_map::EntryType;
 use limine::BaseRevision;
 use limine::paging;
 use limine::request::{
     HhdmRequest, KernelAddressRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
     RequestsStartMarker,
 };
-//use limine::{paging, response::PagingModeResponse};
 
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;

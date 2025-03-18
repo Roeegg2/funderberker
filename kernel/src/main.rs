@@ -6,7 +6,6 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(box_vec_non_null)]
 #![feature(non_null_from_ref)]
-#![feature(generic_const_exprs)]
 
 mod boot;
 #[macro_use]

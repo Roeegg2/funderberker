@@ -1,6 +1,3 @@
-use crate::mem::{PhysAddr, pmm::PmmAllocator};
-use alloc::boxed::Box;
-
 pub fn start_testing() {
     println!("Running tests...");
     crate::mem::tests::test();

@@ -8,10 +8,6 @@ pub mod mem;
 #[macro_export]
 macro_rules! const_max {
     ($a:expr, $b:expr) => {
-        if $a > $b {
-            $a
-        } else {
-            $b
-        }
+        if $a > $b { $a } else { $b }
     };
 }
