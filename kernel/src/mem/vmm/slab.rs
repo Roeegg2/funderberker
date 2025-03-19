@@ -3,7 +3,7 @@ use core::{alloc::Layout, ffi::c_void, ptr::NonNull, usize};
 
 use utils::collections::stacklist::{Node, StackList};
 
-use crate::arch::x86_64::paging::PagingError;
+use crate::arch::{x86_64::paging::PagingError, BASIC_PAGE_SIZE};
 
 /// Errors that the slab allocator might encounter
 #[derive(Debug, Copy, Clone)]
@@ -43,11 +43,11 @@ impl InternalSlabAllocator {
     /// Calculates the amount of pages needed to fit at least one object of the given layout
     const fn calc_pages_per_slab(obj_layout: Layout) -> usize {
         // The initial (r)emainder (i.e. unused space due to internal fragmentation)
-        let r = 0x1000 % obj_layout.size();
+        let r = BASIC_PAGE_SIZE % obj_layout.size();
 
         // If allocating a single page is enough to get internal fragmentation under 12.5% (1/8)
         // XXX: Might need to multiple here by 10000 or something
-        if (r * 100000 / 0x1000) <= (1 * 100000 / 8) {
+        if (r * 100000 / BASIC_PAGE_SIZE) <= (1 * 100000 / 8) {
             return 1;
         }
 
@@ -63,7 +63,7 @@ impl InternalSlabAllocator {
         //
         //    r - d * x       1
         // -------------- <= ---
-        // 0x1000 * c * x     8
+        // BASIC_PAGE_SIZE * c * x     8
         //
         // (where `x` is the amount of `c` blocks we want to find)
         //
@@ -82,7 +82,7 @@ impl InternalSlabAllocator {
 
     /// Calculates the amount of objects with `obj_layout` that can fit in a slab
     const fn calc_obj_count(pages_per_slab: usize, obj_layout: Layout) -> usize {
-        (pages_per_slab * 0x1000 - Layout::new::<Node<Slab>>().pad_to_align().size())
+        (pages_per_slab * BASIC_PAGE_SIZE - Layout::new::<Node<Slab>>().pad_to_align().size())
             / obj_layout.size()
     }
 
@@ -209,11 +209,11 @@ impl InternalSlabAllocator {
         let buff_ptr = buff_ptr.cast::<ObjectNode>();
         unsafe {
             // SAFETY: Size is OK since we allocated the pages_per_slab amount of pages. Alignment
-            // is OK since 0x1000 * n is always aligned to Node<Slab>, and so 0x1000 * n -
+            // is OK since BASIC_PAGE_SIZE * n is always aligned to Node<Slab>, and so BASIC_PAGE_SIZE * n -
             // size_of(Node<Slab>) is also aligned to Node<Slab>
             let slab_ptr = buff_ptr
                 .cast::<u8>()
-                .add(self.pages_per_slab * 0x1000)
+                .add(self.pages_per_slab * BASIC_PAGE_SIZE)
                 .sub(Layout::new::<Node<Slab>>().pad_to_align().size())
                 .cast::<Node<Slab>>();
 

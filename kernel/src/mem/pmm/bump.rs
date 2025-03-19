@@ -4,6 +4,8 @@ use core::slice::from_raw_parts_mut;
 
 use limine::memory_map;
 
+use crate::arch::BASIC_PAGE_SIZE;
+
 use super::super::{PageId, addr_to_page_id, page_id_to_addr};
 use super::{PhysAddr, PmmAllocator, PmmError};
 use utils::collections::bitmap::Bitmap;
@@ -104,7 +106,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                 // If the length is page aligned, set iterate over the next page as well.
                 // NOTE: This is OK, since this never happens with `USEABLE` or `BOOTLOADER_RECLAIMABLE`. And
                 // it's a must for allocating the page table, since it's almost always not page aligned
-                let end_id = start_id + ((len + 0xfff) / 0x1000);
+                let end_id = start_id + ((len + 0xfff) / BASIC_PAGE_SIZE);
 
                 start_id..end_id
             }
@@ -157,7 +159,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                 })
                 .unwrap();
             (last_descr.base + last_descr.length) as usize
-        } / 0x1000;
+        } / BASIC_PAGE_SIZE;
 
         unsafe {
             // Get the size we need to allocate to the bitmap (that's `what we use` + `rounding up` to byte alignment)

@@ -1,5 +1,7 @@
 use core::ptr::NonNull;
 
+use crate::arch::BASIC_PAGE_SIZE;
+
 pub mod pmm;
 pub mod vmm;
 
@@ -49,16 +51,16 @@ pub(self) type PageId = usize;
 
 /// Convert a page ID to a physical address
 pub(self) fn page_id_to_addr(page_id: PageId) -> usize {
-    page_id * 0x1000
+    page_id * BASIC_PAGE_SIZE 
 }
 
 /// Convert a physical address to a page ID
 pub(self) fn addr_to_page_id(addr: usize) -> Option<PageId> {
-    if addr % 0x1000 != 0 {
+    if addr % BASIC_PAGE_SIZE != 0 {
         return None;
     }
 
-    Some(addr / 0x1000)
+    Some(addr / BASIC_PAGE_SIZE)
 }
 
 #[cfg(feature = "test")]

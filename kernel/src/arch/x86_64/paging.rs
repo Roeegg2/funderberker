@@ -23,8 +23,13 @@ const PAGING_LEVEL: u8 = 5;
 
 const ENTRIES_PER_TABLE: usize = 512;
 
+pub const BASIC_PAGE_SIZE: usize = 0x1000;
+
+/// Errors that the paging system might encounter
 #[derive(Debug, Copy, Clone)]
 pub enum PagingError {
+    /// The address is not aligned to the page size
+    UnalignedAddress,
     /// All entries are marked as full even though the PT is said to have free slots (AVL bits aren't set)
     UnexpectedlyTableFull(u8),
     /// PMM page allocator failure whilst trying to allocate a paging table
@@ -33,13 +38,42 @@ pub enum PagingError {
     EntryToPageTableFailed,
     /// Virtual address asked to be mapped is already reserved
     AlreadyReservedVirtualAddress(u8),
-    /// VIrtual address asked to be unmapped is already free
+    /// Virtual address asked to be unmapped is already free
     AlreadyFreeVirtualAddress(u8),
     /// One (or possibly more) paging tables were found missing during virtual address translation
     /// at level _
     MissingPagingTable(u8),
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum PageSize {
+    Size4KB = 0,
+    Size2MB = 1,
+    Size1GB = 2,
+}
+
+impl PageSize {
+    const fn get_size(self) -> usize {
+        BASIC_PAGE_SIZE * (ENTRIES_PER_TABLE.pow(self as u32))
+    }
+
+    const fn get_paging_level(self) -> u8 {
+        PAGING_LEVEL -1 -(self as u8)
+    }
+
+    const fn get_flag(self) -> usize {
+        match self {
+            PageSize::Size4KB => 0,
+            _ => Entry::FLAG_PS,
+        }
+    }
+
+    const fn get_shift(self) -> usize {
+        12 + (self as usize * 9)
+    }
+}
+
+/// A paging table entry
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
 struct Entry(usize);
@@ -74,15 +108,17 @@ impl Entry {
 }
 
 impl Entry {
-    // Set address or flags to entry
+    /// Set address or flags to entry
     const fn set(&mut self, data: usize) {
         self.0 |= data;
     }
 
+    /// Unset the flags from the entry
     const fn unset_flags(&mut self, flags: usize) {
         self.0 &= !flags
     }
 
+    /// Get the flags from the entry
     const fn get_flags(&self, flag: usize) -> usize {
         self.0 & flag
     }
@@ -118,7 +154,7 @@ unsafe fn map_page_range(
     len: usize,
     flags: usize,
 ) -> Result<(), PagingError> {
-    let page_range = (0..len).step_by(0x1000);
+    let page_range = (0..len).step_by(BASIC_PAGE_SIZE);
 
     page_range.into_iter().try_for_each(|offset| {
         let pte = {
@@ -134,6 +170,7 @@ unsafe fn map_page_range(
     })
 }
 
+/// Finalize the paging system initialization
 #[inline]
 unsafe fn final_init(pml_addr: PhysAddr) {
     // TODO: Make sure CRs flags are OK (if we're not booting with Limine)
@@ -142,6 +179,8 @@ unsafe fn final_init(pml_addr: PhysAddr) {
     //write_cr!(cr4, )
 }
 
+/// Initialize the paging system from the limine
+#[cfg(feature = "limine")]
 pub unsafe fn init_from_limine(
     mem_map: &[&memory_map::Entry],
     kernel_virt: VirtAddr,
@@ -208,6 +247,7 @@ pub unsafe fn init_from_limine(
     Ok(())
 }
 
+/// A paging table in the paging tree
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct PageTable([Entry; ENTRIES_PER_TABLE]);
@@ -222,10 +262,11 @@ impl PageTable {
     }
 
     /// Tries to map the given physical address to some available virtual address
-    pub fn map_page_any(phys_addr: PhysAddr, flags: usize) -> Result<VirtAddr, PagingError> {
+    pub fn map_page_any(phys_addr: PhysAddr, flags: usize, page_size: PageSize) -> Result<VirtAddr, PagingError> {
+        //let page_size = page_size.get_size();
         let pml = unsafe { PageTable::get_pml() }?;
-        let (pte, virt_addr) = pml.get_create_entry_any(PAGING_LEVEL - 1)?;
-        pte.set(phys_addr.0 | flags);
+        let (pte, virt_addr) = pml.get_create_entry_any(page_size.get_paging_level())?;
+        pte.0 = phys_addr.0 | flags | page_size.get_flag();
 
         Ok(virt_addr)
     }
@@ -235,17 +276,18 @@ impl PageTable {
         virt_addr: VirtAddr,
         phys_addr: PhysAddr,
         flags: usize,
+        page_size: PageSize,
     ) -> Result<(), PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
-        let pte = pml.get_create_entry_specific(VirtAddr(virt_addr.0 >> 12), PAGING_LEVEL - 1)?;
-        pte.set(phys_addr.0 | flags);
+        let pte = pml.get_create_entry_specific(VirtAddr(virt_addr.0 >> page_size.get_shift()), page_size.get_paging_level())?;
+        pte.0 = phys_addr.0 | flags | page_size.get_flag();
 
         Ok(())
     }
 
-    pub unsafe fn unmap_page(virt_addr: VirtAddr) -> Result<(), PagingError> {
+    pub unsafe fn unmap_page(virt_addr: VirtAddr, page_size: PageSize) -> Result<(), PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
-        let pte = pml.get_entry_specific(VirtAddr(virt_addr.0 >> 12), PAGING_LEVEL - 1)?;
+        let pte = pml.get_entry_specific(VirtAddr(virt_addr.0 >> page_size.get_shift()), page_size.get_paging_level())?;
 
         pte.unset_flags(Entry::FLAG_P);
 
@@ -365,7 +407,7 @@ impl PageTable {
             // HHDM convert PhysAddr -> VirtAddr and then to a viable pointer
             let ptr = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
             // Important! Memset to get rid of old data
-            utils::mem::memset(ptr, 0, 0x1000);
+            utils::mem::memset(ptr, 0, BASIC_PAGE_SIZE);
 
             // TODO: Change this error to something more meaningfull
             (ptr as *mut PageTable)
