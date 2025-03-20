@@ -1,2 +1,2 @@
 #[cfg(feature = "limine")]
-mod limine;
+pub mod limine;

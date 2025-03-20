@@ -3,6 +3,7 @@
 use core::arch::asm;
 
 use limine::BaseRevision;
+use limine::memory_map;
 use limine::paging;
 use limine::request::{
     HhdmRequest, KernelAddressRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
@@ -12,6 +13,7 @@ use limine::request::{
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;
 
+use crate::arch::BASIC_PAGE_SIZE;
 use crate::arch::x86_64;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
 use crate::print;
@@ -60,6 +62,38 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[used]
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
+
+pub fn get_aaa(mem_map: &[&memory_map::Entry]) -> usize {
+    let last_descr = mem_map
+        .iter()
+        .rev()
+        .find(|&entry| match entry.entry_type {
+            limine::memory_map::EntryType::USABLE
+            | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+            | limine::memory_map::EntryType::ACPI_RECLAIMABLE
+            | limine::memory_map::EntryType::KERNEL_AND_MODULES => true,
+            _ => false,
+        })
+        .unwrap();
+
+    last_descr.base as usize
+}
+
+pub fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> usize {
+    let last_descr = mem_map
+        .iter()
+        .rev()
+        .find(|&entry| match entry.entry_type {
+            limine::memory_map::EntryType::USABLE
+            | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+            | limine::memory_map::EntryType::ACPI_RECLAIMABLE
+            | limine::memory_map::EntryType::KERNEL_AND_MODULES => true,
+            _ => false,
+        })
+        .unwrap();
+
+    (last_descr.base + last_descr.length) as usize / BASIC_PAGE_SIZE
+}
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {

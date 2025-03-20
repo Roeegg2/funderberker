@@ -39,7 +39,7 @@ pub struct IterNodeMut<'a, T: 'a> {
 
 #[derive(Debug)]
 pub struct Node<T> {
-    data: T,
+    pub data: T,
     next: Option<NonNull<Node<T>>>,
 }
 

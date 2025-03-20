@@ -5,6 +5,7 @@ use core::slice::from_raw_parts_mut;
 use limine::memory_map;
 
 use crate::arch::BASIC_PAGE_SIZE;
+use crate::boot::limine::get_page_count_from_mem_map;
 
 use super::super::{PageId, addr_to_page_id, page_id_to_addr};
 use super::{PhysAddr, PmmAllocator, PmmError};
@@ -146,20 +147,8 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         // Get the last allocatable memory descriptor - that'll decide the bitmap size (yes, we'll
         // still have some "holes" (ie. reserved & shit memory) but it's negligible. Not worth the
         // hasstle of maintaining multiple bitmaps etc)
-        let page_count = {
-            let last_descr = mem_map
-                .iter()
-                .rev()
-                .find(|&entry| match entry.entry_type {
-                    limine::memory_map::EntryType::USABLE
-                    | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
-                    | limine::memory_map::EntryType::ACPI_RECLAIMABLE
-                    | limine::memory_map::EntryType::KERNEL_AND_MODULES => true,
-                    _ => false,
-                })
-                .unwrap();
-            (last_descr.base + last_descr.length) as usize
-        } / BASIC_PAGE_SIZE;
+
+        let page_count = get_page_count_from_mem_map(mem_map);
 
         unsafe {
             // Get the size we need to allocate to the bitmap (that's `what we use` + `rounding up` to byte alignment)

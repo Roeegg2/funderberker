@@ -3,7 +3,7 @@ use core::{alloc::Layout, ffi::c_void, ptr::NonNull, usize};
 
 use utils::collections::stacklist::{Node, StackList};
 
-use crate::arch::{x86_64::paging::PagingError, BASIC_PAGE_SIZE};
+use crate::arch::{BASIC_PAGE_SIZE, x86_64::paging::PagingError};
 
 /// Errors that the slab allocator might encounter
 #[derive(Debug, Copy, Clone)]

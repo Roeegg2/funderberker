@@ -9,7 +9,7 @@ alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc"}
 utils = { path = "../utils" }
 
 [features]
-default = ["limine", "amd", "serial", "paging_4", "pmm_bump"]
+default = ["limine", "amd", "serial", "paging_4", "pmm_buddy"]
 
 # x86_64 CPU vendors
 intel = []

@@ -53,14 +53,17 @@ pub enum PageSize {
 }
 
 impl PageSize {
+    #[inline]
     const fn get_size(self) -> usize {
         BASIC_PAGE_SIZE * (ENTRIES_PER_TABLE.pow(self as u32))
     }
 
+    #[inline]
     const fn get_paging_level(self) -> u8 {
-        PAGING_LEVEL -1 -(self as u8)
+        PAGING_LEVEL - 1 - (self as u8)
     }
 
+    #[inline]
     const fn get_flag(self) -> usize {
         match self {
             PageSize::Size4KB => 0,
@@ -68,6 +71,7 @@ impl PageSize {
         }
     }
 
+    #[inline]
     const fn get_shift(self) -> usize {
         12 + (self as usize * 9)
     }
@@ -262,7 +266,11 @@ impl PageTable {
     }
 
     /// Tries to map the given physical address to some available virtual address
-    pub fn map_page_any(phys_addr: PhysAddr, flags: usize, page_size: PageSize) -> Result<VirtAddr, PagingError> {
+    pub fn map_page_any(
+        phys_addr: PhysAddr,
+        flags: usize,
+        page_size: PageSize,
+    ) -> Result<VirtAddr, PagingError> {
         //let page_size = page_size.get_size();
         let pml = unsafe { PageTable::get_pml() }?;
         let (pte, virt_addr) = pml.get_create_entry_any(page_size.get_paging_level())?;
@@ -279,7 +287,10 @@ impl PageTable {
         page_size: PageSize,
     ) -> Result<(), PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
-        let pte = pml.get_create_entry_specific(VirtAddr(virt_addr.0 >> page_size.get_shift()), page_size.get_paging_level())?;
+        let pte = pml.get_create_entry_specific(
+            VirtAddr(virt_addr.0 >> page_size.get_shift()),
+            page_size.get_paging_level(),
+        )?;
         pte.0 = phys_addr.0 | flags | page_size.get_flag();
 
         Ok(())
@@ -287,7 +298,10 @@ impl PageTable {
 
     pub unsafe fn unmap_page(virt_addr: VirtAddr, page_size: PageSize) -> Result<(), PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
-        let pte = pml.get_entry_specific(VirtAddr(virt_addr.0 >> page_size.get_shift()), page_size.get_paging_level())?;
+        let pte = pml.get_entry_specific(
+            VirtAddr(virt_addr.0 >> page_size.get_shift()),
+            page_size.get_paging_level(),
+        )?;
 
         pte.unset_flags(Entry::FLAG_P);
 

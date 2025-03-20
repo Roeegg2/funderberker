@@ -1,6 +1,13 @@
 use super::{PageId, PhysAddr};
+
+#[cfg(feature = "pmm_buddy")]
+use buddy::BuddyAllocator;
+#[cfg(feature = "pmm_bump")]
 use bump::BumpAllocator;
 
+#[cfg(feature = "pmm_buddy")]
+mod buddy;
+#[cfg(feature = "pmm_bump")]
 mod bump;
 
 /// Errors that the PMM might encounter
@@ -20,6 +27,11 @@ pub fn get() -> &'static mut impl PmmAllocator {
     unsafe {
         &mut bump::BUMP_ALLOCATOR
     }
+    #[cfg(feature = "pmm_buddy")]
+    #[allow(static_mut_refs)]
+    unsafe {
+        &mut buddy::BUDDY_ALLOCATOR
+    }
 }
 
 /// Initilizes the used PMM from limine
@@ -28,6 +40,10 @@ pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
     #[cfg(feature = "pmm_bump")]
     unsafe {
         BumpAllocator::init_from_limine(mem_map)
+    };
+    #[cfg(feature = "pmm_buddy")]
+    unsafe {
+        BuddyAllocator::init_from_limine(mem_map)
     };
 }
 

@@ -51,7 +51,7 @@ pub(self) type PageId = usize;
 
 /// Convert a page ID to a physical address
 pub(self) fn page_id_to_addr(page_id: PageId) -> usize {
-    page_id * BASIC_PAGE_SIZE 
+    page_id * BASIC_PAGE_SIZE
 }
 
 /// Convert a physical address to a page ID
