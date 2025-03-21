@@ -158,6 +158,7 @@ unsafe fn map_page_range(
     len: usize,
     flags: usize,
 ) -> Result<(), PagingError> {
+    println!("Mapping {:x} to {:x} with len {}", phys_addr_start.0, phys_addr_start.add_hhdm_offset().0, len);
     let page_range = (0..len).step_by(BASIC_PAGE_SIZE);
 
     page_range.into_iter().try_for_each(|offset| {

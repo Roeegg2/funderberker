@@ -63,22 +63,6 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-pub fn get_aaa(mem_map: &[&memory_map::Entry]) -> usize {
-    let last_descr = mem_map
-        .iter()
-        .rev()
-        .find(|&entry| match entry.entry_type {
-            limine::memory_map::EntryType::USABLE
-            | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
-            | limine::memory_map::EntryType::ACPI_RECLAIMABLE
-            | limine::memory_map::EntryType::KERNEL_AND_MODULES => true,
-            _ => false,
-        })
-        .unwrap();
-
-    last_descr.base as usize
-}
-
 pub fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> usize {
     let last_descr = mem_map
         .iter()
