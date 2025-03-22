@@ -158,21 +158,18 @@ unsafe fn map_page_range(
     len: usize,
     flags: usize,
 ) -> Result<(), PagingError> {
-    println!("Mapping {:x} to {:x} with len {}", phys_addr_start.0, phys_addr_start.add_hhdm_offset().0, len);
-    let page_range = (0..len).step_by(BASIC_PAGE_SIZE);
-
-    page_range.into_iter().try_for_each(|offset| {
+    for i in (0..len).step_by(BASIC_PAGE_SIZE) {
         let pte = {
             // Shift it 12 bits to the left, since it's page aligned address
-            let virt_addr = VirtAddr((virt_addr_start.0 + offset) >> 12);
+            let virt_addr = VirtAddr((virt_addr_start.0 + i) >> 12);
             pml.get_create_entry_specific(virt_addr, PAGING_LEVEL - 1)
         }?;
 
         // Populate the PTE with the desired PhysAddr + Flags
-        pte.set((phys_addr_start.0 + offset) | flags);
+        pte.set((phys_addr_start.0 + i) | flags);
+    }
 
-        Ok(())
-    })
+    Ok(())
 }
 
 /// Finalize the paging system initialization
@@ -327,7 +324,6 @@ impl PageTable {
 
         // Can't get an entry which one of the tables in it's path is unmapped...
         if self.0[index].get_flags(Entry::FLAG_P) == 0 {
-            println!("Missing table at level {}", level);
             return Err(PagingError::MissingPagingTable(level));
         }
 

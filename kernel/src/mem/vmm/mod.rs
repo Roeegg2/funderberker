@@ -18,9 +18,12 @@ pub fn alloc_pages_any(
     alignment: usize,
     page_count: usize,
 ) -> Result<NonNull<c_void>, PagingError> {
+    println!("page_count: {}", page_count);
+    println!("alignment: {}", alignment);
     let phys_addr = crate::mem::pmm::get()
         .alloc_any(alignment, page_count)
         .map_err(|e| PagingError::AllocationError(e))?;
+    println!("phys_addr: {:?}", phys_addr);
     let virt_addr = phys_addr.add_hhdm_offset();
 
     // TODO: Add a way to customize the flags being set. 3 => x86_64 Present + Read & Write
