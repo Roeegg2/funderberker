@@ -6,6 +6,9 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(box_vec_non_null)]
 #![feature(non_null_from_ref)]
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::test::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
 mod boot;
 #[macro_use]
@@ -13,11 +16,11 @@ mod boot;
 mod print;
 mod arch;
 mod mem;
-#[cfg(feature = "test")]
 mod test;
 
-#[cfg(not(feature = "test"))]
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() {
-    log!("Funderberker operation completed!");
+    #[cfg(test)]
+    test_main();
+    log!("Starting Funderberker main operation!");
 }

@@ -73,10 +73,3 @@ pub unsafe fn free_pages(ptr: NonNull<c_void>, page_count: usize) -> Result<(), 
 
     Ok(())
 }
-
-#[cfg(feature = "test")]
-pub mod tests {
-    pub fn test() {
-        super::slab::tests::test();
-    }
-}

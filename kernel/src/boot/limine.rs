@@ -146,9 +146,6 @@ unsafe extern "C" fn kmain() -> ! {
         .unwrap()
     };
 
-    #[cfg(feature = "test")]
-    crate::test::start_testing();
-    #[cfg(not(feature = "test"))]
     crate::funderberker_main();
 
     hcf();

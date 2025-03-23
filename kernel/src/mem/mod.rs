@@ -62,10 +62,3 @@ pub(self) fn addr_to_page_id(addr: usize) -> Option<PageId> {
 
     Some(addr / BASIC_PAGE_SIZE)
 }
-
-#[cfg(feature = "test")]
-pub mod tests {
-    pub fn test() {
-        super::vmm::tests::test();
-    }
-}

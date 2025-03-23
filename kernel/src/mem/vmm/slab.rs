@@ -422,17 +422,9 @@ impl Slab {
     }
 }
 
-#[cfg(feature = "test")]
+#[cfg(test)]
 pub mod tests {
-    use alloc::boxed::Box;
-
-    pub fn test() {
-        test0();
-        test1();
-        test2();
-        println!("Slab tests passed!");
-    }
-
+    #[test_case]
     fn test0() {
         let mut allocator = unsafe {
             super::InternalSlabAllocator::new(core::alloc::Layout::new::<[u8; 10]>(), true)
@@ -460,6 +452,7 @@ pub mod tests {
         assert_eq!(allocator.full_slabs.len(), 0);
     }
 
+    #[test_case]
     fn test1() {
         let mut allocator = unsafe {
             super::InternalSlabAllocator::new(core::alloc::Layout::new::<[u64; 4]>(), true)
@@ -510,6 +503,7 @@ pub mod tests {
         assert_eq!(allocator.full_slabs.len(), 2);
     }
 
+    #[test_case]
     fn test2() {
         let mut allocator = unsafe {
             super::InternalSlabAllocator::new(core::alloc::Layout::new::<[u16; 20]>(), true)
