@@ -22,5 +22,6 @@ mod test;
 pub fn funderberker_main() {
     #[cfg(test)]
     test_main();
+
     log!("Starting Funderberker main operation!");
 }

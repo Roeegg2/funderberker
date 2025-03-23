@@ -1,11 +1,11 @@
 pub fn test_runner(tests: &[&dyn Fn()]) {
-    println!("Running {} tests", tests.len());
+    log!("(TEST) Running {} tests", tests.len());
 
     for (i, test) in tests.iter().enumerate() {
-        print!("Test #{}: ", i);
+        log!("(TEST) Test number: {}: ...", i);
         test();
-        println!("[OK]");
+        log!("(TEST) [OK]");
     }
 
-    println!("All tests passed!");
+    log!("(TEST) All tests passed!");
 }

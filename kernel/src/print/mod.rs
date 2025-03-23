@@ -24,9 +24,9 @@ macro_rules! println {
 
 #[macro_export]
 macro_rules! log {
-    ($($arg:tt)*) => {{
-        println!("-> {}", $($arg)*);
-    }}
+    ($($arg:tt)*) => {
+        println!("-> {}", format_args!($($arg)*));
+    }
 }
 
 impl core::fmt::Write for Writer {
