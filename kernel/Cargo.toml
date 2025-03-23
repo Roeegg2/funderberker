@@ -10,7 +10,7 @@ utils = { path = "../utils" }
 
 [features]
 # default = []
-default = ["limine", "amd", "serial", "paging_4", "pmm_buddy"]
+default = ["limine", "amd", "serial", "paging_4", "pmm_bump"]
 
 # x86_64 CPU vendors
 intel = []

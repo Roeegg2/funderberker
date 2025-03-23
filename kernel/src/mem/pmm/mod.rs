@@ -13,10 +13,15 @@ mod bump;
 /// Errors that the PMM might encounter
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PmmError {
+    /// The requested block is out of bounds
     OutOfBounds,
+    /// No available block of the requested size
     NoAvailableBlock,
+    /// The requested block is already free
     FreeOfAlreadyFree,
+    /// The requested alignment is invalid
     InvalidAlignment,
+    /// The requested address is invalid
     InvalidAddress,
 }
 

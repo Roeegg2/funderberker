@@ -20,6 +20,14 @@ pub(super) struct BumpAllocator<'a>(Bitmap<'a>);
 
 impl<'a> PmmAllocator for BumpAllocator<'a> {
     fn alloc_any(&mut self, alignment: PageId, page_count: usize) -> Result<PhysAddr, PmmError> {
+        if alignment == 0 {
+            return Err(PmmError::InvalidAlignment);
+        }
+
+        if page_count == 0 {
+            return Err(PmmError::NoAvailableBlock);
+        }
+
         'main: for i in (0..self.0.used_bits_count()).step_by(alignment) {
             // If we would go out of bounds, break
             if i + page_count >= self.0.used_bits_count() {
@@ -181,4 +189,56 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                 .for_each(|page_id| BUMP_ALLOCATOR.0.set(page_id));
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_alloc() {
+        let allocator = unsafe {
+            #[allow(static_mut_refs)]
+            &mut BUMP_ALLOCATOR
+        };
+
+        let addr0 = allocator.alloc_any(1, 1).unwrap();
+        let addr1 = allocator.alloc_any(2, 10).unwrap();
+        assert!(addr0.0 % 0x2000 == 0);
+
+        let addr2 = allocator.alloc_any(1, 2).unwrap();
+        unsafe {allocator.free(addr0, 1).unwrap()};
+
+        for _ in 0..10 {
+            let addr = allocator.alloc_any(1, 3).unwrap();
+            unsafe {allocator.free(addr, 3).unwrap()};
+        }
+
+        unsafe {allocator.free(addr1, 10).unwrap()};
+        unsafe {allocator.free(addr2, 2).unwrap()};
+    }
+
+    #[test_case]
+    fn test_error() {
+        let allocator = unsafe {
+            #[allow(static_mut_refs)]
+            &mut BUMP_ALLOCATOR
+        };
+
+        assert_eq!(allocator.alloc_any(0, 1), Err(PmmError::InvalidAlignment));
+        assert_eq!(allocator.alloc_any(1, 0), Err(PmmError::NoAvailableBlock));
+
+        let addr = allocator.alloc_any(2, 10).unwrap();
+
+        assert_eq!(allocator.alloc_at(addr, 10), Err(PmmError::NoAvailableBlock));
+
+        unsafe {allocator.free(addr, 5).unwrap()};
+
+        unsafe {assert_eq!(allocator.free(addr, 5), Err(PmmError::FreeOfAlreadyFree))};
+
+        unsafe {allocator.free(PhysAddr(addr.0 + 5*BASIC_PAGE_SIZE), 5).unwrap()};
+
+    }
+
+    // TODO: Need to test alloc_at
 }

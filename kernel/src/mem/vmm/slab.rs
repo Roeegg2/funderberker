@@ -113,7 +113,8 @@ impl InternalSlabAllocator {
         }
     }
 
-    /// Allocates an object from the slab allocator
+    /// Allocates an object from the slab allocator and returns a pointer to it. If the slab is
+    /// full, it will try to grow the cache and return a pointer to an object in the new slab
     pub(super) fn alloc(&mut self) -> Result<NonNull<ObjectNode>, SlabError> {
         // First, try allocating from the partial slabs
         if let Some(slab_node) = self.partial_slabs.peek_mut() {
@@ -151,7 +152,7 @@ impl InternalSlabAllocator {
         unreachable!();
     }
 
-    /// Frees an object from the slab allocator
+    /// Frees an object from the slab allocator.
     pub(super) unsafe fn free(&mut self, ptr: NonNull<ObjectNode>) -> Result<(), SlabError> {
         // Make sure `ptr` alignment is correct
         if !ptr.is_aligned_to(self.obj_layout.align()) {
@@ -192,7 +193,7 @@ impl InternalSlabAllocator {
         Err(SlabError::BadPtrRange)
     }
 
-    /// Reap all the slabs that are free. Should be invoked when system needs memory back
+    /// Reap all the slabs that are free. Should only be invoked by OOM killer, when the system desperately needs memory back.
     // TODO: Maybe pass in the amount of memory needed instead of freeing everything?
     pub(super) fn reap(&mut self) {
         while let Some(slab) = self.free_slabs.pop() {
@@ -201,7 +202,7 @@ impl InternalSlabAllocator {
         }
     }
 
-    /// Grows the cache by allocating a new slab and adding it to the free slabs list
+    /// Grows the cache by allocating a new slab and adding it to the free slabs list.
     pub(super) fn cache_grow(&mut self) -> Result<(), SlabError> {
         let buff_ptr = super::alloc_pages_any(self.pages_per_slab, 1)
             .map_err(|e| SlabError::PageAllocationError(e))?;
@@ -235,6 +236,7 @@ impl InternalSlabAllocator {
 }
 
 impl Drop for InternalSlabAllocator {
+    /// Frees all the slabs that were allocated by the allocator
     fn drop(&mut self) {
         // Free the free_slabs
         self.reap();
@@ -261,6 +263,7 @@ pub(super) type ObjectNode = Node<NonNull<()>>;
 /// The core structure of a slab
 #[derive(Debug)]
 struct SlabCore {
+    /// Pointer to the slab's buffer
     buff_ptr: NonNull<ObjectNode>,
     /// List of objects that are free in this slab
     free_objs: StackList<NonNull<ObjectNode>>,
@@ -269,12 +272,15 @@ struct SlabCore {
 /// The slab structure that holds the core and the type of slab
 #[derive(Debug)]
 enum Slab {
+    /// The slab where the Node<ObjectNodes> are embedded in the slab itself
     SlabObjEmbed(SlabCore),
+    /// The slab where the Node<ObjectNodes> are stored in the kernel's heap (i.e. using
+    /// global allocator )
     SlabObjExtern(SlabCore),
 }
 
 impl Slab {
-    /// Get the list of free objects in the slab
+    /// Get the list of free objects in the slab. This is a simple getter function.
     const fn objects(&self) -> &StackList<NonNull<ObjectNode>> {
         match self {
             Slab::SlabObjEmbed(slab) => &slab.free_objs,
@@ -282,7 +288,7 @@ impl Slab {
         }
     }
 
-    /// Get the pointer to the allocated data
+    /// Get the pointer to the allocated data. This is a simple getter function.
     const fn buff_ptr(&self) -> NonNull<ObjectNode> {
         match self {
             Slab::SlabObjEmbed(slab) => slab.buff_ptr,
@@ -296,7 +302,9 @@ impl Slab {
             && ptr < unsafe { utils::ptr_add_layout!(ptr, obj_count, obj_layout, ObjectNode) }
     }
 
-    /// Constructs a new slab with the given parameters
+    /// Constructs a new slab with the given parameters. This is unsafe because the layout must be
+    /// at least Node<ObjectNode> size aligned.
+    /// This is a simple wrapper around the `new_obj_embed` and `new_obj_extern` functions
     #[inline]
     unsafe fn new(
         buff_ptr: NonNull<ObjectNode>,
@@ -314,6 +322,7 @@ impl Slab {
     }
 
     /// Constructs a new slab where the Node<ObjectNodes> are stored in the kernel's heap
+    /// This is unsafe because the layout must be at least Node<ObjectNode> size aligned.
     #[inline]
     unsafe fn new_obj_extern(
         buff_ptr: NonNull<ObjectNode>,
@@ -335,7 +344,8 @@ impl Slab {
         })
     }
 
-    // Constructs a new slab where the Node<ObjectNodes> are embedded in the slab itself
+    // Constructs a new slab where the Node<ObjectNodes> are embedded in the slab itself.
+    // This is unsafe because the layout must be at least Node<ObjectNode> size aligned.
     #[inline]
     unsafe fn new_obj_embed(
         buff_ptr: NonNull<ObjectNode>,
