@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::{alloc::Layout, ffi::c_void, ptr::NonNull, usize};
+use core::{alloc::Layout, ffi::c_void, num::NonZero, ptr::NonNull, usize};
 
 use utils::collections::stacklist::{Node, StackList};
 
@@ -197,14 +197,14 @@ impl InternalSlabAllocator {
     // TODO: Maybe pass in the amount of memory needed instead of freeing everything?
     pub(super) fn reap(&mut self) {
         while let Some(slab) = self.free_slabs.pop() {
-            unsafe { super::free_pages(slab.buff_ptr().cast::<c_void>(), self.pages_per_slab) }
+            unsafe { super::free_pages(slab.buff_ptr().cast::<c_void>(), NonZero::new_unchecked(self.pages_per_slab)) }
                 .unwrap();
         }
     }
 
     /// Grows the cache by allocating a new slab and adding it to the free slabs list.
     pub(super) fn cache_grow(&mut self) -> Result<(), SlabError> {
-        let buff_ptr = super::alloc_pages_any(self.pages_per_slab, 1)
+        let buff_ptr = super::alloc_pages_any(unsafe {NonZero::new_unchecked(self.pages_per_slab)}, unsafe {NonZero::new_unchecked(1)})
             .map_err(|e| SlabError::PageAllocationError(e))?;
 
         let buff_ptr = buff_ptr.cast::<ObjectNode>();
@@ -243,13 +243,13 @@ impl Drop for InternalSlabAllocator {
 
         // Free the partial slabs
         while let Some(slab) = self.partial_slabs.pop() {
-            unsafe { super::free_pages(slab.buff_ptr().cast::<c_void>(), self.pages_per_slab) }
+            unsafe { super::free_pages(slab.buff_ptr().cast::<c_void>(), NonZero::new_unchecked(self.pages_per_slab)) }
                 .unwrap();
         }
 
         // Free the full slabs
         while let Some(slab) = self.full_slabs.pop() {
-            unsafe { super::free_pages(slab.buff_ptr().cast::<c_void>(), self.pages_per_slab) }
+            unsafe { super::free_pages(slab.buff_ptr().cast::<c_void>(), NonZero::new_unchecked(self.pages_per_slab)) }
                 .unwrap();
         }
     }

@@ -5,6 +5,8 @@ compiler_error!("Can't have both 4 level and 5 level paging. Choose one of the o
 #[cfg(not(any(feature = "paging_4", feature = "paging_5")))]
 compiler_error!("No paging level is selected. Choose one of the options");
 
+use core::num::NonZero;
+
 #[cfg(feature = "limine")]
 use limine::memory_map;
 
@@ -411,7 +413,7 @@ impl PageTable {
     fn new() -> Result<(&'static mut PageTable, PhysAddr), PagingError> {
         // Get the physical address reserved for the table (it's exactly 1 table, 1 page alignment)
         let phys_addr = crate::mem::pmm::get()
-            .alloc_any(1, 1)
+            .alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(1)})
             .map_err(|e| PagingError::AllocationError(e))?;
 
         let page_table = unsafe {

@@ -1,6 +1,7 @@
 //! Everything needed to boot the kernel with Limine.
 
 use core::arch::asm;
+use core::num::NonZero;
 
 use limine::BaseRevision;
 use limine::memory_map;
@@ -63,7 +64,7 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-pub fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> usize {
+pub fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> NonZero<usize> {
     let last_descr = mem_map
         .iter()
         .rev()
@@ -76,7 +77,7 @@ pub fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> usize {
         })
         .unwrap();
 
-    (last_descr.base + last_descr.length) as usize / BASIC_PAGE_SIZE
+    NonZero::new((last_descr.base + last_descr.length) as usize / BASIC_PAGE_SIZE).unwrap()
 }
 
 #[unsafe(no_mangle)]
