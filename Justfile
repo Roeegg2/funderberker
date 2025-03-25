@@ -1,6 +1,6 @@
 # Configuration variables
 test-crates := "utils"
-rust-profile := "debug"
+rust-profile := "release"
 
 # Directory and file paths
 kernel-dir := "kernel"
@@ -31,9 +31,11 @@ help:
     @echo "  build     - Same as 'default'"
     @echo "  run       - Build and run in QEMU"
     @echo "  debug     - Build and run in QEMU with debug output"
-    @echo "  kernel-test - Build kernel tests and run in QEMU"
-    @echo "  test      - Run unit tests"
+    @echo "  test      - Build and run kernel tests in QEMU"
+    @echo "  crates-test      - Run other crates' unit tests"
     @echo "  clean     - Remove all build artifacts"
+    @echo "  media     - Write the compiled ISO to a USB device"
+    @echo "  media-test - Write the test compiled ISO to a USB device"
     @echo ""
     @echo "Configuration:"
     @echo "  rust-profile=debug|release (current: {{rust-profile}})"
@@ -116,7 +118,7 @@ _media:
 # Helper recipe for running QEMU
 _run-qemu: _download-firmware
     qemu-system-x86_64 \
-        -nographic \
+        -vga virtio \
         -nodefaults \
         -serial stdio \
         -no-reboot \

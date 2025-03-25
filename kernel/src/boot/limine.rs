@@ -64,6 +64,8 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
+/// Get the maximum addressable page count from the memory map.
+/// This is done by finding the last memory map entry that is usable and calculating the page count
 pub fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> NonZero<usize> {
     let last_descr = mem_map
         .iter()

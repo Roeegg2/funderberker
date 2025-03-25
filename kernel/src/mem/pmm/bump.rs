@@ -105,6 +105,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         Ok(true)
     }
 
+    // Ugly code. But if it ain't broke, don't try to fix it
     #[inline]
     unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
         #[inline]
@@ -203,7 +204,7 @@ mod tests {
 
         let addr0 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(1)}).unwrap();
         let addr1 = allocator.alloc_any(unsafe {NonZero::new_unchecked(2)}, unsafe {NonZero::new_unchecked(10)}).unwrap();
-        assert!(addr0.0 % 0x2000 == 0);
+        assert!(addr1.0 % 0x2000 == 0);
 
         let addr2 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(2)}).unwrap();
         unsafe {allocator.free(addr0, NonZero::new_unchecked(1)).unwrap()};

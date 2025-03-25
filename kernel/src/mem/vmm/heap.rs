@@ -16,53 +16,63 @@ pub(super) static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocat
 /// allocators
 #[derive(Debug)]
 pub(super) struct KernelHeapAllocator(
-    UnsafeCell<[InternalSlabAllocator; Self::SLAB_ALLOCATOR_COUNT]>,
+    UnsafeCell<[InternalSlabAllocator; Self::SIZE]>,
 );
 
-impl KernelHeapAllocator {
-    // TODO: Set this to the actual sizes
-    const MIN_OBJ_SIZE: usize = 8;
-    const MAX_OBJ_SIZE: usize = 29;
-    const SLAB_ALLOCATOR_COUNT: usize = Self::MAX_OBJ_SIZE - Self::MIN_OBJ_SIZE + 1;
+/// A macro to make creating slab allocators easier
+macro_rules! create_slab_allocators {
+    ($($size:expr),*) => {
+        [
+            $(unsafe { InternalSlabAllocator::new(Layout::new::<[u8; $size]>(), true) },)*
+        ]
+    };
+}
 
+impl KernelHeapAllocator {
+    const MIN_POW: usize = 16_usize.ilog2() as usize;
+    const MAX_POW: usize = 16384_usize.ilog2() as usize;
+    const SIZE: usize = Self::MAX_POW - Self::MIN_POW + 1;
+
+    /// Create a new instance of the kernel heap allocator
     #[rustfmt::skip]
     const fn new() -> Self {
         // TODO: Use a const array::from_fn here!
-        Self(UnsafeCell::new([
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(8)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(9)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(10)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(11)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(12)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(13)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(14)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(15)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(16)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(17)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(18)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(19)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(20)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(21)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(22)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(23)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(24)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(25)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(26)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(27)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(28)]>(), true)},
-            unsafe {InternalSlabAllocator::new(Layout::new::<[u8; 2_usize.pow(29)]>(), true)},
-        ]))
+        // TODO: Benchmark and possibly change the slab allocator sizes
+        Self(UnsafeCell::new(create_slab_allocators!(
+            2_usize.pow(Self::MIN_POW as u32 + 0),
+            2_usize.pow(Self::MIN_POW as u32 + 1),
+            2_usize.pow(Self::MIN_POW as u32 + 2),
+            2_usize.pow(Self::MIN_POW as u32 + 3),
+            2_usize.pow(Self::MIN_POW as u32 + 4),
+            2_usize.pow(Self::MIN_POW as u32 + 5),
+            2_usize.pow(Self::MIN_POW as u32 + 6),
+            2_usize.pow(Self::MIN_POW as u32 + 7),
+            2_usize.pow(Self::MIN_POW as u32 + 8),
+            2_usize.pow(Self::MIN_POW as u32 + 9),
+            2_usize.pow(Self::MIN_POW as u32 + 10)
+        )))
+    }
+
+    /// Get the index of the allocator that is closest to the total size layout requires
+    #[inline]
+    const fn get_matching_allocator_index(&self, layout: Layout) -> usize {
+        let pow = layout.pad_to_align().size().next_power_of_two().ilog2() as usize;
+        assert!(pow <= Self::MAX_POW);
+        if pow <= Self::MIN_POW {
+            return 0;
+        }
+
+        pow - Self::MIN_POW
     }
 }
 
-// XXX: Make this actually Sync able
+// XXX: Make this actually Syncable
 unsafe impl Sync for KernelHeapAllocator {}
 
 unsafe impl GlobalAlloc for KernelHeapAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Use the allocator that is closest to the total size layout requires
-        let index = layout.size().next_power_of_two().ilog2() as usize;
-        assert!(index < Self::SLAB_ALLOCATOR_COUNT);
+        let index = self.get_matching_allocator_index(layout);
         // Try accessing allocators, and then also try to allocate
         if let Some(allocators) = unsafe { self.0.get().as_mut() }
             && let Ok(ptr) = allocators[index].alloc()
@@ -87,5 +97,45 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
                 let _ = allocators[index].free(non_null_ptr);
             };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{boxed::Box, string::ToString, vec::Vec};
+
+    #[test_case]
+    fn generic_allocs() {
+        let a = Box::new(5_usize);
+        let string = Box::new("Hello, World!".to_string());
+        assert_eq!(*a, 5);
+        assert_eq!(*string, "Hello, World!".to_string());
+        drop(a);
+        drop(string);
+
+        let a = Box::new([100_usize, 12_usize, 42_usize]);
+        let part1 = Box::new("Hello there");
+        {
+            let part2 = Box::new("General Kenobi");
+            let b = Box::new(200);
+            let mut v = Vec::new();
+
+            for i in 0..100 {
+                v.push(Box::new(i));
+            }
+
+            for i in 0..100 {
+                assert_eq!(*v.pop().unwrap(), 99 - i);
+            }
+
+            assert_eq!(*b, 200);
+            assert_eq!(*part2, "General Kenobi");
+        }
+
+        assert_eq!(*a, [100, 12, 42]);
+        assert_eq!(*part1, "Hello there");
+
+        let a = Box::new(());
+        assert_eq!(*a, ());
     }
 }

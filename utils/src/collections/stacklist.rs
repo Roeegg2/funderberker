@@ -1,9 +1,7 @@
 //! A simple, unidirectional linked list
 
 use core::{
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    ptr::NonNull,
+    fmt::{self, Debug}, marker::PhantomData, ops::{Deref, DerefMut}, ptr::NonNull
 };
 
 #[cfg(not(test))]
@@ -43,7 +41,6 @@ pub struct Node<T> {
     next: Option<NonNull<Node<T>>>,
 }
 
-#[derive(Debug)]
 pub struct StackList<T> {
     len: usize,
     head: Option<NonNull<Node<T>>>,
@@ -286,5 +283,14 @@ impl<'a, T> Iterator for IterMut<'a, T> {
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
+    }
+}
+
+impl<T> Debug for StackList<T>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
     }
 }

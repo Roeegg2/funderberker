@@ -4,6 +4,7 @@ mod heap;
 pub mod slab;
 
 // TODO: Remove x86_64 dependencies here
+// TODO: Rewrite all of this shit well
 
 use core::{ffi::c_void, num::NonZero, ptr::NonNull};
 

@@ -1,3 +1,5 @@
+//! A simple slab allocator for the kernel heap & custom use
+
 use alloc::boxed::Box;
 use core::{alloc::Layout, ffi::c_void, num::NonZero, ptr::NonNull, usize};
 
@@ -34,7 +36,7 @@ pub(super) struct InternalSlabAllocator {
     obj_layout: Layout,
     /// The amount of objects that will be allocated in each slab
     obj_count: usize,
-    /// Should the object be embedded in the slab itself?
+    /// Should the object node be embedded in the slab itself?
     obj_embed: bool,
 }
 
@@ -138,15 +140,14 @@ impl InternalSlabAllocator {
 
         // Try allocating from a free slab
         if let Some(slab_node) = self.free_slabs.peek_mut() {
-            if let ret @ Ok(_) = slab_node.alloc() {
-                // If the allocation was successful, move the slab to the partial slabs
-                unsafe {
-                    let slab = Box::into_non_null(self.free_slabs.pop_node().unwrap());
-                    self.partial_slabs.push_node(slab);
-                };
+            let ret = slab_node.alloc()?;
+            // If the allocation was successful, move the slab to the partial slabs
+            unsafe {
+                let slab = Box::into_non_null(self.free_slabs.pop_node().unwrap());
+                self.partial_slabs.push_node(slab);
+            };
 
-                return ret;
-            }
+            return Ok(ret);
         }
 
         unreachable!();

@@ -69,6 +69,7 @@ impl SerialPort {
     }
 }
 
+/// A serial writer that writes to all available serial ports
 pub struct SerialWriter {
     ports: [Option<SerialPort>; 8],
 }

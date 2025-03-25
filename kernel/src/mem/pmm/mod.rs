@@ -1,3 +1,5 @@
+//! Physical Memory Manager (PMM) module
+
 use core::num::NonZero;
 
 use super::{PageId, PhysAddr};

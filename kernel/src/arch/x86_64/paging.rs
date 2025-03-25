@@ -197,6 +197,7 @@ pub unsafe fn init_from_limine(
         .then(|| ())
         .expect("5 level paging requested, but not supported");
 
+    // TODO: Remove code duplication here
     for entry in mem_map {
         match entry.entry_type {
             // Although the pages in this entry are also accessible from HHDM, they are mapped to a

@@ -1,3 +1,5 @@
+//! A buddy allocator for the PMM
+
 use core::{num::NonZero, ptr::NonNull, slice::from_raw_parts_mut};
 
 use alloc::boxed::Box;
@@ -7,7 +9,7 @@ use utils::collections::stacklist::{Node, StackList};
 use crate::{
     arch::BASIC_PAGE_SIZE,
     boot::limine::get_page_count_from_mem_map,
-    mem::{PageId, PhysAddr},
+    mem::PhysAddr,
 };
 
 use super::{PmmAllocator, PmmError};
@@ -29,6 +31,10 @@ pub(super) struct BuddyAllocator<'a> {
 
 impl<'a> PmmAllocator for BuddyAllocator<'a> {
     fn alloc_at(&mut self, addr: PhysAddr, mut page_count: NonZero<usize>) -> Result<(), PmmError> {
+        if !self.is_page_free(addr, page_count)? {
+            return Err(PmmError::NoAvailableBlock);
+        }
+
         page_count = page_count.checked_next_power_of_two().ok_or(PmmError::NoAvailableBlock)?;
 
         let zone_index = Self::page_count_to_index(page_count);
@@ -46,6 +52,7 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
         let zone_index = Self::page_count_to_index(page_count);
 
         let (addr, bucket_index) = self.find_bucket_any(alignment, zone_index)?;
+        //println!("addr: {:#x}, bucket_index: {:#x} zone_index {:#x}", addr.0, bucket_index, zone_index);
         self.disband(addr, bucket_index, zone_index);
 
         Ok(addr)
@@ -57,9 +64,11 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
         let zone_index = Self::page_count_to_index(page_count);
         Self::check_address_alignment(addr, zone_index)?;
 
-        for bucket in self.zones[zone_index].iter() {
-            if *bucket == addr {
-                return Ok(true);
+        for i in zone_index..self.zones.len() {
+            for bucket in self.zones[i].iter() {
+                if *bucket == addr {
+                    return Ok(true);
+                }
             }
         }
 
@@ -84,12 +93,8 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
     unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
         let total_page_count = get_page_count_from_mem_map(mem_map);
 
-        // XXX: If page count is 0, then we can't do anything
-        // TODO: Set the `page_count` and check to make sure the address's passed in `free` and
-        // `alloc_at` are within the bounds of the memory map
-
         #[allow(static_mut_refs)]
-        let (freelist_entry_addr, page_count) =
+        let (freelist_entry_addr, entries_page_count) =
             unsafe { BUDDY_ALLOCATOR.init_freelist(mem_map, total_page_count) };
 
         for entry in mem_map.iter() {
@@ -97,29 +102,19 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
                 EntryType::USABLE => {
                     let page_count = entry.length as usize / BASIC_PAGE_SIZE;
                     let addr = PhysAddr(entry.base as usize);
-                    println!("addr: {:#x}, page_count: {:#x}", addr.0, page_count);
-                    for i in 0..page_count {
-                        unsafe {
-                            #[allow(static_mut_refs)]
-                            BUDDY_ALLOCATOR
-                                .free(PhysAddr(addr.0 + (i * BASIC_PAGE_SIZE)), NonZero::new_unchecked(1))
-                                .unwrap();
-                            //BUDDY_ALLOCATOR.break_into_buckets_n_free(addr, 1);
-                        }
-                    }
-                    //unsafe {
-                    //    #[allow(static_mut_refs)]
-                    //    BUDDY_ALLOCATOR.break_into_buckets_n_free(addr, page_count);
-                    //};
+                    unsafe {
+                        #[allow(static_mut_refs)]
+                        BUDDY_ALLOCATOR.break_into_buckets_n_free(addr, NonZero::new(page_count).unwrap());
+                    };
                 }
                 _ => continue,
             }
         }
 
-        for i in 0..page_count.get() {
+        for i in 0..entries_page_count.get() {
             unsafe {
                 #[allow(static_mut_refs)]
-                BUDDY_ALLOCATOR.alloc_at(PhysAddr(freelist_entry_addr.0 + i), NonZero::new_unchecked(1))
+                BUDDY_ALLOCATOR.alloc_at(PhysAddr(freelist_entry_addr.0 + (i * BASIC_PAGE_SIZE)), NonZero::new_unchecked(1))
                     .unwrap();
             }
         }
@@ -184,12 +179,13 @@ impl<'a> BuddyAllocator<'a> {
 
     /// Splits the passed `addr` into the freelist, starting from the `bucket_index` and going
     /// down (i.e. The opposite of coalescing)
-    fn disband(&mut self, addr: PhysAddr, bucket_index: usize, start_index: usize) {
+    fn disband(&mut self, mut addr: PhysAddr, bucket_index: usize, start_index: usize) {
         // We the bucket index minus 1 (i.e. the index where the block was found minus 1) until the
         // minimum zone index (the zone index of the amount of pages we're trying to allocate)
-        for i in (start_index..bucket_index).rev() {
+        for i in start_index..bucket_index {
             let buddy_addr = Self::get_buddy_addr(addr, i);
             self.push_to_zone(buddy_addr, i).unwrap();
+            addr = Self::determine_next_zone_bucket_addr(addr, buddy_addr);
         }
     }
 
@@ -198,11 +194,10 @@ impl<'a> BuddyAllocator<'a> {
     fn coalesce(&mut self, mut addr: PhysAddr, start_index: usize) {
         let mut i = start_index;
         loop {
-            if i >= self.zones.len() {
-                break;
+            // We have nothing to do in a non existing zone
+            if i == self.zones.len() {
+                return;
             }
-
-            //debug_assert_ne!(i, self.zones.len());
 
             // Check if this address's buddy is in the zone.
             let buddy_addr = Self::get_buddy_addr(addr, i);
@@ -228,9 +223,11 @@ impl<'a> BuddyAllocator<'a> {
         self.push_to_zone(addr, i).unwrap();
     }
 
-    #[inline]
+    /// Returns the buddy address of the passed `addr` in the passed `zone_index`
+    ///
     /// NOTE: This method assumes that the passed `addr` belongs to the passed `zone_index`. An
     /// invalid buddy address will be returned if this is not the case.
+    #[inline]
     const fn get_buddy_addr(addr: PhysAddr, zone_index: usize) -> PhysAddr {
         debug_assert!(addr.0 % Self::index_to_bucket_size(zone_index) == 0);
         let bucket_size = Self::index_to_bucket_size(zone_index);
@@ -242,23 +239,31 @@ impl<'a> BuddyAllocator<'a> {
         }
     }
 
+    /// Returns the address of the next zone bucket, given the passed `addr` and `buddy_addr`
+    ///
+    /// NOTE: This method assumes that the passed `addr` and `buddy_addr` are buddies. An invalid
+    /// address will be returned if this is not the case.
     #[inline]
     fn determine_next_zone_bucket_addr(addr: PhysAddr, buddy_addr: PhysAddr) -> PhysAddr {
         core::cmp::min(addr, buddy_addr)
     }
 
+    /// Pops a node from the freelist and pushes it to the zone at the passed `zone_index` and
+    /// `buddy_index`
     #[inline]
     fn pop_from_zone(&mut self, zone_index: usize, buddy_index: usize) {
         let node = Box::into_non_null(self.zones[zone_index].remove_at(buddy_index).unwrap());
         unsafe { self.freelist.push_node(node) };
     }
 
+    /// Pushes the passed `buddy_addr` to the zone at the passed `zone_index`
     fn push_to_zone(&mut self, buddy_addr: PhysAddr, zone_index: usize) -> Result<(), PmmError> {
         // TODO: Make this a const or something?
         let nodes_ptr_freelist_bucket = Self::index_to_bucket_size(self.freelist_refill_zone_index) / core::mem::size_of::<Node<PhysAddr>>();
         // If we need to perform emergency allocation
         // XXX: AHAHAHAH remove the * 2 here?
-        if self.freelist.len() <= self.zones.len() * 2 {
+        debug_assert!(self.freelist.len() >= self.zones.len());
+        if self.freelist.len() == self.zones.len() {
             let (buff_phys_addr, _) = self.find_bucket_any(unsafe {NonZero::new_unchecked(1)}, self.freelist_refill_zone_index)?;
             let ptr = NonNull::without_provenance(
                 NonZero::new(buff_phys_addr.add_hhdm_offset().0).unwrap(),
@@ -279,6 +284,8 @@ impl<'a> BuddyAllocator<'a> {
         Ok(())
     }
 
+    /// Checks if the passed `addr` is aligned to the passed `zone_index` (i.e. checks if the
+    /// address can be a valid bucket in the zone)
     const fn check_address_alignment(addr: PhysAddr, zone_index: usize) -> Result<(),  PmmError> {
         let bucket_size = Self::index_to_bucket_size(zone_index);
         if addr.0 % bucket_size != 0 {
@@ -288,21 +295,25 @@ impl<'a> BuddyAllocator<'a> {
         Ok(())
     }
 
+    /// Returns the size of the bucket at the passed `i` index
     #[inline]
     const fn index_to_bucket_size(i: usize) -> usize {
         2_usize.pow(Self::index_to_level(i) as u32)
     }
 
+    /// Converts the passed `i` zone index to it's zone level
     #[inline]
     const fn index_to_level(i: usize) -> usize {
         i + Self::MIN_ZONE_LEVEL
     }
 
+    /// Returns the zone index of the bucket size of the passed `level`
     #[inline]
     const fn level_to_index(level: usize) -> usize {
         level - Self::MIN_ZONE_LEVEL
     }
 
+    /// Returns the zone index of the bucket size of the passed `bucket_size`
     #[inline]
     const fn bucket_size_to_index(bucket_size: usize) -> usize {
         debug_assert!(bucket_size.is_power_of_two());
@@ -314,48 +325,39 @@ impl<'a> BuddyAllocator<'a> {
         Self::bucket_size_to_index(page_count.get() * BASIC_PAGE_SIZE)
     }
 
-    //fn break_into_buckets_n_free(&mut self, addr: PhysAddr, mut page_count: NonZero<usize>) {
-    //    let upper_bound = Self::page_count_to_index(page_count.checked_next_power_of_two().unwrap());
-    //    let page_count: usize = page_count.get();
-    //    //println!("page_count: {:#x}", page_count);
-    //    // Set pointers to the start and end of the memory region
-    //    let mut low_ptr = addr.0;
-    //    let mut high_ptr = addr.0 + (page_count * BASIC_PAGE_SIZE);
-    //
-    //    //println!("top: {:#x}", Self::page_count_to_index(page_count.next_power_of_two()));
-    //    for i in 0..upper_bound {
-    //        let bucket_size = Self::index_to_bucket_size(i);
-    //        // If the current low ptr isn't aligned to the next zone
-    //        if low_ptr % (bucket_size * 2) != 0 && page_count != 0 {
-    //            //println!("low_ptr: {:#x}, bucket_size: {:#x}", low_ptr, bucket_size);
-    //            unsafe {
-    //                self.free(PhysAddr(low_ptr), bucket_size / BASIC_PAGE_SIZE)
-    //                    .unwrap()
-    //            };
-    //            low_ptr += bucket_size;
-    //            page_count -= bucket_size / BASIC_PAGE_SIZE;
-    //        }
-    //
-    //        // If the high ptr would become aligned to the next zone if we would've allocated now
-    //        if (high_ptr - bucket_size) % (bucket_size * 2) == 0 && page_count != 0 {
-    //            //println!("high_ptr: {:#x}, bucket_size: {:#x}", high_ptr, bucket_size);
-    //            high_ptr -= bucket_size;
-    //            unsafe {
-    //                self.free(PhysAddr(high_ptr), bucket_size / BASIC_PAGE_SIZE)
-    //                    .unwrap()
-    //            };
-    //            page_count -= bucket_size / BASIC_PAGE_SIZE;
-    //        }
-    //    }
-    //
-    //    // All that is left can be allocated using the highest bucket size, so allocate it.
-    //    // Because in the previous for loop we allocated all the smaller buckets as needed, we can
-    //    // garuntee this will be a multiple of the highest zone's bucket size
-    //    if page_count != 0 {
-    //        //println!("ahoy there!");
-    //        //    //unsafe {self.free(PhysAddr(low_ptr), page_count).unwrap()};
-    //    }
-    //}
+    fn break_into_buckets_n_free(&mut self, addr: PhysAddr, page_count: NonZero<usize>) {
+        let upper_bound = Self::page_count_to_index(page_count.checked_next_power_of_two().unwrap());
+        let mut page_count: usize = page_count.get();
+
+        // Set pointers to the start and end of the memory region
+        let mut low_ptr = addr.0;
+        let mut high_ptr = addr.0 + (page_count * BASIC_PAGE_SIZE);
+
+        for i in 0..upper_bound {
+            let bucket_size = Self::index_to_bucket_size(i);
+            // If the current low ptr isn't aligned to the next zone
+            if low_ptr % (bucket_size * 2) != 0 && page_count != 0 {
+                //println!("low_ptr: {:#x}, bucket_size: {:#x}", low_ptr, bucket_size);
+                unsafe {
+                    self.free(PhysAddr(low_ptr), NonZero::new(bucket_size / BASIC_PAGE_SIZE).unwrap())
+                        .unwrap()
+                };
+                low_ptr += bucket_size;
+                page_count -= bucket_size / BASIC_PAGE_SIZE;
+            }
+
+            // If the high ptr would become aligned to the next zone if we would've allocated now
+            if (high_ptr - bucket_size) % (bucket_size * 2) == 0 && page_count != 0 {
+                //println!("high_ptr: {:#x}, bucket_size: {:#x}", high_ptr, bucket_size);
+                high_ptr -= bucket_size;
+                unsafe {
+                    self.free(PhysAddr(high_ptr), NonZero::new(bucket_size / BASIC_PAGE_SIZE).unwrap())
+                        .unwrap()
+                };
+                page_count -= bucket_size / BASIC_PAGE_SIZE;
+            }
+        }
+    }
 
 
     #[inline]
@@ -378,23 +380,13 @@ impl<'a> BuddyAllocator<'a> {
 
         let entry = mem_map.iter().find(|&entry| matches!(entry.entry_type, EntryType::USABLE if entry.length as usize >= initial_buffer_page_count * BASIC_PAGE_SIZE)).unwrap();
 
-        println!("entry: {:#x}", entry.base);
-        println!("entry length: {:#x}", entry.length);
-
         let mut ptr: *mut StackList<PhysAddr> = core::ptr::without_provenance_mut(PhysAddr(entry.base as usize).add_hhdm_offset().0);
 
-        println!("this is the ptr: {:#x}", ptr as usize);
-        
         for i in 0..max_zone_level {
-            println!("this is the ptr: {:#x}", unsafe {ptr.add(i)} as usize);
-            unsafe {
-                *ptr.add(i) = StackList::new();
-            }
+            unsafe {ptr.add(i).write(StackList::new())};
         }
+
         self.zones = unsafe { from_raw_parts_mut(ptr, max_zone_level) };
-
-        println!("zones: {:?}", self.zones);
-
         self.freelist_refill_zone_index = Self::page_count_to_index(
             NonZero::new((max_zone_level * core::mem::size_of::<Node<PhysAddr>>() + (BASIC_PAGE_SIZE - 1)) / BASIC_PAGE_SIZE).unwrap().checked_next_power_of_two().unwrap());
 
@@ -414,106 +406,6 @@ impl<'a> BuddyAllocator<'a> {
         
         (PhysAddr(entry.base as usize), NonZero::new(initial_buffer_page_count).unwrap())
     }
-
-    //fn init_freelist(
-    //    &mut self,
-    //    mem_map: &[&limine::memory_map::Entry],
-    //    page_count: NonZero<usize>,
-    //) -> PhysAddr {
-    //    #[inline]
-    //    const fn calculate_initial_buffer_size(max_zone_level: usize) -> usize {
-    //        // TODO: Might improve efficiency if we allocate a bit more than the minimum?
-    //        // XXX: Might need to take into account padding, but for now I think this is fine since
-    //        // they have the same size. Otherwise we would have to take into account the padding to add
-    //        // in between to make it aligned
-    //        let zones_size = max_zone_level * core::mem::size_of::<StackList<PhysAddr>>();
-    //        let min_init_nodes_size = max_zone_level * core::mem::size_of::<Node<PhysAddr>>();
-    //
-    //        // size of zones + size of minimum initial nodes for the freelist + padding to align the
-    //        // zones to the size of `Node<PhysAddr>` + padding to align everything to a page
-    //        (zones_size + min_init_nodes_size + (max_zone_level % core::mem::align_of::<Node<PhysAddr>>()) + (BASIC_PAGE_SIZE - 1)) / BASIC_PAGE_SIZE
-    //    }
-    //
-    //    println!("size of StackList: {:#x}", core::mem::size_of::<StackList<PhysAddr>>());
-    //    println!("size of Node: {:#x}", core::mem::size_of::<Node<PhysAddr>>());
-    //
-    //    let max_zone_level = Self::page_count_to_index(page_count.checked_next_power_of_two().unwrap()) + 1;
-    //    // Find an entry that is free and that has at least 1 page
-    //    let initial_buffer_size = calculate_initial_buffer_size(max_zone_level);
-    //    let entry = {
-    //        println!("initial_buffer_size: {:#x}", initial_buffer_size);
-    //        mem_map.iter().find(|&entry| matches!(entry.entry_type, EntryType::USABLE if entry.length as usize >= initial_buffer_size)).unwrap()
-    //    };
-    //
-    //    println!("entry: {:#x}", entry.base);
-    //
-    //    // construct a pointer to the `zones` array: Add HHDM offset to the physical address, and then cast it to a pointer
-    //    let zones_ptr: *mut StackList<PhysAddr> = {
-    //        let virt_addr = PhysAddr(entry.base as usize).add_hhdm_offset();
-    //        core::ptr::without_provenance_mut(virt_addr.0)
-    //    };
-    //
-    //    unsafe { utils::mem::memset(zones_ptr.cast::<u8>(), 0, initial_buffer_size) };
-    //    println!("zones_ptr: {:?}", zones_ptr);
-    //
-    //    // Zone level + 1
-    //
-    //    println!("max_zone_level: {:#x}", max_zone_level);
-    //
-    //    // Construct the zones slice
-    //    self.zones = unsafe { from_raw_parts_mut(zones_ptr, max_zone_level) };
-    //
-    //    println!("zones: {:?}", self.zones);
-    //
-    //    self.freelist_refill_zone_index = Self::page_count_to_index(
-    //        NonZero::new((max_zone_level * core::mem::size_of::<Node<PhysAddr>>() + (BASIC_PAGE_SIZE - 1)) / BASIC_PAGE_SIZE).unwrap().checked_next_power_of_two().unwrap());
-    //
-    //    println!("AAAA MOMEMNT 1 {:?}", self.zones[2]);
-    //    println!("AAAA MOMEMNT 2 {:?}", self.zones[5]);
-    //
-    //    println!("freelist_refill_zone_index: {:#x}", self.freelist_refill_zone_index);
-    //
-    //    // Get the address for the freelist entries
-    //    let freelist_entries_ptr = {
-    //        // Cast the pointer
-    //        let mut ptr = zones_ptr.cast::<Node<PhysAddr>>();
-    //        println!("ptr: {:?}", ptr);
-    //        // Skip `self.zones`
-    //        ptr = unsafe { ptr.byte_add(core::mem::size_of_val(self.zones)) };
-    //        println!("ptr: {:?}", ptr);
-    //        // Align the pointer to the size of `Node<PhysAddr>`
-    //        ptr =
-    //            unsafe { ptr.byte_add(ptr.align_offset(core::mem::align_of::<Node<PhysAddr>>())) };
-    //        println!("final ptr: {:?}", ptr);
-    //        ptr
-    //    };
-    //
-    //    // XXX: Might need to consider alignment as well?
-    //    let freelist_entries_count = {
-    //        let offset = freelist_entries_ptr.addr() - zones_ptr.addr();
-    //        println!("offset: {:#x}", offset);
-    //        let bytes_amount = (1 * BASIC_PAGE_SIZE) - offset;
-    //        println!("bytes_amount: {:#x}", bytes_amount);
-    //        bytes_amount / core::mem::size_of::<Node<PhysAddr>>()
-    //    };
-    //
-    //    println!("freelist_entries_count: {:#x}", freelist_entries_count);
-    //
-    //    for i in 0..freelist_entries_count {
-    //        unsafe {
-    //            self.freelist
-    //                .push_node(NonNull::new(freelist_entries_ptr.add(i)).unwrap())
-    //        };
-    //    }
-    //
-    //    println!("this is the freelist {:?}", self.freelist);
-    //
-    //    println!("the real AHA moments {:?}", self.zones[2]);
-    //
-    //    println!("YOSHIYOSHI");
-    //
-    //    PhysAddr(entry.base as usize)
-    //}
 }
 
 #[cfg(test)]
@@ -587,14 +479,26 @@ mod tests {
         let addr2 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(7)}).unwrap();
         unsafe {allocator.free(addr0, NonZero::new_unchecked(2)).unwrap()};
         unsafe {allocator.free(addr1, NonZero::new_unchecked(2)).unwrap()};
-        for _ in 0..15 {
+        for _ in 0..12 {
             let addr = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(1)}).unwrap();
+            assert_eq!(allocator.is_page_free(addr, unsafe {NonZero::new_unchecked(1)}), Ok(false));
             unsafe {allocator.free(addr, NonZero::new_unchecked(1)).unwrap()};
+            assert_eq!(allocator.is_page_free(addr, unsafe {NonZero::new_unchecked(1)}), Ok(true));
         }
 
         assert_eq!(allocator.is_page_free(addr2, unsafe {NonZero::new_unchecked(7)}), Ok(false));
         unsafe {allocator.free(addr2, NonZero::new_unchecked(7)).unwrap()};
         assert_eq!(allocator.is_page_free(addr2, unsafe {NonZero::new_unchecked(7)}), Ok(true));
+
+
+        let addr1 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(2)}).unwrap();
+        let addr2 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(8)}).unwrap();
+        unsafe {allocator.free(addr1, NonZero::new_unchecked(2)).unwrap()};
+        let addr3 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(8)}).unwrap();
+        let addr4 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(1)}).unwrap();
+        unsafe {allocator.free(addr2, NonZero::new_unchecked(8)).unwrap()};
+        unsafe {allocator.free(addr3, NonZero::new_unchecked(8)).unwrap()};
+        unsafe {allocator.free(addr4, NonZero::new_unchecked(1)).unwrap()};
     }
 
     #[test_case]
@@ -607,14 +511,11 @@ mod tests {
         let addr0 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(2)}).unwrap();
 
         // can't compare with a specific error since it might return Unaligned or NoAvailableBlock,
-        // depending on addr0
-        unsafe {assert!(allocator.free(addr0, NonZero::new_unchecked(3)).is_err())};
         unsafe {allocator.free(addr0, NonZero::new_unchecked(2)).unwrap()};
         unsafe {assert_eq!(allocator.free(addr0, NonZero::new_unchecked(2)), Err(PmmError::FreeOfAlreadyFree))};
 
-        let addr1 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(2)}).unwrap();
-        // same note as above
-        unsafe {assert!(allocator.free(addr1, NonZero::new_unchecked(4)).is_err())};
+
+        assert_eq!(allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(usize::MAX)}), Err(PmmError::NoAvailableBlock));
     }
 
     // TODO: Need to test alloc_at

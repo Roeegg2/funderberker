@@ -10,7 +10,7 @@ utils = { path = "../utils" }
 
 [features]
 # default = []
-default = ["limine", "amd", "framebuffer", "paging_4", "pmm_bump"]
+default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy"]
 
 # x86_64 CPU vendors
 intel = []
@@ -29,5 +29,5 @@ paging_5 = [] # UNTESTED
 
 # PMM page allocator algorithm
 pmm_bump = []
-pmm_buddy = [] # NOT SUPPORTED YET!
+pmm_buddy = []
 

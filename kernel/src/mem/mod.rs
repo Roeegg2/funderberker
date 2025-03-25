@@ -1,5 +1,7 @@
 use core::ptr::NonNull;
 
+use alloc::fmt;
+
 use crate::arch::BASIC_PAGE_SIZE;
 
 pub mod pmm;
@@ -8,13 +10,19 @@ pub mod vmm;
 pub static mut HHDM_OFFSET: usize = 0;
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 pub struct VirtAddr(pub usize);
 
 impl VirtAddr {
     /// Get the physical address of a virtual address **that is HHDM mapped**
     pub fn subtract_hhdm_offset(self) -> PhysAddr {
         unsafe { PhysAddr(self.0 - HHDM_OFFSET) }
+    }
+}
+
+impl fmt::Debug for VirtAddr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:#x}", self.0) // Formats as hex with "0x" prefix
     }
 }
 
@@ -36,8 +44,14 @@ impl<T> From<NonNull<T>> for VirtAddr {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 pub struct PhysAddr(pub usize);
+
+impl fmt::Debug for PhysAddr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:#x}", self.0) // Formats as hex with "0x" prefix
+    }
+}
 
 impl PhysAddr {
     /// Get the virtual address of a physical address. A Virtual address **that is HHDM mapped**
