@@ -7,8 +7,11 @@ use crate::arch::BASIC_PAGE_SIZE;
 pub mod pmm;
 pub mod vmm;
 
+// TODO: Make this uninit instead of 0?
+/// The offset between the HHDM mapped virtual address and the physical address
 pub static mut HHDM_OFFSET: usize = 0;
 
+/// A virtual address **that is HHDM mapped**
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 pub struct VirtAddr(pub usize);
@@ -43,6 +46,21 @@ impl<T> From<NonNull<T>> for VirtAddr {
     }
 }
 
+// NOTE: The following two implementations are safe, since this operation cannot generate UB.
+// BUT using the resulting pointers is obviously unsafe, so be careful!
+impl<T> From<VirtAddr> for *const T {
+    fn from(value: VirtAddr) -> Self {
+        core::ptr::without_provenance(value.0)
+    }
+}
+
+impl<T> From<VirtAddr> for *mut T {
+    fn from(value: VirtAddr) -> Self {
+        core::ptr::without_provenance_mut(value.0)
+    }
+}
+
+/// A physical address
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 pub struct PhysAddr(pub usize);
@@ -55,7 +73,7 @@ impl fmt::Debug for PhysAddr {
 
 impl PhysAddr {
     /// Get the virtual address of a physical address. A Virtual address **that is HHDM mapped**
-    pub fn add_hhdm_offset(self) -> VirtAddr {
+    pub const fn add_hhdm_offset(self) -> VirtAddr {
         unsafe { VirtAddr(self.0 + HHDM_OFFSET) }
     }
 }

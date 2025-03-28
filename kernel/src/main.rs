@@ -15,6 +15,7 @@ mod boot;
 #[cfg(any(feature = "serial", feature = "framebuffer"))]
 mod print;
 mod arch;
+mod acpi;
 mod mem;
 mod test;
 

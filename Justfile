@@ -129,7 +129,7 @@ _run-qemu: _download-firmware
 # Helper recipe for running QEMU with debug
 _run-qemu-debug: _download-firmware
     qemu-system-x86_64 \
-        -nographic \
+        -vga virtio \
         -nodefaults \
         -serial stdio \
         -no-reboot \

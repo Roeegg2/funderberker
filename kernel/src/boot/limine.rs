@@ -3,6 +3,7 @@
 use core::arch::asm;
 use core::num::NonZero;
 
+use limine::request::RsdpRequest;
 use limine::BaseRevision;
 use limine::memory_map;
 use limine::paging;
@@ -14,6 +15,7 @@ use limine::request::{
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;
 
+use crate::acpi::Rsdp2;
 use crate::arch::BASIC_PAGE_SIZE;
 use crate::arch::x86_64;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
@@ -23,11 +25,10 @@ use crate::println;
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.
 /// Be sure to mark all limine requests with #[used], otherwise they may be removed by the compiler.
-#[used]
 // The .requests section allows limine to find the requests faster and more safely.
+#[used]
 #[unsafe(link_section = ".requests")]
 static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
-
 #[used]
 #[unsafe(link_section = ".requests")]
 static KERNEL_ADDRESS_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
@@ -37,6 +38,9 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+#[used]
+#[unsafe(link_section = ".requests")]
+static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 
 #[cfg(feature = "paging_4")]
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // x86_64 and AArch64 share the same modes
@@ -126,6 +130,9 @@ unsafe extern "C" fn kmain() -> ! {
     let paging_mode = PAGING_MODE_REQUEST
         .get_response()
         .expect("Can't get Limine paging mode feature");
+    let rsdp = RSDP_REQUEST
+        .get_response()
+        .expect("Can't get Limine RSDP feature");
 
     match paging_mode.mode() {
         #[cfg(feature = "paging_5")]
@@ -147,6 +154,12 @@ unsafe extern "C" fn kmain() -> ! {
             PhysAddr(kernel_addr.physical_base() as usize),
         )
         .unwrap()
+    };
+
+    unsafe {
+        // Limine hands us a pointer to the RSDP that is already HHDM mapped
+        let rsdp = rsdp.address().cast::<Rsdp2>().as_ref().unwrap();
+        crate::acpi::init(rsdp);
     };
 
     crate::funderberker_main();
