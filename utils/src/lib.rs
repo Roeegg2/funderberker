@@ -11,3 +11,15 @@ macro_rules! const_max {
         if $a > $b { $a } else { $b }
     };
 }
+
+// TODO: Rework this
+#[macro_export]
+macro_rules! sum_fields {
+    ($struct:ident { $($field:ident),* }) => {
+        impl $struct {
+            pub fn sum_fields(&self) -> usize {
+                0 $(+ self.$field as usize)*
+            }
+        }
+    };
+}

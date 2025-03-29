@@ -18,6 +18,8 @@ mod arch;
 mod acpi;
 mod mem;
 mod test;
+mod lapic;
+mod ioapic;
 
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() {

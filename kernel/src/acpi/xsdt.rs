@@ -11,6 +11,7 @@ pub(super) struct Xsdt {
 }
 
 impl Xsdt {
+    #[inline]
     const fn get_table_count(&self) -> usize {
         (self.header.length as usize - core::mem::size_of::<SdtHeader>()) / core::mem::size_of::<*const SdtHeader>()
     }
@@ -28,11 +29,8 @@ impl AcpiTable for Xsdt {
     const SIGNATURE: &'static [u8; 4] = b"XSDT";
 
     fn validate(&self) -> Result<(), AcpiError> {
-        // Like every table, validate the header
-        self.header.validate()?;
-
-        // Validate the rest of the table
-        let sum = self.iter().fold(0, |acc, x| acc + x.addr());
+        // Calculate the sum of the header + all the pointers
+        let sum = self.iter().fold(0, |acc, x| acc + x.addr()) + self.header.sum();
         checksums!(sum);
 
         Ok(())

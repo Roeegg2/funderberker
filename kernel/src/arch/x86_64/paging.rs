@@ -219,13 +219,6 @@ pub unsafe fn init_from_limine(
             memory_map::EntryType::ACPI_RECLAIMABLE
             | memory_map::EntryType::BOOTLOADER_RECLAIMABLE
             | memory_map::EntryType::USABLE => unsafe {
-                println!("Mapping {:#x} to {:#x} with length {:#x}", entry.base, entry.base + entry.length, entry.length);
-                println!("type: {:?}", match entry.entry_type {
-                    memory_map::EntryType::ACPI_RECLAIMABLE => "ACPI_RECLAIMABLE",
-                    memory_map::EntryType::BOOTLOADER_RECLAIMABLE => "BOOTLOADER_RECLAIMABLE",
-                    memory_map::EntryType::USABLE => "USABLE",
-                    _ => "UNKNOWN",
-                });
                 let phys_addr = PhysAddr(entry.base as usize);
                 map_page_range(
                     pml,

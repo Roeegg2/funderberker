@@ -4,7 +4,7 @@ mod xsdt;
 mod madt;
 
 use xsdt::Xsdt;
-//use madt::Madt;
+use madt::Madt;
 
 use crate::mem::PhysAddr;
 
@@ -61,7 +61,9 @@ impl Rsdp2 {
     /// Make sure the RSDP isn't corrupted by calculating and comparing the checksum
     #[inline]
     fn validate(&self) -> Result<(), AcpiError> {
+        // Checksum of the first part
         let sum1: usize = self.signature.iter().sum::<u8>() as usize + self.checksum as usize + self.oem_id.iter().sum::<u8>() as usize + self.revision as usize + self.rsdt_address as usize;
+        // Checksum of the second part
         let sum2: usize = self.length as usize + self.xsdt_address as usize + self.extended_checksum as usize + self.reserved.iter().sum::<u8>() as usize;
         checksums!(sum1, sum2);
 
@@ -85,12 +87,10 @@ pub(self) struct SdtHeader {
 }
 
 impl SdtHeader {
-    /// Make sure the SDT header isn't corrupted by calculating and comparing the checksum
-    fn validate(&self) -> Result<(), AcpiError> {
-        let sum: usize = self.signature.iter().sum::<u8>() as usize + self.length as usize + self.revision as usize + self.checksum as usize + self.oem_id.iter().sum::<u8>() as usize + self.oem_table_id.iter().sum::<u8>() as usize + self.oem_revision as usize + self.creator_id as usize + self.creator_revision as usize;
-        checksums!(sum);
-
-        Ok(())
+    /// Calculate the sum of all fields of the header
+    #[inline]
+    fn sum(&self) -> usize {
+        self.signature.iter().sum::<u8>() as usize + self.length as usize + self.revision as usize + self.checksum as usize + self.oem_id.iter().sum::<u8>() as usize + self.oem_table_id.iter().sum::<u8>() as usize + self.oem_revision as usize + self.creator_id as usize + self.creator_revision as usize
     }
 }
 
@@ -136,10 +136,10 @@ pub unsafe fn init(rsdp: &Rsdp2) {
 
     println!("XSDT: {:?}", xsdt);
 
-    //let madt = unsafe {xsdt.iter().find(|&entry| {
-    //    (*entry).signature == *Madt::SIGNATURE
-    //}).unwrap().as_ref().unwrap()};
+    let madt = unsafe {xsdt.iter().find(|&entry| {
+        (*entry).signature == *Madt::SIGNATURE
+    }).unwrap().as_ref().unwrap()};
 
-    //println!("MADT: {:?}", madt);
+    println!("MADT: {:?}", madt);
 
 }
