@@ -10,32 +10,43 @@ pub(super) struct Xsdt {
 
 impl Xsdt {
     #[inline]
-    const fn get_table_count(&self) -> usize {
-        // asserting jusdt for sanity checking
-        debug_assert!(self.header.length as usize % core::mem::size_of::<PhysAddr>() == 0);
-        (self.header.length as usize - core::mem::size_of::<SdtHeader>()) / core::mem::size_of::<PhysAddr>()
+    fn get_table_count(&self) -> usize {
+        // Total length (including header) - header size gives us the total size of the entries
+        let bytes_count = self.header.length as usize - core::mem::size_of::<SdtHeader>();
+        // Should be aligned, but just making sure :)
+        utils::sanity_assert!(bytes_count % core::mem::size_of::<PhysAddr>() == 0);
+
+        // Byte count to entry count 
+        bytes_count / core::mem::size_of::<PhysAddr>()
     } 
 
     pub(super) fn parse_tables(&self) -> Result<(), AcpiError> {
-        let entries: &[PhysAddr] = unsafe {
-            let count = self.get_table_count();
-            core::slice::from_raw_parts(core::ptr::from_ref(self).byte_add(size_of::<Xsdt>()).cast::<PhysAddr>(), count)
+        unsafe {self.header.validate_checksum()?};
+
+        let entries: *const PhysAddr = unsafe {
+            core::ptr::from_ref(self).add(1).cast::<PhysAddr>()
         };
 
-        for entry_addr in entries {
-            let entry_ptr: *const SdtHeader = entry_addr.add_hhdm_offset().into();
-            let entry = unsafe {entry_ptr.as_ref_unchecked()};
+        let count = self.get_table_count();
+        for i in 0..count {
+            // SAFETY: Specification dictates that pointers to the SDTs are 4 byte aligned, so we
+            // need to use `read_unaligned` to read the pointers
+            let ptr: *const SdtHeader = unsafe {entries.add(i).read_unaligned().add_hhdm_offset().into()};
+            assert!(ptr.is_aligned_to(align_of::<Madt>()));
 
-            match &entry.signature {
+            let signature = &unsafe {(*ptr).signature};
+            match signature {
                 Madt::SIGNATURE => {
-                    let madt = unsafe {entry_ptr.cast::<Madt>().as_ref_unchecked()};
+                    let madt = unsafe {ptr.cast::<Madt>().as_ref().unwrap()};
                     madt.parse()?;
-                    log!("ACPI: Parsed MADT successfully!");
                 },
                 _ => {
-                    log!("ACPI: Unhandled table: {:?}", core::str::from_utf8(&(entry.signature)));
+                    log!("ACPI: Unhandled table: {:?}", core::str::from_utf8(signature));
+                    continue;
                 },
             }
+
+            log!("ACPI: Parsed table: {:?}", core::str::from_utf8(signature));
         }
 
         Ok(())

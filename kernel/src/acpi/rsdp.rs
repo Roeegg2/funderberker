@@ -15,6 +15,7 @@ struct Rsdp {
 #[repr(C, packed)]
 pub(super) struct Rsdp2 {
     old: Rsdp,
+
     // Part 2 (the extension)
     length: u32,
     xsdt_address: u64,
@@ -24,10 +25,12 @@ pub(super) struct Rsdp2 {
 
 impl Rsdp2 {
     pub(super) fn validate_checksum(&self) -> Result<(), AcpiError> {
-        let sum1 = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), size_of::<Rsdp>())}.iter().sum::<u8>() as usize;
-        let sum2 = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>().byte_add(size_of::<Rsdp>()), size_of::<Rsdp2>() - size_of::<Rsdp>())}.iter().sum::<u8>() as usize;
+        // RSDP2 checksum is calculated for the original fields, and the extended fields separately
+        let sum1 = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), size_of::<Rsdp>())}.iter().fold(0, |acc, &x| acc + x as usize);
+        let sum2 = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>().byte_add(size_of::<Rsdp>()), size_of::<Rsdp2>() - size_of::<Rsdp>())}.iter().fold(0, |acc, &x| acc + x as usize);
 
-        if sum1 & 0xff != 0 || sum2 & 0xff != 0 {
+        // Make sure the sum casted to a u8 is 0
+        if sum1 % 0x100 != 0 || sum2 % 0x100 != 0 {
             return Err(AcpiError::InvalidChecksum);
         }
 
@@ -35,13 +38,12 @@ impl Rsdp2 {
     }
 
     #[inline]
-    pub(super) fn get_xsdt(&self) -> Result<&Xsdt, AcpiError> {
-        let ptr: *const SdtHeader = PhysAddr(self.xsdt_address as usize).add_hhdm_offset().into();
-        unsafe {
-            let header = ptr.as_ref().unwrap();
-            header.validate_checksum()?;
-        
-            Ok(ptr.cast::<Xsdt>().as_ref().unwrap())
-        }
+    pub(super) fn get_xsdt(&self) -> &Xsdt {
+        let addr = self.xsdt_address;
+
+        let ptr: *const SdtHeader = PhysAddr(addr as usize).add_hhdm_offset().into();
+        utils::sanity_assert!(ptr.is_aligned_to(align_of::<Xsdt>()));
+
+        unsafe {ptr.cast::<Xsdt>().as_ref().unwrap()}
     }
 }

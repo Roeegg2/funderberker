@@ -1,6 +1,6 @@
 # Configuration variables
 test-crates := "utils"
-rust-profile := "release"
+rust-profile := "debug"
 
 # Directory and file paths
 kernel-dir := "kernel"
@@ -45,7 +45,7 @@ help:
 build-kernel:
     #!/usr/bin/env bash
     if [ "{{rust-profile}}" = "debug" ]; then
-        RUSTFLAGS="{{rustflags}}" cargo +nightly build --manifest-path="kernel/Cargo.toml" --features {{features}} --target x86_64-unknown-none
+        RUSTFLAGS="{{rustflags}} -g" cargo +nightly build --manifest-path="kernel/Cargo.toml" --features {{features}} --target x86_64-unknown-none
     elif [ "{{rust-profile}}" = "release" ]; then
         RUSTFLAGS="{{rustflags}}" cargo +nightly build --manifest-path="kernel/Cargo.toml" --release --features {{features}} --target x86_64-unknown-none
     else
@@ -136,7 +136,7 @@ _run-qemu-debug: _download-firmware
         -drive if=pflash,unit=0,format=raw,file={{ovmf-code}},readonly=on \
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \
         -cdrom {{iso-file}} \
-        -d in_asm,out_asm,int -D qemu.log \
+        -d in_asm,int -D qemu.log -s -S\
 
 # Common ISO creation steps
 _create-iso-common: _setup-limine

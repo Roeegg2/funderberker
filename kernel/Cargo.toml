@@ -31,3 +31,8 @@ paging_5 = [] # UNTESTED
 pmm_bump = []
 pmm_buddy = []
 
+[profile.dev]
+debug = true
+
+[profile.release]
+debug = true

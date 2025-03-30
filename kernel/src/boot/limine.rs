@@ -174,12 +174,18 @@ pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 fn hcf() -> ! {
-    loop {
-        unsafe {
-            #[cfg(target_arch = "x86_64")]
-            asm!("hlt");
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-            asm!("wfi");
-        }
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        asm!("hlt");
+        asm!("hlt");
+        asm!("hlt");
+        asm!("hlt");
+        asm!("hlt");
+        asm!("hlt");
+        asm!("hlt");
+        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+        asm!("wfi");
     }
+
+    unreachable!();
 }

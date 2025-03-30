@@ -6,7 +6,7 @@ use crate::arch::BASIC_PAGE_SIZE;
 
 pub mod pmm;
 pub mod vmm;
-// pub mod mmio;
+pub mod mmio;
 
 // TODO: Make this uninit instead of 0?
 /// The offset between the HHDM mapped virtual address and the physical address

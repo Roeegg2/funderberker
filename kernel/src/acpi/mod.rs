@@ -10,6 +10,7 @@ pub enum AcpiError {
 }
 
 #[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
 pub(self) struct SdtHeader {
     signature: [u8; 4],
     length: u32,
@@ -24,8 +25,8 @@ pub(self) struct SdtHeader {
 
 impl SdtHeader {
     pub(self) unsafe fn validate_checksum(&self) -> Result<(), AcpiError> {
-        let sum = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), self.length as usize)}.iter().sum::<u8>() as usize;
-        if sum != 0 {
+        let sum = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), self.length as usize)}.iter().fold(0, |acc, &x| acc + x as usize);
+        if sum % 0x100 != 0 {
             return Err(AcpiError::InvalidChecksum);
         }
 
@@ -38,9 +39,11 @@ pub(self) trait AcpiTable {
 }
 
 pub unsafe fn init(rsdp: *const ()) -> Result<(), AcpiError> {
+    utils::sanity_assert!(rsdp.is_aligned_to(align_of::<Rsdp2>()));
+
     let rsdp = unsafe {rsdp.cast::<Rsdp2>().as_ref().unwrap()};
     rsdp.validate_checksum()?;
-    let xsdt = rsdp.get_xsdt()?;
+    let xsdt = rsdp.get_xsdt();
     xsdt.parse_tables()?;
 
     log!("ACPI Parsed successfully");
