@@ -1,37 +1,42 @@
 
-use super::*;
+use crate::mem::PhysAddr;
 
-#[repr(C)]
-#[derive(Debug)]
+use super::{madt::Madt, AcpiError, AcpiTable, SdtHeader};
+
+#[repr(C, packed)]
 pub(super) struct Xsdt {
-    /// Common SDT header
     header: SdtHeader,
-    /// Array of pointers to other SDTs
-    entries: *const *const SdtHeader,
 }
 
 impl Xsdt {
     #[inline]
     const fn get_table_count(&self) -> usize {
-        (self.header.length as usize - core::mem::size_of::<SdtHeader>()) / core::mem::size_of::<*const SdtHeader>()
-    }
+        // asserting jusdt for sanity checking
+        debug_assert!(self.header.length as usize % core::mem::size_of::<PhysAddr>() == 0);
+        (self.header.length as usize - core::mem::size_of::<SdtHeader>()) / core::mem::size_of::<PhysAddr>()
+    } 
 
-    pub fn iter(&self) -> AcpiTableIter {
-        AcpiTableIter {
-            entries: unsafe {core::slice::from_raw_parts(
-                         self.entries, self.get_table_count())},
-            index: 0,
+    pub(super) fn parse_tables(&self) -> Result<(), AcpiError> {
+        let entries: &[PhysAddr] = unsafe {
+            let count = self.get_table_count();
+            core::slice::from_raw_parts(core::ptr::from_ref(self).byte_add(size_of::<Xsdt>()).cast::<PhysAddr>(), count)
+        };
+
+        for entry_addr in entries {
+            let entry_ptr: *const SdtHeader = entry_addr.add_hhdm_offset().into();
+            let entry = unsafe {entry_ptr.as_ref_unchecked()};
+
+            match &entry.signature {
+                Madt::SIGNATURE => {
+                    let madt = unsafe {entry_ptr.cast::<Madt>().as_ref_unchecked()};
+                    madt.parse()?;
+                    log!("ACPI: Parsed MADT successfully!");
+                },
+                _ => {
+                    log!("ACPI: Unhandled table: {:?}", core::str::from_utf8(&(entry.signature)));
+                },
+            }
         }
-    }
-}
-
-impl AcpiTable for Xsdt {
-    const SIGNATURE: &'static [u8; 4] = b"XSDT";
-
-    fn validate(&self) -> Result<(), AcpiError> {
-        // Calculate the sum of the header + all the pointers
-        let sum = self.iter().fold(0, |acc, x| acc + x.addr()) + self.header.sum();
-        checksums!(sum);
 
         Ok(())
     }

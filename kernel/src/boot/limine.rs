@@ -15,7 +15,6 @@ use limine::request::{
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;
 
-use crate::acpi::Rsdp2;
 use crate::arch::BASIC_PAGE_SIZE;
 use crate::arch::x86_64;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
@@ -158,8 +157,7 @@ unsafe extern "C" fn kmain() -> ! {
 
     unsafe {
         // Limine hands us a pointer to the RSDP that is already HHDM mapped
-        let rsdp = rsdp.address().cast::<Rsdp2>().as_ref().unwrap();
-        crate::acpi::init(rsdp);
+        crate::acpi::init(rsdp.address()).unwrap();
     };
 
     crate::funderberker_main();

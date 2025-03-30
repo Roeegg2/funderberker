@@ -55,10 +55,10 @@ pub enum PageSize {
 }
 
 impl PageSize {
-    #[inline]
-    const fn get_size(self) -> usize {
-        BASIC_PAGE_SIZE * (ENTRIES_PER_TABLE.pow(self as u32))
-    }
+    // #[inline]
+    // const fn get_size(self) -> usize {
+    //     BASIC_PAGE_SIZE * (ENTRIES_PER_TABLE.pow(self as u32))
+    // }
 
     #[inline]
     const fn get_paging_level(self) -> u8 {
@@ -193,9 +193,9 @@ pub unsafe fn init_from_limine(
     let (pml, pml_addr) = PageTable::new()?;
 
     #[cfg(feature = "paging_5")]
-    (read_cr!(cr4) | (1 << 12) != 0)
-        .then(|| ())
-        .expect("5 level paging requested, but not supported");
+    if read_cr!(cr4) | (1 << 12) != 0 {
+        panic!("5 level paging requested, but not supported");
+    }
 
     // TODO: Remove code duplication here
     for entry in mem_map {
@@ -272,7 +272,6 @@ impl PageTable {
         flags: usize,
         page_size: PageSize,
     ) -> Result<VirtAddr, PagingError> {
-        //let page_size = page_size.get_size();
         let pml = unsafe { PageTable::get_pml() }?;
         let (pte, virt_addr) = pml.get_create_entry_any(page_size.get_paging_level())?;
         pte.0 = phys_addr.0 | flags | page_size.get_flag();
@@ -410,7 +409,7 @@ impl PageTable {
     }
 
     // NOTE: Again, note sure if `static` is the correct lifetime here
-    // Make the current table entry point to a new PageTable, and return that PageTable
+    /// Make the current table entry point to a new PageTable, and return that PageTable
     fn new() -> Result<(&'static mut PageTable, PhysAddr), PagingError> {
         // Get the physical address reserved for the table (it's exactly 1 table, 1 page alignment)
         let phys_addr = crate::mem::pmm::get()

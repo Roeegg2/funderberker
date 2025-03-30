@@ -19,6 +19,7 @@ pub enum SlabError {
     /// The slab is full and cannot allocate any more objects
     SlabFullInternalError,
     /// Error while trying to allocate more pages for the slab
+    #[allow(dead_code)]
     PageAllocationError(PagingError),
 }
 

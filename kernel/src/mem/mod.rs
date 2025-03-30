@@ -6,7 +6,7 @@ use crate::arch::BASIC_PAGE_SIZE;
 
 pub mod pmm;
 pub mod vmm;
-pub mod mmio;
+// pub mod mmio;
 
 // TODO: Make this uninit instead of 0?
 /// The offset between the HHDM mapped virtual address and the physical address
@@ -88,6 +88,7 @@ pub(self) fn page_id_to_addr(page_id: PageId) -> usize {
 }
 
 /// Convert a physical address to a page ID
+#[allow(dead_code)]
 pub(self) fn addr_to_page_id(addr: usize) -> Option<PageId> {
     if addr % BASIC_PAGE_SIZE != 0 {
         return None;

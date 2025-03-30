@@ -40,6 +40,7 @@ pub fn alloc_pages_any(
 
 /// Tries to allocates a block of pages of `page_count` amount, at the given `virt_addr` virtual
 /// address
+#[allow(dead_code)]
 pub fn alloc_pages_at(virt_addr: VirtAddr, page_count: NonZero<usize>) -> Result<(), PagingError> {
     let phys_addr = virt_addr.subtract_hhdm_offset();
     crate::mem::pmm::get()

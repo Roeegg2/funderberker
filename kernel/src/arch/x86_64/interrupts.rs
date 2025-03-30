@@ -80,9 +80,6 @@ fn install_isr_handlers() {
     }
 
     unsafe {
-        // a test interrupt
-        #[cfg(debug_assertions)]
-        IDT[38].register(int_stub_38 as u64, cs, 0, 0b1110, 0, 1);
         // page fault handler
         IDT[14].register(int_stub_14 as u64, cs, 0, 0b1111, 0, 1);
         // protection fault handler
@@ -101,14 +98,12 @@ global_asm! {
         iretq
     .endm
 
-    define_int_stub 38
     define_int_stub 14
     define_int_stub 13
     "#
 }
 
 unsafe extern "C" {
-    fn int_stub_38();
     fn int_stub_14();
     fn int_stub_13();
 }
@@ -121,9 +116,4 @@ extern "C" fn vec_int_13() {
 #[unsafe(no_mangle)]
 extern "C" fn vec_int_14() {
     println!("got page fault! address: {:#x}", read_cr!(cr2));
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn vec_int_38() {
-    println!("GOT INTERRUPT 38");
 }
