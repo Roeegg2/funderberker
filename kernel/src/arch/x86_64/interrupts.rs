@@ -61,10 +61,10 @@ pub(super) unsafe fn load_idt() {
             in(reg) &idtr,
         )
     }
-    log!("loaded IDT successfully");
+    log_info!("loaded IDT successfully");
     // setup the ISR handlers
     install_isr_handlers();
-    log!("installed ISRs successfully");
+    log_info!("installed ISRs successfully");
 }
 
 /// Installs the ISR handlers in the GDT

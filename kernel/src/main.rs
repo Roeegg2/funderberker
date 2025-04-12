@@ -28,5 +28,5 @@ pub fn funderberker_main() {
     #[cfg(test)]
     test_main();
 
-    log!("Starting Funderberker main operation!");
+    log_info!("Starting Funderberker main operation!");
 }

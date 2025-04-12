@@ -33,6 +33,8 @@ pmm_buddy = []
 
 [profile.dev]
 debug = true
+panic = "abort"
 
 [profile.release]
 debug = true
+panic = "abort"

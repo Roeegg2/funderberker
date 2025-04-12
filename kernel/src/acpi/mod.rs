@@ -9,9 +9,9 @@ pub enum AcpiError {
     InvalidChecksum,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub(self) struct SdtHeader {
+struct SdtHeader {
     signature: [u8; 4],
     length: u32,
     revision: u8,
@@ -24,7 +24,19 @@ pub(self) struct SdtHeader {
 }
 
 impl SdtHeader {
-    pub(self) unsafe fn validate_checksum(&self) -> Result<(), AcpiError> {
+    #[inline]
+    fn entry_count<T>(&self) -> usize {
+        // Total length (including header) - header size gives us the total size of the entries
+        let bytes_count = self.length as usize - core::mem::size_of::<SdtHeader>();
+        // Should be aligned, but just making sure :)
+        utils::sanity_assert!(bytes_count % core::mem::size_of::<T>() == 0);
+
+        // Byte count to entry count 
+        bytes_count / core::mem::size_of::<T>()
+    } 
+
+
+    unsafe fn validate_checksum(&self) -> Result<(), AcpiError> {
         let sum = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), self.length as usize)}.iter().fold(0, |acc, &x| acc + x as usize);
         if sum % 0x100 != 0 {
             return Err(AcpiError::InvalidChecksum);
@@ -34,7 +46,7 @@ impl SdtHeader {
     }
 }
 
-pub(self) trait AcpiTable {
+trait AcpiTable {
     const SIGNATURE: &'static [u8; 4];
 }
 
@@ -46,7 +58,7 @@ pub unsafe fn init(rsdp: *const ()) -> Result<(), AcpiError> {
     let xsdt = rsdp.get_xsdt();
     xsdt.parse_tables()?;
 
-    log!("ACPI Parsed successfully");
+    log_info!("ACPI Parsed successfully");
 
     Ok(())
 }

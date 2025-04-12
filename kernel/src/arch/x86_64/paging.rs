@@ -247,7 +247,7 @@ pub unsafe fn init_from_limine(
 
     unsafe { final_init(pml_addr) };
 
-    log!("Setup paging successfully!");
+    log_info!("Setup paging successfully!");
 
     Ok(())
 }

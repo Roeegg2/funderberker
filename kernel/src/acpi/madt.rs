@@ -4,23 +4,31 @@ use super::{AcpiError, AcpiTable, SdtHeader};
 struct EntryType;
 
 impl EntryType {
+    /// A processor and it's LAPIC
     const LOCAL_APIC: u8 = 0;
+    /// An I/O APIC
     const IO_APIC: u8 = 1;
+    /// An I/O APIC interrupt source override - explains how IRQs are mapped to the global sys
+    /// interrupts
     const IO_APIC_ISO: u8 = 2;
+    /// An input pin on the I/O APIC that should be marked as NMI
     const LOCAL_APIC_NMI_SRC: u8 = 3;
     const LOCAL_APIC_NMI: u8 = 4;
+    /// A local APIC address override. If defined, use this instead of the address stored in the
+    /// MADT header.
     const LOCAL_APIC_ADDR_OVERRIDE: u8 = 5;
+    /// Just like the `0` entry, but for x2APIC
     const PROCESSOR_LOCAL_X2APIC: u8 = 9;
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct EntryHeader {
     entry_type: u8,
     length: u8,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug)]
 struct LocalApicEntry {
     header: EntryHeader,
@@ -29,7 +37,7 @@ struct LocalApicEntry {
     flags: u32,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug)]
 struct IoApicEntry {
     header: EntryHeader,
@@ -39,7 +47,7 @@ struct IoApicEntry {
     gsi_base: u32,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug)]
 struct IoApicIsoEntry {
     header: EntryHeader,
@@ -49,7 +57,7 @@ struct IoApicIsoEntry {
     flags: u16,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug)]
 struct LocalApicNmiSrcEntry {
     header: EntryHeader,
@@ -59,7 +67,7 @@ struct LocalApicNmiSrcEntry {
     gsi: u32,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug)]
 struct LocalApicNmiEntry {
     header: EntryHeader,
@@ -68,7 +76,7 @@ struct LocalApicNmiEntry {
     lint: u8,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug)]
 struct LocalApicAddrOverrideEntry {
     header: EntryHeader,
@@ -77,7 +85,7 @@ struct LocalApicAddrOverrideEntry {
     local_apic_phys_addr: u64,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug)]
 struct ProcessorLocalx2ApicEntry {
     header: EntryHeader,
@@ -87,7 +95,7 @@ struct ProcessorLocalx2ApicEntry {
     acpi_id: u32,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug)]
 pub(super) struct Madt {
     header: SdtHeader,
@@ -100,28 +108,83 @@ impl AcpiTable for Madt {
 }
 
 impl Madt {
+    const OFFSET_TO_ENTRIES: usize = 0x2c;
+
+    fn iter(&self) -> Iter {
+        let len = self.header.length as usize - Self::OFFSET_TO_ENTRIES;
+        let ptr: *const EntryHeader = unsafe {
+            core::ptr::from_ref(self).byte_add(Self::OFFSET_TO_ENTRIES).cast::<EntryHeader>()
+        };
+
+        Iter {
+            ptr,
+            len,
+        }
+    }
+
     pub(super) fn parse(&self) -> Result<(), AcpiError> {
-        let mut entries = unsafe {core::ptr::from_ref(self).add(1).cast::<EntryHeader>()};
-        let end_addr = core::ptr::from_ref(self).addr() + self.header.length as usize;
-
-        while entries.addr() != end_addr {
-            utils::sanity_assert!(entries.addr() < end_addr);
-
-            let entry_type = unsafe {entries.read().entry_type};
+        unsafe {self.header.validate_checksum()?};
+        
+        for entry in self.iter() {
+            let entry_type = unsafe {entry.read().entry_type};
             match entry_type {
+                EntryType::LOCAL_APIC => {
+                    let entry = unsafe {entry.cast::<LocalApicEntry>().as_ref().unwrap()};
+                    println!("{:?}", entry);
+                },
                 EntryType::IO_APIC => {
                     // TODO: Move this to some global structure
-                    let entry = unsafe {entries.cast::<IoApicEntry>().as_ref().unwrap()};
+                    let entry = unsafe {entry.cast::<IoApicEntry>().as_ref().unwrap()};
                     let ioapic = unsafe {crate::ioapic::IoApic::new(entry.io_apic_addr, entry.gsi_base)};
                     println!("{:?}", ioapic);
                 },
-                _ => (),
-            }
-
-            let entry_length = unsafe {entries.read().length as usize};
-            entries = unsafe {entries.byte_add(entry_length)};
+                EntryType::IO_APIC_ISO => {
+                    let entry = unsafe {entry.cast::<IoApicIsoEntry>().as_ref().unwrap()};
+                    println!("{:?}", entry);
+                },
+                EntryType::LOCAL_APIC_NMI_SRC => {
+                    let entry = unsafe {entry.cast::<LocalApicNmiSrcEntry>().as_ref().unwrap()};
+                    println!("{:?}", entry);
+                },
+                EntryType::LOCAL_APIC_NMI => {
+                    let entry = unsafe {entry.cast::<LocalApicNmiEntry>().as_ref().unwrap()};
+                    println!("{:?}", entry);
+                },
+                EntryType::LOCAL_APIC_ADDR_OVERRIDE => {
+                    let entry = unsafe {entry.cast::<LocalApicAddrOverrideEntry>().as_ref().unwrap()};
+                    println!("{:?}", entry);
+                },
+                EntryType::PROCESSOR_LOCAL_X2APIC => {
+                    let entry = unsafe {entry.cast::<ProcessorLocalx2ApicEntry>().as_ref().unwrap()};
+                    println!("{:?}", entry);
+                },
+                _ => log_warn!("MADT: Unknown entry type: {}", entry_type),
+            } 
         }
 
         Ok(())
+    }
+}
+
+struct Iter {
+    ptr: *const EntryHeader,
+    len: usize,
+}
+
+impl Iterator for Iter {
+    type Item = *const EntryHeader;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.len == 0 {
+            return None;
+        }
+
+        let ptr: *const EntryHeader = self.ptr;
+
+        let len = unsafe {(*ptr).length as usize};
+        self.len -= len;
+        self.ptr = unsafe {self.ptr.byte_add(len)};
+
+        Some(ptr)
     }
 }
