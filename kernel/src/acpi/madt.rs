@@ -134,7 +134,6 @@ impl Madt {
             match entry_type {
                 EntryType::LOCAL_APIC => {
                     let entry = unsafe { entry.cast::<LocalApicEntry>().as_ref().unwrap() };
-                    println!("{:?}", entry);
                     unsafe {
                         lapic::add(
                             PhysAddr(self.local_apic_addr as usize),
@@ -145,14 +144,11 @@ impl Madt {
                     };
                 },
                 EntryType::IO_APIC => {
-                    // TODO: Move this to some global structure
                     let entry = unsafe { entry.cast::<IoApicEntry>().as_ref().unwrap() };
-                    println!("{:?}", entry);
                     unsafe { ioapic::add(PhysAddr(entry.io_apic_addr as usize), entry.gsi_base) };
                 },
                 EntryType::IO_APIC_ISO => {
                     let entry = unsafe { entry.cast::<IoApicIsoEntry>().as_ref().unwrap() };
-                    println!("{:?}", entry);
                     unsafe {
                         ioapic::override_irq(
                             entry.irq_source,
@@ -164,7 +160,6 @@ impl Madt {
                 },
                 EntryType::IO_APIC_NMI_ISO => {
                     let entry = unsafe { entry.cast::<IoApicNmiIsoEntry>().as_ref().unwrap() };
-                    println!("{:?}", entry);
                     unsafe {
                         ioapic::override_irq(
                             entry.nmi_source,
@@ -176,7 +171,6 @@ impl Madt {
                 },
                 EntryType::LOCAL_APIC_NMI => {
                     let entry = unsafe { entry.cast::<LocalApicNmiEntry>().as_ref().unwrap() };
-                    println!("{:?}", entry);
                     unsafe {
                         lapic::set_as_nmi(
                             entry.acpi_processor_id as u32,
@@ -190,7 +184,6 @@ impl Madt {
                     // override entries but that might be wrong. Fuck it if that's the case I guess
                     let entry =
                         unsafe { entry.cast::<LocalApicAddrOverrideEntry>().as_ref().unwrap() };
-                    println!("{:?}", entry);
                     unsafe {
                         lapic::set_base(
                             PhysAddr(entry.local_apic_phys_addr as usize)
@@ -202,7 +195,6 @@ impl Madt {
                 EntryType::PROCESSOR_LOCAL_X2APIC => {
                     let entry =
                         unsafe { entry.cast::<ProcessorLocalx2ApicEntry>().as_ref().unwrap() };
-                    println!("{:?}", entry);
                     unsafe {
                         lapic::add(
                             PhysAddr(self.local_apic_addr as usize),

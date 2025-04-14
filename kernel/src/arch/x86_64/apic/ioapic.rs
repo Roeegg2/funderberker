@@ -185,7 +185,6 @@ pub unsafe fn override_irq(
                     RedirectionEntry(raw)
                 };
 
-                println!("gsi: {gsi}, offset: {offset}, entry: {entry:?} irq_source: {irq_source}");
                 entry.set_vector(irq_source).unwrap();
                 entry.set_pin_polarity((flags & 0b11).try_into().unwrap());
                 entry.set_trigger_mode(((flags >> 2) & 0b11).try_into().unwrap());

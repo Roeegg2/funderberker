@@ -1,6 +1,5 @@
 //! Basic framebuffer driver for printing stuff to screen
 
-use core::mem::MaybeUninit;
 use limine::framebuffer::Framebuffer;
 
 /// Errors the framebuffer might encounter
@@ -271,38 +270,81 @@ static BITMAP_FONT_8X16: [[u8; 16]; 256] = [
     [0x00, 0x00, 0x36, 0x36, 0x00, 0x63, 0x63, 0x36, 0x36, 0x1c, 0x1c, 0x0c, 0x0c, 0x06, 0x03, 0x00,], 
 ];
 
-pub struct FramebufferWriter<'a> {
-    framebuffer: MaybeUninit<Framebuffer<'a>>,
+/// The raw framebuffer. Used only by FramebufferWriter.
+struct RawFramebuffer {
+    ptr: *mut u32,
+    width: u64,
+    height: u64,
+    pitch: u64,
+    bpp: u16,
+}
+
+/// The FramebufferWriter struct is used to write to the framebuffer.
+pub struct FramebufferWriter {
+    framebuffer: RawFramebuffer,
     curr_y: u64,
     curr_x: u64,
+    disabled: bool,
 }
 
 pub static mut FRAMEBUFFER_WRITER: FramebufferWriter = FramebufferWriter {
-    framebuffer: MaybeUninit::uninit(),
+    framebuffer: RawFramebuffer {
+        ptr: core::ptr::null_mut(),
+        width: 0,
+        height: 0,
+        pitch: 0,
+        bpp: 0,
+    },
     curr_y: 0,
     curr_x: 0,
+    disabled: false,
 };
 
-impl<'a> FramebufferWriter<'a> {
+impl FramebufferWriter {
+    #[cfg(feature = "limine")]
     #[inline]
     pub fn init_from_limine(&mut self, fb: Framebuffer<'static>) {
-        unsafe { *(self.framebuffer.assume_init_mut()) = fb }
+        self.framebuffer.ptr = fb.addr() as *mut u32;
+        self.framebuffer.width = fb.width();
+        self.framebuffer.height = fb.height();
+        self.framebuffer.pitch = fb.pitch();
+        self.framebuffer.bpp = fb.bpp();
     }
 
     pub(super) fn draw_pixel(&self, mut x: u64, mut y: u64, color: u32) {
-        let framebuffer = unsafe { self.framebuffer.assume_init_ref() };
+        y *= self.framebuffer.pitch;
+        x *= (self.framebuffer.bpp / 8) as u64;
 
-        y *= framebuffer.pitch();
-        x *= (framebuffer.bpp() / 8) as u64;
+        unsafe { *(self.framebuffer.ptr.byte_add((x + y) as usize)) = color };
+    }
 
-        unsafe { *(framebuffer.addr().add((x + y) as usize) as *mut u32) = color };
+    fn scroll_y(&mut self) {
+        self.curr_y = self.curr_y + 16;
+
+        if self.curr_y >= self.framebuffer.height {
+            self.disabled = true;
+        }
+
+    }
+
+    fn scroll_x(&mut self, character: u8) {
+        self.curr_x += 8;
+        if self.curr_x >= self.framebuffer.width || character == b'\n' {
+            self.curr_x = 0;
+            self.scroll_y();
+        }
     }
 
     pub(super) fn draw_char(&mut self, character: u8) -> Result<(), FramebufferError> {
+        if self.disabled {
+            return Ok(());
+        }
+
         let index = character as usize;
         if index >= BITMAP_FONT_8X16.len() {
             return Err(FramebufferError::InvalidCharacter);
         }
+
 
         for y in 0..16 {
             let char_bit = BITMAP_FONT_8X16[index][y];
@@ -313,17 +355,7 @@ impl<'a> FramebufferWriter<'a> {
             }
         }
 
-        // If current line is already filled, or '\n' was entered, go one line down and do carriage
-        // return
-        self.curr_x += 8;
-        if unsafe { self.curr_x >= self.framebuffer.assume_init_mut().width() }
-            || character == b'\n'
-        {
-            self.curr_x = 0; // carriage return
-            unsafe {
-                self.curr_y = (self.curr_y + 16) % self.framebuffer.assume_init_mut().height()
-            };
-        }
+        self.scroll_x(character);
 
         Ok(())
     }
