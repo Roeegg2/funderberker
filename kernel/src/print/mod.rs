@@ -8,6 +8,7 @@ pub mod serial;
 /// Empty struct to implement 'core::fmt::Write' on
 pub struct Writer;
 
+/// A macro to print to the serial port or framebuffer
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {{
@@ -15,6 +16,7 @@ macro_rules! print {
     }}
 }
 
+/// A macro to print to the serial port or framebuffer with a newline
 #[macro_export]
 macro_rules! println {
     ($($arg:tt)*) => {{
@@ -22,6 +24,7 @@ macro_rules! println {
     }}
 }
 
+/// A macro to print a warning to the serial port or framebuffer
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
@@ -29,6 +32,7 @@ macro_rules! log_info {
     }
 }
 
+/// A macro to print an error to the serial port or framebuffer
 #[macro_export]
 macro_rules! log_err {
     ($($arg:tt)*) => {
@@ -36,6 +40,7 @@ macro_rules! log_err {
     }
 }
 
+/// A macro to print a warning to the serial port or framebuffer
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {

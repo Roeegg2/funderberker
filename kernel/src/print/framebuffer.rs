@@ -301,6 +301,8 @@ pub static mut FRAMEBUFFER_WRITER: FramebufferWriter = FramebufferWriter {
 };
 
 impl FramebufferWriter {
+    /// Initializes the framebuffer writer with the given framebuffer using Limine's `Framebuffer`
+    /// structure.
     #[cfg(feature = "limine")]
     #[inline]
     pub fn init_from_limine(&mut self, fb: Framebuffer<'static>) {
@@ -311,6 +313,7 @@ impl FramebufferWriter {
         self.framebuffer.bpp = fb.bpp();
     }
 
+    /// Draws a pixel at the given coordinates with the given color.
     pub(super) fn draw_pixel(&self, mut x: u64, mut y: u64, color: u32) {
         y *= self.framebuffer.pitch;
         x *= (self.framebuffer.bpp / 8) as u64;
@@ -318,15 +321,18 @@ impl FramebufferWriter {
         unsafe { *(self.framebuffer.ptr.byte_add((x + y) as usize)) = color };
     }
 
+    /// Increments the current y cursor one character line down (16 pixels).
     fn scroll_y(&mut self) {
         self.curr_y = self.curr_y + 16;
 
         if self.curr_y >= self.framebuffer.height {
             self.disabled = true;
         }
-
     }
 
+    /// Increments the current x cursor one character line right (8 pixels). Increments the y
+    /// cursor if the x cursor is at the end of the line, or if the newly written character is a
+    /// newline.
     fn scroll_x(&mut self, character: u8) {
         self.curr_x += 8;
         if self.curr_x >= self.framebuffer.width || character == b'\n' {
@@ -335,6 +341,8 @@ impl FramebufferWriter {
         }
     }
 
+    /// Draws a character at the current cursor position. 
+    /// The character is drawn using the 8x16 bitmap font.
     pub(super) fn draw_char(&mut self, character: u8) -> Result<(), FramebufferError> {
         if self.disabled {
             return Ok(());
@@ -344,7 +352,6 @@ impl FramebufferWriter {
         if index >= BITMAP_FONT_8X16.len() {
             return Err(FramebufferError::InvalidCharacter);
         }
-
 
         for y in 0..16 {
             let char_bit = BITMAP_FONT_8X16[index][y];

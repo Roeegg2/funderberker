@@ -344,6 +344,7 @@ impl<'a> BuddyAllocator<'a> {
         Self::level_to_index(bucket_size.ilog2() as usize)
     }
 
+    /// Converts the passed `page_count` to a zone index
     #[inline]
     const fn page_count_to_index(page_count: NonZero<usize>) -> usize {
         Self::bucket_size_to_index(page_count.get() * BASIC_PAGE_SIZE)

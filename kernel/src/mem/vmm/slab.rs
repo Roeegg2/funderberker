@@ -292,9 +292,9 @@ struct SlabCore {
 /// The slab structure that holds the core and the type of slab
 #[derive(Debug)]
 enum Slab {
-    /// The slab where the Node<ObjectNodes> are embedded in the slab itself
+    /// The slab where the `Node<ObjectNodes>` are embedded in the slab itself
     SlabObjEmbed(SlabCore),
-    /// The slab where the Node<ObjectNodes> are stored in the kernel's heap (i.e. using
+    /// The slab where the `Node<ObjectNodes>` are stored in the kernel's heap (i.e. using
     /// global allocator )
     SlabObjExtern(SlabCore),
 }
@@ -323,7 +323,7 @@ impl Slab {
     }
 
     /// Constructs a new slab with the given parameters. This is unsafe because the layout must be
-    /// at least Node<ObjectNode> size aligned.
+    /// at least `Node<ObjectNode>` size aligned.
     /// This is a simple wrapper around the `new_obj_embed` and `new_obj_extern` functions
     #[inline]
     unsafe fn new(
@@ -341,8 +341,8 @@ impl Slab {
         }
     }
 
-    /// Constructs a new slab where the Node<ObjectNodes> are stored in the kernel's heap
-    /// This is unsafe because the layout must be at least Node<ObjectNode> size aligned.
+    /// Constructs a new slab where the `Node<ObjectNodes>` are stored in the kernel's heap
+    /// This is unsafe because the layout must be at least `Node<ObjectNode>` size aligned.
     #[inline]
     unsafe fn new_obj_extern(
         buff_ptr: NonNull<ObjectNode>,
@@ -364,8 +364,8 @@ impl Slab {
         })
     }
 
-    // Constructs a new slab where the Node<ObjectNodes> are embedded in the slab itself.
-    // This is unsafe because the layout must be at least Node<ObjectNode> size aligned.
+    /// Constructs a new slab where the `Node<ObjectNodes>` are embedded in the slab itself.
+    /// This is unsafe because the layout must be at least `Node<ObjectNode>` size aligned.
     #[inline]
     unsafe fn new_obj_embed(
         buff_ptr: NonNull<ObjectNode>,

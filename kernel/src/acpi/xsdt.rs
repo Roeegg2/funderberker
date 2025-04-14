@@ -2,12 +2,15 @@ use crate::mem::PhysAddr;
 
 use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};
 
+/// The XSDT
 #[repr(C)]
 pub(super) struct Xsdt {
+    /// The SDT header
     header: SdtHeader,
 }
 
 impl Xsdt {
+    /// Get an iterator over the entries in the XSDT
     #[inline]
     fn iter(&self) -> Iter {
         let count = self.header.entry_count::<PhysAddr>();
@@ -16,6 +19,7 @@ impl Xsdt {
         Iter { ptr, count }
     }
 
+    /// Parse the ACPI tables in the XSDT
     pub(super) fn parse_tables(&self) -> Result<(), AcpiError> {
         unsafe { self.header.validate_checksum()? };
 
@@ -42,6 +46,7 @@ impl Xsdt {
     }
 }
 
+/// An iterator over the entries in the XSDT
 struct Iter {
     ptr: *const PhysAddr,
     count: usize,

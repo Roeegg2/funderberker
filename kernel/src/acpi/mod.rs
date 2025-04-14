@@ -4,11 +4,14 @@ mod madt;
 mod rsdp;
 mod xsdt;
 
+/// Errors that can occur while parsing ACPI tables
 #[derive(Debug)]
 pub enum AcpiError {
+    /// The checksum of the table is invalid
     InvalidChecksum,
 }
 
+/// The header that comes before (almost) all ACPI table
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct SdtHeader {
@@ -24,6 +27,7 @@ struct SdtHeader {
 }
 
 impl SdtHeader {
+    /// Get the entry count for tables with fixed size entries
     #[inline]
     fn entry_count<T>(&self) -> usize {
         // Total length (including header) - header size gives us the total size of the entries
@@ -35,6 +39,7 @@ impl SdtHeader {
         bytes_count / core::mem::size_of::<T>()
     }
 
+    /// Validate the checksum of the table
     unsafe fn validate_checksum(&self) -> Result<(), AcpiError> {
         let sum = unsafe {
             core::slice::from_raw_parts(
@@ -52,10 +57,14 @@ impl SdtHeader {
     }
 }
 
+/// A trait that all ACPI tables should implement, in order for the parser to be able to do it's
+/// job
 trait AcpiTable {
+    /// The signature of the table
     const SIGNATURE: &'static [u8; 4];
 }
 
+/// Initialize the ACPI subsystem
 pub unsafe fn init(rsdp: *const ()) -> Result<(), AcpiError> {
     utils::sanity_assert!(rsdp.is_aligned_to(align_of::<Rsdp2>()));
 
