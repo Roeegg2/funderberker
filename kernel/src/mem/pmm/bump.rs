@@ -20,7 +20,11 @@ pub(super) static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator(Bitmap::unin
 pub(super) struct BumpAllocator<'a>(Bitmap<'a>);
 
 impl<'a> PmmAllocator for BumpAllocator<'a> {
-    fn alloc_any(&mut self, alignment: NonZero<usize>, page_count: NonZero<usize>) -> Result<PhysAddr, PmmError> {
+    fn alloc_any(
+        &mut self,
+        alignment: NonZero<usize>,
+        page_count: NonZero<usize>,
+    ) -> Result<PhysAddr, PmmError> {
         'main: for i in (0..self.0.used_bits_count()).step_by(alignment.get()) {
             // If we would go out of bounds, break
             if i + page_count.get() >= self.0.used_bits_count() {
@@ -45,7 +49,11 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         Err(PmmError::NoAvailableBlock)
     }
 
-    fn alloc_at(&mut self, addr: PhysAddr, page_count: NonZero<usize>) -> Result<(), super::PmmError> {
+    fn alloc_at(
+        &mut self,
+        addr: PhysAddr,
+        page_count: NonZero<usize>,
+    ) -> Result<(), super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
         if (id + page_count.get() - 1) >= self.0.used_bits_count() {
@@ -67,7 +75,11 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
     }
 
     /// NOTE: `addr` must be a page (4096 bytes) aligned address, otherwise an `PmmError::InvalidAddressAlignment` error is returned.
-    unsafe fn free(&mut self, addr: PhysAddr, page_count: NonZero<usize>) -> Result<(), super::PmmError> {
+    unsafe fn free(
+        &mut self,
+        addr: PhysAddr,
+        page_count: NonZero<usize>,
+    ) -> Result<(), super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
         if (id + page_count.get() - 1) >= self.0.used_bits_count() {
@@ -89,7 +101,11 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         Ok(())
     }
 
-    fn is_page_free(&self, addr: PhysAddr, page_count: NonZero<usize>) -> Result<bool, super::PmmError> {
+    fn is_page_free(
+        &self,
+        addr: PhysAddr,
+        page_count: NonZero<usize>,
+    ) -> Result<bool, super::PmmError> {
         let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
 
         if id + page_count.get() >= self.0.used_bits_count() {
@@ -202,20 +218,36 @@ mod tests {
             &mut BUMP_ALLOCATOR
         };
 
-        let addr0 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(1)}).unwrap();
-        let addr1 = allocator.alloc_any(unsafe {NonZero::new_unchecked(2)}, unsafe {NonZero::new_unchecked(10)}).unwrap();
+        let addr0 = allocator
+            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+                NonZero::new_unchecked(1)
+            })
+            .unwrap();
+        let addr1 = allocator
+            .alloc_any(unsafe { NonZero::new_unchecked(2) }, unsafe {
+                NonZero::new_unchecked(10)
+            })
+            .unwrap();
         assert!(addr1.0 % 0x2000 == 0);
 
-        let addr2 = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(2)}).unwrap();
-        unsafe {allocator.free(addr0, NonZero::new_unchecked(1)).unwrap()};
+        let addr2 = allocator
+            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+                NonZero::new_unchecked(2)
+            })
+            .unwrap();
+        unsafe { allocator.free(addr0, NonZero::new_unchecked(1)).unwrap() };
 
         for _ in 0..10 {
-            let addr = allocator.alloc_any(unsafe {NonZero::new_unchecked(1)}, unsafe {NonZero::new_unchecked(3)}).unwrap();
-            unsafe {allocator.free(addr, NonZero::new_unchecked(3)).unwrap()};
+            let addr = allocator
+                .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+                    NonZero::new_unchecked(3)
+                })
+                .unwrap();
+            unsafe { allocator.free(addr, NonZero::new_unchecked(3)).unwrap() };
         }
 
-        unsafe {allocator.free(addr1, NonZero::new_unchecked(10)).unwrap()};
-        unsafe {allocator.free(addr2, NonZero::new_unchecked(2)).unwrap()};
+        unsafe { allocator.free(addr1, NonZero::new_unchecked(10)).unwrap() };
+        unsafe { allocator.free(addr2, NonZero::new_unchecked(2)).unwrap() };
     }
 
     #[test_case]
@@ -225,16 +257,34 @@ mod tests {
             &mut BUMP_ALLOCATOR
         };
 
-        let addr = allocator.alloc_any(unsafe {NonZero::new_unchecked(2)}, unsafe {NonZero::new_unchecked(10)}).unwrap();
+        let addr = allocator
+            .alloc_any(unsafe { NonZero::new_unchecked(2) }, unsafe {
+                NonZero::new_unchecked(10)
+            })
+            .unwrap();
 
-        assert_eq!(allocator.alloc_at(addr, unsafe {NonZero::new_unchecked(10)}), Err(PmmError::NoAvailableBlock));
+        assert_eq!(
+            allocator.alloc_at(addr, unsafe { NonZero::new_unchecked(10) }),
+            Err(PmmError::NoAvailableBlock)
+        );
 
-        unsafe {allocator.free(addr, NonZero::new_unchecked(5)).unwrap()};
+        unsafe { allocator.free(addr, NonZero::new_unchecked(5)).unwrap() };
 
-        unsafe {assert_eq!(allocator.free(addr, NonZero::new_unchecked(5)), Err(PmmError::FreeOfAlreadyFree))};
+        unsafe {
+            assert_eq!(
+                allocator.free(addr, NonZero::new_unchecked(5)),
+                Err(PmmError::FreeOfAlreadyFree)
+            )
+        };
 
-        unsafe {allocator.free(PhysAddr(addr.0 + 5*BASIC_PAGE_SIZE), NonZero::new_unchecked(5)).unwrap()};
-
+        unsafe {
+            allocator
+                .free(
+                    PhysAddr(addr.0 + 5 * BASIC_PAGE_SIZE),
+                    NonZero::new_unchecked(5),
+                )
+                .unwrap()
+        };
     }
 
     // TODO: Need to test alloc_at

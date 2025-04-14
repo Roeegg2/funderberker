@@ -3,10 +3,10 @@
 use core::arch::asm;
 use core::num::NonZero;
 
-use limine::request::RsdpRequest;
 use limine::BaseRevision;
 use limine::memory_map;
 use limine::paging;
+use limine::request::RsdpRequest;
 use limine::request::{
     HhdmRequest, KernelAddressRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
     RequestsStartMarker,

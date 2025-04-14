@@ -2,6 +2,7 @@
 
 #[macro_use]
 pub mod cpu;
+pub mod apic;
 mod interrupts;
 pub mod paging;
 

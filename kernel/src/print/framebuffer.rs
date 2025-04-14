@@ -316,7 +316,8 @@ impl<'a> FramebufferWriter<'a> {
         // If current line is already filled, or '\n' was entered, go one line down and do carriage
         // return
         self.curr_x += 8;
-        if unsafe { self.curr_x >= self.framebuffer.assume_init_mut().width() } || character == b'\n'
+        if unsafe { self.curr_x >= self.framebuffer.assume_init_mut().width() }
+            || character == b'\n'
         {
             self.curr_x = 0; // carriage return
             unsafe {

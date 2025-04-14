@@ -1,7 +1,6 @@
-
 use crate::mem::PhysAddr;
 
-use super::{xsdt::Xsdt, AcpiError, SdtHeader};
+use super::{AcpiError, SdtHeader, xsdt::Xsdt};
 
 #[repr(C, packed)]
 struct Rsdp {
@@ -26,8 +25,21 @@ pub(super) struct Rsdp2 {
 impl Rsdp2 {
     pub(super) fn validate_checksum(&self) -> Result<(), AcpiError> {
         // RSDP2 checksum is calculated for the original fields, and the extended fields separately
-        let sum1 = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), size_of::<Rsdp>())}.iter().fold(0, |acc, &x| acc + x as usize);
-        let sum2 = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>().byte_add(size_of::<Rsdp>()), size_of::<Rsdp2>() - size_of::<Rsdp>())}.iter().fold(0, |acc, &x| acc + x as usize);
+        let sum1 = unsafe {
+            core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), size_of::<Rsdp>())
+        }
+        .iter()
+        .fold(0, |acc, &x| acc + x as usize);
+        let sum2 = unsafe {
+            core::slice::from_raw_parts(
+                core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .byte_add(size_of::<Rsdp>()),
+                size_of::<Rsdp2>() - size_of::<Rsdp>(),
+            )
+        }
+        .iter()
+        .fold(0, |acc, &x| acc + x as usize);
 
         // Make sure the sum casted to a u8 is 0
         if sum1 % 0x100 != 0 || sum2 % 0x100 != 0 {
@@ -44,6 +56,6 @@ impl Rsdp2 {
         let ptr: *const SdtHeader = PhysAddr(addr as usize).add_hhdm_offset().into();
         utils::sanity_assert!(ptr.is_aligned_to(align_of::<Xsdt>()));
 
-        unsafe {ptr.cast::<Xsdt>().as_ref().unwrap()}
+        unsafe { ptr.cast::<Xsdt>().as_ref().unwrap() }
     }
 }

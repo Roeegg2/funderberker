@@ -57,7 +57,10 @@ pub fn alloc_pages_at(virt_addr: VirtAddr, page_count: NonZero<usize>) -> Result
 }
 
 /// Tries to unmap and free a contigious block of pages of `page_count` amount, at the given `virt_addr`
-pub unsafe fn free_pages(ptr: NonNull<c_void>, page_count: NonZero<usize>) -> Result<(), PagingError> {
+pub unsafe fn free_pages(
+    ptr: NonNull<c_void>,
+    page_count: NonZero<usize>,
+) -> Result<(), PagingError> {
     let virt_addr: VirtAddr = ptr.into();
     for i in 0..page_count.get() {
         let virt_addr = VirtAddr(virt_addr.0 + page_id_to_addr(i));

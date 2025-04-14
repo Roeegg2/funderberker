@@ -62,7 +62,11 @@ pub trait PmmAllocator {
     /// If allocation if successfull, the physical address of the start of the block is returned.
     ///
     /// NOTE: `alignment should be passed as page granularity. (e.g. 1 for 4KB, 2 for 8KB, etc.)`
-    fn alloc_any(&mut self, alignment: NonZero<PageId>, page_count: NonZero<usize>) -> Result<PhysAddr, PmmError>;
+    fn alloc_any(
+        &mut self,
+        alignment: NonZero<PageId>,
+        page_count: NonZero<usize>,
+    ) -> Result<PhysAddr, PmmError>;
 
     /// Tries to allocate a **physically** contiguous block of memory at a specific address
     #[allow(dead_code)]

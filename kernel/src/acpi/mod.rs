@@ -1,8 +1,8 @@
 use rsdp::Rsdp2;
 
+mod madt;
 mod rsdp;
 mod xsdt;
-mod madt;
 
 #[derive(Debug)]
 pub enum AcpiError {
@@ -31,13 +31,19 @@ impl SdtHeader {
         // Should be aligned, but just making sure :)
         utils::sanity_assert!(bytes_count % core::mem::size_of::<T>() == 0);
 
-        // Byte count to entry count 
+        // Byte count to entry count
         bytes_count / core::mem::size_of::<T>()
-    } 
-
+    }
 
     unsafe fn validate_checksum(&self) -> Result<(), AcpiError> {
-        let sum = unsafe {core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), self.length as usize)}.iter().fold(0, |acc, &x| acc + x as usize);
+        let sum = unsafe {
+            core::slice::from_raw_parts(
+                core::ptr::from_ref(self).cast::<u8>(),
+                self.length as usize,
+            )
+        }
+        .iter()
+        .fold(0, |acc, &x| acc + x as usize);
         if sum % 0x100 != 0 {
             return Err(AcpiError::InvalidChecksum);
         }
@@ -53,7 +59,7 @@ trait AcpiTable {
 pub unsafe fn init(rsdp: *const ()) -> Result<(), AcpiError> {
     utils::sanity_assert!(rsdp.is_aligned_to(align_of::<Rsdp2>()));
 
-    let rsdp = unsafe {rsdp.cast::<Rsdp2>().as_ref().unwrap()};
+    let rsdp = unsafe { rsdp.cast::<Rsdp2>().as_ref().unwrap() };
     rsdp.validate_checksum()?;
     let xsdt = rsdp.get_xsdt();
     xsdt.parse_tables()?;

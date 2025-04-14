@@ -15,13 +15,11 @@ mod boot;
 #[macro_use]
 #[cfg(any(feature = "serial", feature = "framebuffer"))]
 mod print;
-mod arch;
 mod acpi;
+mod arch;
 mod mem;
 #[cfg(test)]
 mod test;
-mod lapic;
-mod ioapic;
 
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() {

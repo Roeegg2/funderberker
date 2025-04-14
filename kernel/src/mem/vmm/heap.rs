@@ -15,9 +15,7 @@ pub(super) static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocat
 /// A global heap allocator for the kernel. Structured as a bunch of uninitable object slab
 /// allocators
 #[derive(Debug)]
-pub(super) struct KernelHeapAllocator(
-    UnsafeCell<[InternalSlabAllocator; Self::SIZE]>,
-);
+pub(super) struct KernelHeapAllocator(UnsafeCell<[InternalSlabAllocator; Self::SIZE]>);
 
 /// A macro to make creating slab allocators easier
 macro_rules! create_slab_allocators {

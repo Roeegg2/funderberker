@@ -25,21 +25,21 @@ macro_rules! println {
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
-        println!("-> INFO: {}", format_args!($($arg)*));
+        println!("-> INFO: {}", format_args!($($arg)*))
     }
 }
 
 #[macro_export]
 macro_rules! log_err {
     ($($arg:tt)*) => {
-        println!("-> ERROR: {}", format_args!($($arg)*));
+        println!("-> ERROR: {}", format_args!($($arg)*))
     }
 }
 
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        println!("-> WARNING: {}", format_args!($($arg)*));
+        println!("-> WARNING: {}", format_args!($($arg)*))
     }
 }
 

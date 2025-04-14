@@ -91,7 +91,7 @@ run: build
     @just _run-qemu
 
 # Run with debugging enabled
-debug: build
+debug: build-test
     @just _run-qemu-debug
 
 # Write a test compiled ISO to a USB device

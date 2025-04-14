@@ -1,7 +1,6 @@
-
 use crate::mem::PhysAddr;
 
-use super::{madt::Madt, AcpiError, AcpiTable, SdtHeader};
+use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};
 
 #[repr(C)]
 pub(super) struct Xsdt {
@@ -12,30 +11,28 @@ impl Xsdt {
     #[inline]
     fn iter(&self) -> Iter {
         let count = self.header.entry_count::<PhysAddr>();
-        let ptr: *const PhysAddr = unsafe {
-            core::ptr::from_ref(self).add(1).cast::<PhysAddr>()
-        };
+        let ptr: *const PhysAddr = unsafe { core::ptr::from_ref(self).add(1).cast::<PhysAddr>() };
 
-        Iter {
-            ptr,
-            count,
-        }
+        Iter { ptr, count }
     }
 
     pub(super) fn parse_tables(&self) -> Result<(), AcpiError> {
-        unsafe {self.header.validate_checksum()?};
+        unsafe { self.header.validate_checksum()? };
 
         for entry in self.iter() {
-            let signature = &unsafe {(*entry).signature};
+            let signature = &unsafe { (*entry).signature };
             match signature {
                 Madt::SIGNATURE => {
-                    let madt = unsafe {entry.cast::<Madt>().as_ref().unwrap()};
+                    let madt = unsafe { entry.cast::<Madt>().as_ref().unwrap() };
                     madt.parse()?;
-                },
+                }
                 _ => {
-                    log_warn!("ACPI: Unhandled table: {:?}", core::str::from_utf8(signature));
+                    log_warn!(
+                        "ACPI: Unhandled table: {:?}",
+                        core::str::from_utf8(signature)
+                    );
                     continue;
-                },
+                }
             }
 
             log_info!("ACPI: Parsed table: {:?}", core::str::from_utf8(signature));
@@ -58,9 +55,11 @@ impl Iterator for Iter {
             return None;
         }
 
-        let ptr: *const SdtHeader = unsafe {self.ptr.read_unaligned().add_hhdm_offset().into()};
+        let ptr: *const SdtHeader = unsafe { self.ptr.read_unaligned() }
+            .add_hhdm_offset()
+            .into();
 
-        self.ptr = unsafe {self.ptr.add(1)};
+        self.ptr = unsafe { self.ptr.add(1) };
         self.count -= 1;
 
         Some(ptr)
