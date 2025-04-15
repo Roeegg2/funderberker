@@ -1,7 +1,7 @@
 //! A simple slab allocator for the kernel heap & custom use
 
 use alloc::boxed::Box;
-use core::{alloc::Layout, ffi::c_void, num::NonZero, ptr::NonNull, usize};
+use core::{alloc::Layout, num::NonZero, ptr::NonNull, usize};
 
 use utils::collections::stacklist::{Node, StackList};
 
@@ -201,7 +201,7 @@ impl InternalSlabAllocator {
         while let Some(slab) = self.free_slabs.pop() {
             unsafe {
                 super::free_pages(
-                    slab.buff_ptr().cast::<c_void>(),
+                    slab.buff_ptr().cast::<()>(),
                     NonZero::new_unchecked(self.pages_per_slab),
                 )
             }
@@ -255,7 +255,7 @@ impl Drop for InternalSlabAllocator {
         while let Some(slab) = self.partial_slabs.pop() {
             unsafe {
                 super::free_pages(
-                    slab.buff_ptr().cast::<c_void>(),
+                    slab.buff_ptr().cast::<()>(),
                     NonZero::new_unchecked(self.pages_per_slab),
                 )
             }
@@ -266,7 +266,7 @@ impl Drop for InternalSlabAllocator {
         while let Some(slab) = self.full_slabs.pop() {
             unsafe {
                 super::free_pages(
-                    slab.buff_ptr().cast::<c_void>(),
+                    slab.buff_ptr().cast::<()>(),
                     NonZero::new_unchecked(self.pages_per_slab),
                 )
             }
@@ -354,7 +354,7 @@ impl Slab {
         for i in 0..obj_count {
             // Get the ptr for the object
             let ptr = unsafe { utils::ptr_add_layout!(buff_ptr, i, obj_layout, ObjectNode) };
-            //let ptr = unsafe {buff_ptr.cast::<u8>().add(i * obj_layout.size()).cast::<c_void>()};
+            //let ptr = unsafe {buff_ptr.cast::<u8>().add(i * obj_layout.size()).cast::<()>()};
             free_objs.push(ptr);
         }
 
@@ -379,7 +379,7 @@ impl Slab {
                     // Cast buff_ptr to u8, then add the size of obj in bytes, and then cast this
                     // all to a pointer to a Node in the free objects linked list
                     // SAFETY: This is OK because we already checked in the allocator to make sure
-                    // T has at least same alignment and size as Node<NonNull<c_void>>
+                    // T has at least same alignment and size as Node<NonNull<()>>
                     let ptr =
                         utils::ptr_add_layout!(buff_ptr, i, obj_layout, Node<NonNull<ObjectNode>>);
                     free_objs.push_node(ptr);

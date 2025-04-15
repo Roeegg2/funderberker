@@ -2,7 +2,7 @@ use crate::mem::PhysAddr;
 
 use super::{AcpiError, SdtHeader, xsdt::Xsdt};
 
-/// The RSDP (a pointer to the XSDT) 
+/// The RSDP (a pointer to the XSDT)
 #[repr(C, packed)]
 struct Rsdp {
     /// The signature of the RSDP

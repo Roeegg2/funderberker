@@ -122,6 +122,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
     }
 
     // Ugly code. But if it ain't broke, don't try to fix it
+    #[cfg(feature = "limine")]
     #[inline]
     unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
         #[inline]
@@ -137,6 +138,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
             }
             .into_iter()
         }
+
         #[inline]
         unsafe fn new_bitmap_from_limine<'b, 'c>(
             mem_map: &[&'c limine::memory_map::Entry],
@@ -157,7 +159,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                 // Convert the block's physical address to VirtAddr using HHDM, then convert that
                 // to a valid pointer
                 let bitmap_virt_addr = PhysAddr(bitmap_entry.base as usize).add_hhdm_offset();
-                let ptr = core::ptr::without_provenance_mut::<u8>(bitmap_virt_addr.0);
+                let ptr = bitmap_virt_addr.0 as *mut u8;
 
                 // Set all of memory to taken by default
                 utils::mem::memset(ptr, Bitmap::BLOCK_TAKEN, bitmap_alloc_size as usize);
@@ -171,7 +173,6 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         // Get the last allocatable memory descriptor - that'll decide the bitmap size (yes, we'll
         // still have some "holes" (ie. reserved & shit memory) but it's negligible. Not worth the
         // hasstle of maintaining multiple bitmaps etc)
-
         let page_count = get_page_count_from_mem_map(mem_map);
 
         unsafe {

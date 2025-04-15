@@ -155,12 +155,7 @@ unsafe extern "C" fn kmain() -> ! {
         .unwrap()
     };
 
-    unsafe {
-        // Limine hands us a pointer to the RSDP that is already HHDM mapped
-        crate::acpi::init(rsdp.address()).unwrap();
-    };
-
-    crate::funderberker_main();
+    crate::funderberker_main(rsdp.address());
 
     hcf();
 }

@@ -22,9 +22,11 @@ mod mem;
 mod test;
 
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
-pub fn funderberker_main() {
+pub fn funderberker_main(rsdp: *const ()) {
     #[cfg(test)]
     test_main();
+
+    unsafe { crate::acpi::init(rsdp).expect("Failed to initialize ACPI") };
 
     log_info!("Starting Funderberker main operation!");
 }

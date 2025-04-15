@@ -1,6 +1,7 @@
 pub mod ioapic;
 pub mod lapic;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum DeliveryMode {
@@ -13,6 +14,7 @@ pub enum DeliveryMode {
 }
 
 // TODO
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum RemoteIrr {
@@ -20,6 +22,7 @@ pub enum RemoteIrr {
     Set = 0b1,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum Mask {

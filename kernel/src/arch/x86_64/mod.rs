@@ -1,5 +1,7 @@
 //! Everything specific to x86_64 arch
 
+use interrupts::Idt;
+
 #[macro_use]
 pub mod cpu;
 pub mod apic;
@@ -14,13 +16,13 @@ pub(super) struct DescriptorTablePtr {
     base: u64,
 }
 
-/// Initilize everything arch related!
+/// Initilize everything arch related
 #[inline(always)]
 pub(super) unsafe fn init() {
     unsafe {
         // make sure no pesky interrupt interrupt us
         cpu::cli();
-        interrupts::load_idt();
+        Idt::init();
         // now pesky interrupts can interrupt us
         cpu::sti();
     };

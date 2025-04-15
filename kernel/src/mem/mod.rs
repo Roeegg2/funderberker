@@ -1,3 +1,5 @@
+///! Memory management and abstraction layer over arch specific details
+
 use core::ptr::NonNull;
 
 use alloc::fmt;
@@ -51,13 +53,13 @@ impl<T> From<NonNull<T>> for VirtAddr {
 // BUT using the resulting pointers is obviously unsafe, so be careful!
 impl<T> From<VirtAddr> for *const T {
     fn from(value: VirtAddr) -> Self {
-        core::ptr::without_provenance(value.0)
+        value.0 as *const T
     }
 }
 
 impl<T> From<VirtAddr> for *mut T {
     fn from(value: VirtAddr) -> Self {
-        core::ptr::without_provenance_mut(value.0)
+        value.0 as *mut T
     }
 }
 

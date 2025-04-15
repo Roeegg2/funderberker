@@ -82,35 +82,35 @@ impl PageSize {
 /// A paging table entry
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
-struct Entry(usize);
+pub struct Entry(usize);
 
 #[allow(dead_code)]
 impl Entry {
     /// Present bit - 0 => not present. 1 => present
-    const FLAG_P: usize = 1 << 0;
+    pub const FLAG_P: usize = 1 << 0;
     /// Read/write - 0 => just read. 1 => read + write
-    const FLAG_RW: usize = 1 << 1;
+    pub const FLAG_RW: usize = 1 << 1;
     /// User/supervisor - 0 => only CPL0,1,2. 1 => CPL3 as well
-    const FLAG_US: usize = 1 << 2;
+    pub const FLAG_US: usize = 1 << 2;
     /// Page-level writethrough - 0 => writeback. 1 => writethough caching.
-    const FLAG_PWT: usize = 1 << 3;
+    pub const FLAG_PWT: usize = 1 << 3;
     /// Page-level cache disable - 0 => cacheable. 1 => non cacheable.
-    const FLAG_PCD: usize = 1 << 4;
+    pub const FLAG_PCD: usize = 1 << 4;
     /// Accessed - 0 => not accessed yet. 1 => page was read/writted to.
-    const FLAG_A: usize = 1 << 5;
-    const _FLAG_IGN: usize = 1 << 6;
+    pub const FLAG_A: usize = 1 << 5;
+    pub const _FLAG_IGN: usize = 1 << 6;
     /// (on PTE only!) dirty - 0 => page not written to. 1 => page was written to.
-    const FLAG_D: usize = 1 << 6;
+    pub const FLAG_D: usize = 1 << 6;
     /// (on PDE only!) page size - 0 => page is 4KB. 1 => page is 2MB. should be set to 0 for all other tables
-    const FLAG_PS: usize = 1 << 7;
-    const FLAG_PAT: usize = 1 << 7;
-    const _FLAG_MBZ: usize = 0b11 << 7; // (on PML4E/PML5E only!)
-    const _FLAG_IGN_2: usize = 1 << 8; // on PDE/PDPE only!
-    const FLAG_G: usize = 1 << 8; // on PTE only!
+    pub const FLAG_PS: usize = 1 << 7;
+    pub const FLAG_PAT: usize = 1 << 7;
+    pub const _FLAG_MBZ: usize = 0b11 << 7; // (on PML4E/PML5E only!)
+    pub const _FLAG_IGN_2: usize = 1 << 8; // on PDE/PDPE only!
+    pub const FLAG_G: usize = 1 << 8; // on PTE only!
     /// All possible flags turned on
-    const FLAG_ALL: usize = 0b0111_1111_1111;
+    pub const FLAG_ALL: usize = 0b0111_1111_1111;
 
-    const FLAG_AVL: usize = 0b111 << 9;
+    pub const FLAG_AVL: usize = 0b111 << 9;
 }
 
 impl Entry {
@@ -145,34 +145,12 @@ impl<'a> TryFrom<Entry> for &'a mut PageTable {
     fn try_from(value: Entry) -> Result<Self, Self::Error> {
         unsafe {
             // Extract the phys addr outside of `value`, add HHDM offset so it's a valid kernel virtual address
-            let ptr = core::ptr::without_provenance_mut::<PageTable>(
-                PhysAddr::from(value).add_hhdm_offset().0,
-            );
+            let ptr = PhysAddr::from(value).add_hhdm_offset().0 as *mut PageTable;
             ptr.as_mut().ok_or(PagingError::EntryToPageTableFailed)
         }
     }
 }
 
-unsafe fn map_page_range(
-    pml: &mut PageTable,
-    virt_addr_start: VirtAddr,
-    phys_addr_start: PhysAddr,
-    len: usize,
-    flags: usize,
-) -> Result<(), PagingError> {
-    for i in (0..len).step_by(BASIC_PAGE_SIZE) {
-        let pte = {
-            // Shift it 12 bits to the left, since it's page aligned address
-            let virt_addr = VirtAddr((virt_addr_start.0 + i) >> 12);
-            pml.get_create_entry_specific(virt_addr, PAGING_LEVEL - 1)
-        }?;
-
-        // Populate the PTE with the desired PhysAddr + Flags
-        pte.set((phys_addr_start.0 + i) | flags);
-    }
-
-    Ok(())
-}
 
 /// Finalize the paging system initialization
 #[inline]
@@ -195,6 +173,27 @@ pub unsafe fn init_from_limine(
     #[cfg(feature = "paging_5")]
     if read_cr!(cr4) | (1 << 12) != 0 {
         panic!("5 level paging requested, but not supported");
+    }
+
+    unsafe fn map_page_range(
+        pml: &mut PageTable,
+        virt_addr_start: VirtAddr,
+        phys_addr_start: PhysAddr,
+        len: usize,
+        flags: usize,
+    ) -> Result<(), PagingError> {
+        for i in (0..len).step_by(BASIC_PAGE_SIZE) {
+            let pte = {
+                // Shift it 12 bits to the left, since it's page aligned address
+                let virt_addr = VirtAddr((virt_addr_start.0 + i) >> 12);
+                pml.get_create_entry_specific(virt_addr, PAGING_LEVEL - 1)
+            }?;
+    
+            // Populate the PTE with the desired PhysAddr + Flags
+            pte.set((phys_addr_start.0 + i) | flags);
+        }
+    
+        Ok(())
     }
 
     // TODO: Remove code duplication here
@@ -274,6 +273,7 @@ impl PageTable {
     ) -> Result<VirtAddr, PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
         let (pte, virt_addr) = pml.get_create_entry_any(page_size.get_paging_level())?;
+
         pte.0 = phys_addr.0 | flags | page_size.get_flag();
 
         Ok(virt_addr)
@@ -291,11 +291,13 @@ impl PageTable {
             VirtAddr(virt_addr.0 >> page_size.get_shift()),
             page_size.get_paging_level(),
         )?;
+
         pte.0 = phys_addr.0 | flags | page_size.get_flag();
 
         Ok(())
     }
 
+    /// Tries to unmap the given virtual address from the paging tree.
     pub unsafe fn unmap_page(virt_addr: VirtAddr, page_size: PageSize) -> Result<(), PagingError> {
         let pml = unsafe { PageTable::get_pml() }?;
         let pte = pml.get_entry_specific(
@@ -311,6 +313,7 @@ impl PageTable {
     // TODO: Add a mechanism to keep track of whether we should free the paging structures or
     // rather keep them in memory for a near allocation
     /// Marks the the PTE associated with given virtual address as not present and LRU age 0
+    ///
     /// NOTE: Make sure the entry isn't used before doing any modifications to it!
     fn get_entry_specific(
         &mut self,
@@ -341,6 +344,7 @@ impl PageTable {
         virt_addr: VirtAddr,
         level: u8,
     ) -> Result<&mut Entry, PagingError> {
+        // println!("get_create_entry_specific: virt_addr: {:#x}, level: {}", virt_addr.0, level);
         // NOTE: Because of the bitwise and, next index can't be more than 511 so it's safe to
         // index using it without checks
         let index = (virt_addr.0 >> (level * 9)) & 0b1_1111_1111;
@@ -420,14 +424,12 @@ impl PageTable {
 
         let page_table = unsafe {
             // HHDM convert PhysAddr -> VirtAddr and then to a viable pointer
-            let ptr = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
+            let ptr = phys_addr.add_hhdm_offset().0 as *mut PageTable;
             // Important! Memset to get rid of old data
-            utils::mem::memset(ptr, 0, BASIC_PAGE_SIZE);
+            utils::mem::memset(ptr as *mut u8, 0, BASIC_PAGE_SIZE);
 
             // TODO: Change this error to something more meaningfull
-            (ptr as *mut PageTable)
-                .as_mut()
-                .ok_or(PagingError::EntryToPageTableFailed)
+            ptr.as_mut().ok_or(PagingError::EntryToPageTableFailed)
         }?;
 
         Ok((page_table, phys_addr))

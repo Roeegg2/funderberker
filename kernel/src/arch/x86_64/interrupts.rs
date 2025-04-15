@@ -1,11 +1,14 @@
 //! Everything IDT and interrupts
-use core::{arch::asm, arch::global_asm, mem::size_of};
+use core::{arch::{asm, global_asm}, mem::size_of, ptr::from_ref};
 
 const IDT_ENTRIES_NUM: usize = 256;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// The IDT
-static mut IDT: [GateDescriptor; IDT_ENTRIES_NUM] = [GateDescriptor::DEFAULT; IDT_ENTRIES_NUM];
+static mut IDT: Idt = Idt([GateDescriptor::DEFAULT; IDT_ENTRIES_NUM]);
+
+/// The IDT 
+pub(super) struct Idt([GateDescriptor; IDT_ENTRIES_NUM]);
 
 /// Represents an entry in the IDT.
 #[repr(C, packed)]
@@ -44,27 +47,36 @@ impl GateDescriptor {
     };
 }
 
-/// Loads the IDT into memory.
-///
-/// NOTE: This function should be called ONLY ONCE DURING BOOT!
-/// NOTE: Must make sure there is a valid working GDT already loaded
-pub(super) unsafe fn load_idt() {
-    let idtr = super::DescriptorTablePtr {
-        base: (&raw const IDT).addr() as u64,
-        limit: (size_of::<[GateDescriptor; IDT_ENTRIES_NUM]>() - 1) as u16,
-    };
-
-    // Load the IDT
-    unsafe {
-        asm! (
-            "lidt [{}]",
-            in(reg) &idtr,
-        )
+impl Idt {
+    /// Loads the IDT into memory.
+    ///
+    /// NOTE: This function should be called ONLY ONCE DURING BOOT!
+    /// NOTE: Must make sure there is a valid working GDT already loaded
+    pub(super) unsafe fn init() {
+        unsafe {
+            #[allow(static_mut_refs)]
+            IDT.load()
+        };
+        install_isr_handlers();
+        log_info!("Installed ISRs successfully");
     }
-    log_info!("Loaded IDT successfully");
-    // setup the ISR handlers
-    install_isr_handlers();
-    log_info!("Installed ISRs successfully");
+
+    unsafe fn load(&mut self) {
+        let idtr = super::DescriptorTablePtr {
+            base: from_ref(self).addr() as u64,
+            limit: (size_of::<Idt>() - 1) as u16,
+        };
+
+        // Load the IDTR
+        unsafe {
+            asm! (
+                "lidt [{}]",
+                in(reg) &idtr,
+            )
+        }
+
+        log_info!("Loaded IDT successfully");
+    }
 }
 
 /// Installs the ISR handlers in the GDT
@@ -81,9 +93,9 @@ fn install_isr_handlers() {
 
     unsafe {
         // page fault handler
-        IDT[14].register(int_stub_14 as u64, cs, 0, 0b1111, 0, 1);
+        IDT.0[14].register(int_stub_14 as u64, cs, 0, 0b1111, 0, 1);
         // protection fault handler
-        IDT[13].register(int_stub_13 as u64, cs, 0, 0b1111, 0, 1);
+        IDT.0[13].register(int_stub_13 as u64, cs, 0, 0b1111, 0, 1);
     };
 }
 

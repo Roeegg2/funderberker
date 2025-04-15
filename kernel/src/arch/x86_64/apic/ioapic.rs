@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use super::{DeliveryMode, Mask, PinPolarity, RemoteIrr, TriggerMode};
-use crate::arch::x86_64::paging::{PageSize, PageTable};
+use crate::arch::x86_64::paging::{Entry, PageSize, PageTable};
 use crate::mem::{PhysAddr, VirtAddr, mmio::RwReg};
 
 static mut IO_APICS: Vec<IoApic> = Vec::new();
@@ -68,6 +68,7 @@ impl IoApic {
     }
 }
 
+#[allow(dead_code)]
 impl Destination {
     const PHYSICAL_MODE: u8 = 0b0;
     const LOGICAL_MODE: u8 = 0b1;
@@ -97,6 +98,7 @@ impl Destination {
     }
 }
 
+#[allow(dead_code)]
 impl RedirectionEntry {
     /// Sets the vector field
     #[inline]
@@ -167,7 +169,13 @@ pub unsafe fn add(io_apic_addr: PhysAddr, gsi_base: u32) {
     let virt_addr = io_apic_addr.add_hhdm_offset();
     // XXX: This might fuck things up very badly, since we're mapping without letting the
     // allocator know
-    PageTable::map_page_specific(virt_addr, io_apic_addr, 0b11, PageSize::Size4KB).unwrap();
+    PageTable::map_page_specific(
+        virt_addr,
+        io_apic_addr,
+        Entry::FLAG_P | Entry::FLAG_RW | Entry::FLAG_PCD,
+        PageSize::Size4KB,
+    )
+    .unwrap();
 
     unsafe {
         #[allow(static_mut_refs)]

@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::{
-    arch::x86_64::paging::{PageSize, PageTable},
+    arch::x86_64::paging::{Entry, PageSize, PageTable},
     mem::PhysAddr,
 };
 
@@ -10,6 +10,8 @@ use super::{DeliveryMode, Mask, PinPolarity, RemoteIrr, TriggerMode};
 static mut LOCAL_APICS: Vec<LocalApic> = Vec::new();
 
 /// The local APICs' MMIO registers that can be written to
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
 pub enum WriteableRegs {
     Id = 0x20,
     TaskPriority = 0x80,
@@ -31,6 +33,8 @@ pub enum WriteableRegs {
 }
 
 /// The local APICs' MMIO registers that can be read from
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
 pub enum ReadableRegs {
     Id = 0x20,
     Version = 0x30,
@@ -116,6 +120,7 @@ pub struct LocalApic {
     // TODO: Maybe also store ACPI ID?
 }
 
+#[allow(dead_code)]
 impl LvtReg {
     /// Sets the vector field of the LVT register
     #[inline]
@@ -212,8 +217,15 @@ impl LocalApic {
 pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: ApicFlags) {
     let virt_addr = base.add_hhdm_offset();
     // XXX: This might fuck things up very badly, since we're mapping without letting the
-    // allocator know
-    PageTable::map_page_specific(virt_addr, base, 0b11, PageSize::Size4KB).unwrap();
+    // allocator know, but IIRC the address the local APIC is mapped to never appears on the
+    // memory map
+    PageTable::map_page_specific(
+        virt_addr,
+        base,
+        Entry::FLAG_P | Entry::FLAG_RW | Entry::FLAG_PCD,
+        PageSize::Size4KB,
+    )
+    .unwrap();
 
     unsafe {
         #[allow(static_mut_refs)]
