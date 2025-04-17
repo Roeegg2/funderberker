@@ -1,9 +1,9 @@
 //! Simple module to provide logging & printing utils
 
 #[cfg(feature = "framebuffer")]
-pub mod framebuffer;
+use crate::dev::framebuffer;
 #[cfg(feature = "serial")]
-pub mod serial;
+use crate::dev::serial;
 
 /// Empty struct to implement 'core::fmt::Write' on
 pub struct Writer;

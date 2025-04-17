@@ -1,13 +1,18 @@
 //! Everything IDT and interrupts
-use core::{arch::{asm, global_asm}, mem::size_of, ptr::from_ref};
+use core::{
+    arch::{asm, global_asm},
+    mem::size_of,
+    ptr::from_ref,
+};
 
+/// The number of entries in the IDT
 const IDT_ENTRIES_NUM: usize = 256;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// The IDT
 static mut IDT: Idt = Idt([GateDescriptor::DEFAULT; IDT_ENTRIES_NUM]);
 
-/// The IDT 
+/// The IDT
 pub(super) struct Idt([GateDescriptor; IDT_ENTRIES_NUM]);
 
 /// Represents an entry in the IDT.

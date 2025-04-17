@@ -17,7 +17,9 @@ mod boot;
 mod print;
 mod acpi;
 mod arch;
+mod dev;
 mod mem;
+mod sync;
 #[cfg(test)]
 mod test;
 
@@ -27,6 +29,15 @@ pub fn funderberker_main(rsdp: *const ()) {
     test_main();
 
     unsafe { crate::acpi::init(rsdp).expect("Failed to initialize ACPI") };
+
+    unsafe {
+        crate::arch::init_cores();
+    }
+
+    let time = crate::arch::cycles_since_boot();
+    let second_time = crate::arch::cycles_since_boot();
+    println!("Time since boot: {} cycles", time);
+    println!("Time since boot: {} cycles", second_time);
 
     log_info!("Starting Funderberker main operation!");
 }

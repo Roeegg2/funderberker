@@ -1,13 +1,14 @@
-use alloc::vec::Vec;
-
+use super::{
+    DeliveryMode, Destination, DestinationShorthand, Level, Mask, PinPolarity, RemoteIrr,
+    TriggerMode,
+};
 use crate::{
     arch::x86_64::paging::{Entry, PageSize, PageTable},
     mem::PhysAddr,
 };
+use alloc::vec::Vec;
 
-use super::{DeliveryMode, Mask, PinPolarity, RemoteIrr, TriggerMode};
-
-static mut LOCAL_APICS: Vec<LocalApic> = Vec::new();
+pub static mut LOCAL_APICS: Vec<LocalApic> = Vec::new();
 
 /// The local APICs' MMIO registers that can be written to
 #[allow(dead_code)]
@@ -19,6 +20,7 @@ pub enum WriteableRegs {
     LogicalDestination = 0xd0,
     DestinationFormat = 0xe0,
     SpuriousInterruptVector = 0xf0,
+    ErrorStatus = 0x280,
     LvtCmci = 0x2f0,
     InterruptCommand0 = 0x300,
     InterruptCommand1 = 0x310,
@@ -93,7 +95,7 @@ pub enum ApicFlags {
 }
 
 /// Represents the delivery mode of the interrupt
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum DeliveryStatus {
     Idle = 0b0,
@@ -213,11 +215,78 @@ impl LocalApic {
     }
 }
 
+impl LocalApic {
+    pub fn apic_id(&self) -> u32 {
+        self.apic_id
+    }
+
+    pub fn flags(&self) -> ApicFlags {
+        self.flags
+    }
+
+    pub fn base(&self) -> *mut u32 {
+        self.base
+    }
+
+    /// Read the error status register
+    pub fn read_errors(&self) -> u32 {
+        // We should write to the ESR before reading from it to discard any stale data
+        unsafe { self.write(WriteableRegs::ErrorStatus, 0) };
+
+        self.read(ReadableRegs::ErrorStatus)
+    }
+
+    /// Configure and send an inter-processor interrupt.
+    ///
+    /// This function is unsafe for 2 reasons:
+    /// 1. Sending an interrupt to some other processor could result in UB.
+    /// 2. Not all flag combinations are legal, and so using an invalid combination could result in
+    ///    UB.
+    ///
+    /// NOTE: `level` and `trigger_mode` are both not used in Pentium 4 and Intel Xeon processors,
+    /// and should always be set to 1 and 0 respectively.
+    pub unsafe fn send_ipi(
+        &self,
+        vector: u8,
+        delivery_mode: DeliveryMode,
+        destination: Destination,
+        level: Level,
+        trigger_mode: TriggerMode,
+        destination_shorthand: DestinationShorthand,
+    ) {
+        let destination = destination.get();
+        unsafe {
+            self.write(
+                WriteableRegs::InterruptCommand1,
+                (destination.1 as u32) << 24,
+            )
+        }
+
+        let lower_part_data = (vector as u32)
+            | ((delivery_mode as u32) << 8)
+            | ((destination.0 as u32) << 11)
+            | ((level as u32) << 14)
+            | ((trigger_mode as u32) << 15)
+            | ((destination_shorthand as u32) << 18);
+
+        unsafe { self.write(WriteableRegs::InterruptCommand0, lower_part_data) }
+    }
+
+    pub fn ipi_status(&self) -> DeliveryStatus {
+        let status = self.read(ReadableRegs::InterruptCommand0);
+        if status & (1 << 12) == 0 {
+            DeliveryStatus::Idle
+        } else {
+            DeliveryStatus::SendPending
+        }
+    }
+}
+
 /// Adds a new Local APIC to the systems global list of Local APICs
 pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: ApicFlags) {
     let virt_addr = base.add_hhdm_offset();
     // XXX: This might fuck things up very badly, since we're mapping without letting the
-    // allocator know, but IIRC the address the local APIC is mapped to never appears on the
+    // allocator know, but AFAIK the address the local APIC is mapped to never appears on the
     // memory map
     PageTable::map_page_specific(
         virt_addr,

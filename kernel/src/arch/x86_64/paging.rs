@@ -23,8 +23,10 @@ const PAGING_LEVEL: u8 = 4;
 #[cfg(feature = "paging_5")]
 const PAGING_LEVEL: u8 = 5;
 
+/// Number of entries per page table
 const ENTRIES_PER_TABLE: usize = 512;
 
+/// Minimum, basic page size
 pub const BASIC_PAGE_SIZE: usize = 0x1000;
 
 /// Errors that the paging system might encounter
@@ -151,7 +153,6 @@ impl<'a> TryFrom<Entry> for &'a mut PageTable {
     }
 }
 
-
 /// Finalize the paging system initialization
 #[inline]
 unsafe fn final_init(pml_addr: PhysAddr) {
@@ -188,11 +189,11 @@ pub unsafe fn init_from_limine(
                 let virt_addr = VirtAddr((virt_addr_start.0 + i) >> 12);
                 pml.get_create_entry_specific(virt_addr, PAGING_LEVEL - 1)
             }?;
-    
+
             // Populate the PTE with the desired PhysAddr + Flags
             pte.set((phys_addr_start.0 + i) | flags);
         }
-    
+
         Ok(())
     }
 

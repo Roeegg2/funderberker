@@ -1,4 +1,4 @@
-///! Serial port driver for logging stuff
+//! Serial port driver for logging stuff
 
 use crate::arch::x86_64::cpu;
 
@@ -18,7 +18,7 @@ pub static mut SERIAL_WRITER: SerialWriter = SerialWriter {
 /// Possible errors serial driver could encounter
 #[derive(Debug, Clone, Copy)]
 pub enum SerialError {
-    /// Serial port isn't available/isn't working 
+    /// Serial port isn't available/isn't working
     FaultySerialPort,
 }
 
@@ -63,7 +63,7 @@ impl SerialPort {
     }
 
     /// Write a byte to serial
-    pub(super) fn write_byte(self, byte: u8) {
+    fn write_byte(self, byte: u8) {
         if byte == b'\n' {
             unsafe { cpu::outb(self as u16, 0, b'\r') };
         }
@@ -92,7 +92,7 @@ impl SerialWriter {
     }
 
     /// Write a byte to all available serial ports
-    pub(super) fn write_byte_all(&self, byte: u8) {
+    pub fn write_byte_all(&self, byte: u8) {
         for port in self.ports {
             if let Some(val) = port {
                 val.write_byte(byte);

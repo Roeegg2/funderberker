@@ -343,7 +343,7 @@ impl FramebufferWriter {
 
     /// Draws a character at the current cursor position.
     /// The character is drawn using the 8x16 bitmap font.
-    pub(super) fn draw_char(&mut self, character: u8) -> Result<(), FramebufferError> {
+    pub fn draw_char(&mut self, character: u8) -> Result<(), FramebufferError> {
         if self.disabled {
             return Ok(());
         }

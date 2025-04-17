@@ -1,5 +1,4 @@
 ///! Memory management and abstraction layer over arch specific details
-
 use core::ptr::NonNull;
 
 use alloc::fmt;

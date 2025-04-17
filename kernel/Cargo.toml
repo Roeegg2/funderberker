@@ -10,7 +10,7 @@ utils = { path = "../utils" }
 
 [features]
 # default = []
-default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy"]
+default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp"]
 
 # x86_64 CPU vendors
 intel = []
@@ -30,6 +30,9 @@ paging_5 = [] # UNTESTED
 # PMM page allocator algorithm
 pmm_bump = []
 pmm_buddy = []
+
+# disable on the weird case you wouldn't want to use multiple cores on the system
+mp = []
 
 [profile.dev]
 debug = true

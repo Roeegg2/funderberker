@@ -1,8 +1,7 @@
-use alloc::vec::Vec;
-
-use super::{DeliveryMode, Mask, PinPolarity, RemoteIrr, TriggerMode};
+use super::{DeliveryMode, Destination, Mask, PinPolarity, RemoteIrr, TriggerMode};
 use crate::arch::x86_64::paging::{Entry, PageSize, PageTable};
 use crate::mem::{PhysAddr, VirtAddr, mmio::RwReg};
+use alloc::vec::Vec;
 
 static mut IO_APICS: Vec<IoApic> = Vec::new();
 
@@ -31,14 +30,6 @@ pub enum IoApicReg {
     RedTbl = 0x10,
 }
 
-/// The destination mode and ID for the IO APIC
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum Destination {
-    Physical(u8),
-    Logical(u8),
-}
-
 /// The IO APIC's redirection table entry, which configure the behaviour and mapping of the
 /// external interrupts
 #[derive(Debug, Clone, Copy)]
@@ -65,36 +56,6 @@ impl IoApic {
     #[inline]
     const fn red_tbl_index(irq_index: u32) -> u32 {
         (irq_index * 2) as u32 + IoApicReg::RedTbl as u32
-    }
-}
-
-#[allow(dead_code)]
-impl Destination {
-    const PHYSICAL_MODE: u8 = 0b0;
-    const LOGICAL_MODE: u8 = 0b1;
-
-    /// Create the destination struct
-    #[inline]
-    pub const fn new(dest: u8, is_logical: bool) -> Result<Self, ()> {
-        if is_logical {
-            if dest | 0x0f != 0 {
-                // TODO: Add error message here.
-                // In this mode, the destination is a 4-bit logical destination ID.
-                return Err(());
-            }
-            Ok(Destination::Logical(dest))
-        } else {
-            Ok(Destination::Physical(dest))
-        }
-    }
-
-    /// Break the struct down into the destination mode and ID
-    #[inline]
-    pub const fn get(&self) -> (u8, u8) {
-        match self {
-            Destination::Physical(dest) => (Self::PHYSICAL_MODE, *dest),
-            Destination::Logical(dest) => (Self::LOGICAL_MODE, *dest),
-        }
     }
 }
 
