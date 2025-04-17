@@ -34,10 +34,5 @@ pub fn funderberker_main(rsdp: *const ()) {
         crate::arch::init_cores();
     }
 
-    let time = crate::arch::cycles_since_boot();
-    let second_time = crate::arch::cycles_since_boot();
-    println!("Time since boot: {} cycles", time);
-    println!("Time since boot: {} cycles", second_time);
-
     log_info!("Starting Funderberker main operation!");
 }

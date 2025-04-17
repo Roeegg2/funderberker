@@ -92,6 +92,9 @@ pub(super) unsafe fn rdmsr() -> (u32, u32) {
     (low, high)
 }
 
+// TODO: Maybe implement these as functions with enums for the fields you can write to make it
+// safer?
+
 /// Wrapper to read the value of a control register
 #[macro_export]
 macro_rules! read_cr {

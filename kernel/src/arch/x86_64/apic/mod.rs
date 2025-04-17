@@ -10,6 +10,7 @@ pub enum DeliveryMode {
     Smi = 0b010,
     Nmi = 0b100,
     Init = 0b101,
+    StartUp = 0b110,
     ExtInt = 0b111,
 }
 

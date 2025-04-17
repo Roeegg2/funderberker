@@ -5,7 +5,7 @@ use core::hint;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 /// A simple spinlock implementation
-pub struct Spinlock<T> {
+pub struct Spinlock<T: ?Sized> {
     lock: AtomicBool,
     data: UnsafeCell<T>,
 }
@@ -25,8 +25,13 @@ impl<T> Spinlock<T> {
     /// Spin until you can lock the spinlock, then lock it
     #[inline(always)]
     pub fn lock(&self) {
-        while self.lock.swap(true, Ordering::Acquire) {
+        loop {
+            // Tell the processor we're spinning so it can optimize some stuff
             hint::spin_loop();
+
+            if !self.lock.swap(true, Ordering::Acquire) {
+                break;
+            } 
         }
     }
 

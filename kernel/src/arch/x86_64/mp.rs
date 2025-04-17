@@ -2,11 +2,13 @@
 
 use core::{arch::x86_64::__cpuid_count, hint, num::NonZero};
 
+use utils::mem;
+
 use crate::{
-    arch::x86_64::apic::{
-        DeliveryMode, Destination, DestinationShorthand, Level, TriggerMode, lapic::DeliveryStatus,
-    },
-    mem::{VirtAddr, vmm::alloc_pages_any},
+    arch::{x86_64::{apic::{
+        lapic::DeliveryStatus, DeliveryMode, Destination, DestinationShorthand, Level, TriggerMode
+    }, tsc}, BASIC_PAGE_SIZE},
+    mem::{vmm::alloc_pages_any, VirtAddr},
 };
 
 use super::apic::lapic;
@@ -25,11 +27,16 @@ pub(super) fn init_cores() {
             NonZero::new_unchecked(1)
         })
         .unwrap();
+
+    unsafe { mem::memcpy(initialization_vector_page.as_ptr().cast::<u8>(), foo as *const u8, BASIC_PAGE_SIZE) };
+
     let phys_addr = VirtAddr(initialization_vector_page.addr().into()).subtract_hhdm_offset();
 
     // NOTE: The interrupt should be sent from the BSP, not from the AP?
     // TODO: Maybe just send an IPI to `all excluding self`? That could be easier
-    for apic in lapic::LOCAL_APICS.iter_mut() {
+    for apic in unsafe {
+        #[allow(static_mut_refs)]
+        &mut lapic::LOCAL_APICS}.iter_mut() {
         // The BSP is already initialized
         if apic.apic_id() == bsp_id {
             continue;
@@ -38,11 +45,12 @@ pub(super) fn init_cores() {
         // Sanity clear the error status register
         apic.read_errors();
 
+        let destination = Destination::new(apic.apic_id() as u8, false).expect("Possibly invalid APIC ID");
         unsafe {
             apic.send_ipi(
                 0,
                 DeliveryMode::Init,
-                Destination::new(apic.apic_id() as u8, false).expect("Possibly invalid APIC ID"),
+                destination,
                 Level::Assert,
                 TriggerMode::BusDefault,
                 DestinationShorthand::NoShorthand,
@@ -55,19 +63,35 @@ pub(super) fn init_cores() {
             hint::spin_loop()
         }
 
-        // TODO: Sleep for 10ms
+        tsc::ms_spin(10);
 
         // XXX: Not sure about this interrupt vector, I just copied whatever from the osdev wiki
-        unsafe {
-            apic.send_ipi(
-                0,
-                delivery_mode,
-                destination,
-                level,
-                trigger_mode,
-                destination_shorthand,
-            );
+        // XXX: Are you sure there is no danger of the page ID wrapping over?
+        for _ in 0..2 {
+            unsafe {
+                apic.send_ipi(
+                    (phys_addr.0 >> 12) as u8,
+                    DeliveryMode::StartUp,
+                    destination,
+                    Level::Assert,
+                    TriggerMode::BusDefault,
+                    DestinationShorthand::NoShorthand,
+                );
+
+            }
+
+            tsc::us_spin(200);
+
+            while apic.ipi_status() == DeliveryStatus::SendPending {
+                hint::spin_loop()
+            }
         }
+    }
+}
+
+fn foo() -> ! {
+    loop {
+
     }
 }
 
