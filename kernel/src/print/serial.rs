@@ -1,5 +1,4 @@
 ///! Serial port driver for logging stuff
-
 use crate::arch::x86_64::cpu;
 
 pub static mut SERIAL_WRITER: SerialWriter = SerialWriter {
@@ -18,7 +17,7 @@ pub static mut SERIAL_WRITER: SerialWriter = SerialWriter {
 /// Possible errors serial driver could encounter
 #[derive(Debug, Clone, Copy)]
 pub enum SerialError {
-    /// Serial port isn't available/isn't working 
+    /// Serial port isn't available/isn't working
     FaultySerialPort,
 }
 

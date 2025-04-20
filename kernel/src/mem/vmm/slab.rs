@@ -319,78 +319,49 @@ impl Slab {
     /// Check if the given pointer **to the allocated data** belongs to this slab
     fn is_in_range(&self, ptr: NonNull<ObjectNode>, obj_count: usize, obj_layout: Layout) -> bool {
         self.buff_ptr() <= ptr
-            && ptr < unsafe { utils::ptr_add_layout!(ptr, obj_count, obj_layout, ObjectNode) }
+            && ptr < unsafe { ptr.byte_add(obj_count * obj_layout.size()) }.cast::<ObjectNode>()
     }
 
-    /// Constructs a new slab with the given parameters. This is unsafe because the layout must be
-    /// at least `Node<ObjectNode>` size aligned.
-    /// This is a simple wrapper around the `new_obj_embed` and `new_obj_extern` functions
-    #[inline]
-    unsafe fn new(
+    /// Constructs a new slab with the given parameters.
+    fn new(
         buff_ptr: NonNull<ObjectNode>,
         obj_count: usize,
         obj_layout: Layout,
         obj_embed: bool,
     ) -> Self {
-        unsafe {
-            if obj_embed {
-                Slab::new_obj_embed(buff_ptr, obj_count, obj_layout)
-            } else {
-                Slab::new_obj_extern(buff_ptr, obj_count, obj_layout)
-            }
-        }
-    }
+        // Make sure alignment requirements are met
+        assert!(
+            buff_ptr.is_aligned_to(obj_layout.align()),
+            "Slab buffer pointer is not aligned to the object layout"
+        );
+        assert!(
+            size_of::<ObjectNode>() <= obj_layout.size(),
+            "Object size isn't big enough to hold the node"
+        );
 
-    /// Constructs a new slab where the `Node<ObjectNodes>` are stored in the kernel's heap
-    /// This is unsafe because the layout must be at least `Node<ObjectNode>` size aligned.
-    #[inline]
-    unsafe fn new_obj_extern(
-        buff_ptr: NonNull<ObjectNode>,
-        obj_count: usize,
-        obj_layout: Layout,
-    ) -> Self {
         let mut free_objs = StackList::new();
 
         for i in 0..obj_count {
             // Get the ptr for the object
-            let ptr = unsafe { utils::ptr_add_layout!(buff_ptr, i, obj_layout, ObjectNode) };
-            //let ptr = unsafe {buff_ptr.cast::<u8>().add(i * obj_layout.size()).cast::<()>()};
-            free_objs.push(ptr);
-        }
-
-        Slab::SlabObjExtern(SlabCore {
-            buff_ptr,
-            free_objs,
-        })
-    }
-
-    /// Constructs a new slab where the `Node<ObjectNodes>` are embedded in the slab itself.
-    /// This is unsafe because the layout must be at least `Node<ObjectNode>` size aligned.
-    #[inline]
-    unsafe fn new_obj_embed(
-        buff_ptr: NonNull<ObjectNode>,
-        obj_count: usize,
-        obj_layout: Layout,
-    ) -> Self {
-        let mut free_objs = StackList::new();
-        {
-            for i in 0..obj_count {
-                unsafe {
-                    // Cast buff_ptr to u8, then add the size of obj in bytes, and then cast this
-                    // all to a pointer to a Node in the free objects linked list
-                    // SAFETY: This is OK because we already checked in the allocator to make sure
-                    // T has at least same alignment and size as Node<NonNull<()>>
-                    let ptr =
-                        utils::ptr_add_layout!(buff_ptr, i, obj_layout, Node<NonNull<ObjectNode>>);
-                    free_objs.push_node(ptr);
-                };
+            unsafe {
+                let ptr = buff_ptr
+                    .byte_add(i * obj_layout.size())
+                    .cast::<ObjectNode>();
+                free_objs.push(ptr);
             }
         }
 
+        if obj_embed {
         Slab::SlabObjEmbed(SlabCore {
             buff_ptr,
             free_objs,
         })
+        } else {
+        Slab::SlabObjExtern(SlabCore {
+            buff_ptr,
+            free_objs,
+        })
+        }
     }
 
     /// Allocates an object from the slab
@@ -543,6 +514,7 @@ pub mod tests {
 
     #[test_case]
     fn test2() {
+        println!("YOSHA");
         let mut allocator = unsafe {
             super::InternalSlabAllocator::new(core::alloc::Layout::new::<[u16; 20]>(), true)
         };

@@ -1,5 +1,9 @@
 //! Everything IDT and interrupts
-use core::{arch::{asm, global_asm}, mem::size_of, ptr::from_ref};
+use core::{
+    arch::{asm, global_asm},
+    mem::size_of,
+    ptr::from_ref,
+};
 
 const IDT_ENTRIES_NUM: usize = 256;
 
@@ -7,7 +11,7 @@ const IDT_ENTRIES_NUM: usize = 256;
 /// The IDT
 static mut IDT: Idt = Idt([GateDescriptor::DEFAULT; IDT_ENTRIES_NUM]);
 
-/// The IDT 
+/// The IDT
 pub(super) struct Idt([GateDescriptor; IDT_ENTRIES_NUM]);
 
 /// Represents an entry in the IDT.

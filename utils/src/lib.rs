@@ -2,7 +2,6 @@
 #![feature(let_chains)]
 
 pub mod collections;
-//#[macro_use]
 pub mod mem;
 
 #[macro_export]

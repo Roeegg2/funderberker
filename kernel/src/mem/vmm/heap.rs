@@ -15,13 +15,13 @@ pub(super) static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocat
 /// A global heap allocator for the kernel. Structured as a bunch of uninitable object slab
 /// allocators
 #[derive(Debug)]
-pub(super) struct KernelHeapAllocator(UnsafeCell<[InternalSlabAllocator; Self::SIZE]>);
+pub(super) struct KernelHeapAllocator([UnsafeCell<InternalSlabAllocator>; Self::SIZE]);
 
 /// A macro to make creating slab allocators easier
 macro_rules! create_slab_allocators {
     ($($size:expr),*) => {
         [
-            $(unsafe { InternalSlabAllocator::new(Layout::new::<[u8; $size]>(), true) },)*
+            $(unsafe { UnsafeCell::new(InternalSlabAllocator::new(Layout::new::<[u8; $size]>(), true)) },)*
         ]
     };
 }
@@ -36,7 +36,7 @@ impl KernelHeapAllocator {
     const fn new() -> Self {
         // TODO: Use a const array::from_fn here!
         // TODO: Benchmark and possibly change the slab allocator sizes
-        Self(UnsafeCell::new(create_slab_allocators!(
+        Self(create_slab_allocators!(
             2_usize.pow(Self::MIN_POW as u32 + 0),
             2_usize.pow(Self::MIN_POW as u32 + 1),
             2_usize.pow(Self::MIN_POW as u32 + 2),
@@ -48,7 +48,7 @@ impl KernelHeapAllocator {
             2_usize.pow(Self::MIN_POW as u32 + 8),
             2_usize.pow(Self::MIN_POW as u32 + 9),
             2_usize.pow(Self::MIN_POW as u32 + 10)
-        )))
+        ))
     }
 
     /// Get the index of the allocator that is closest to the total size layout requires
@@ -71,10 +71,10 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Use the allocator that is closest to the total size layout requires
         let index = self.get_matching_allocator_index(layout);
+
         // Try accessing allocators, and then also try to allocate
-        if let Some(allocators) = unsafe { self.0.get().as_mut() }
-            && let Ok(ptr) = allocators[index].alloc()
-        {
+        if let Some(allocator) = unsafe { self.0[index].get().as_mut() }
+            && let Ok(ptr) = allocator.alloc() {
             return ptr.as_ptr().cast::<u8>();
         }
 
@@ -88,11 +88,10 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 
         // Convert ptr to a NonNull one + cast, get the allocator and pass the pointer to the
         // allocator
-        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<ObjectNode>())
-            && let Some(allocators) = unsafe { self.0.get().as_mut() }
-        {
+        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<ObjectNode>()) 
+            && let Some(allocator) = unsafe { self.0[index].get().as_mut() } {
             unsafe {
-                let _ = allocators[index].free(non_null_ptr);
+                let _ = allocator.free(non_null_ptr);
             };
         }
     }

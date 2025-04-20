@@ -1,7 +1,10 @@
 //! A simple, unidirectional linked list
 
 use core::{
-    fmt::{self, Debug}, marker::PhantomData, ops::{Deref, DerefMut}, ptr::NonNull
+    fmt::{self, Debug},
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 #[cfg(not(test))]

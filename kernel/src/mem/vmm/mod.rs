@@ -25,12 +25,7 @@ pub fn alloc_pages_any(
     let virt_addr = phys_addr.add_hhdm_offset();
 
     // TODO: Add a way to customize the flags being set. 3 => x86_64 Present + Read & Write
-    PageTable::map_page_specific(
-        virt_addr,
-        phys_addr,
-        3,
-        PageSize::Size4KB,
-    )?;
+    PageTable::map_page_specific(virt_addr, phys_addr, 3, PageSize::Size4KB)?;
 
     // SAFETY: `virt_addr` is not null since physical page 0 should always be marked as taken
     Ok(NonNull::new(virt_addr.0 as *mut ()).unwrap())
@@ -47,25 +42,15 @@ pub fn alloc_pages_at(virt_addr: VirtAddr, page_count: NonZero<usize>) -> Result
         .map_err(|e| PagingError::AllocationError(e))?;
 
     // TODO: Add a way to customize the flags being set. 3 => x86_64 Present + Read & Write
-    PageTable::map_page_specific(
-        virt_addr,
-        phys_addr,
-        3,
-        PageSize::Size4KB,
-    )
+    PageTable::map_page_specific(virt_addr, phys_addr, 3, PageSize::Size4KB)
 }
 
 /// Tries to unmap and free a contigious block of pages of `page_count` amount, at the given `virt_addr`
-pub unsafe fn free_pages(
-    ptr: NonNull<()>,
-    page_count: NonZero<usize>,
-) -> Result<(), PagingError> {
+pub unsafe fn free_pages(ptr: NonNull<()>, page_count: NonZero<usize>) -> Result<(), PagingError> {
     let virt_addr: VirtAddr = ptr.into();
     for i in 0..page_count.get() {
         let virt_addr = VirtAddr(virt_addr.0 + page_id_to_addr(i));
-        unsafe {
-            PageTable::unmap_page(virt_addr, PageSize::Size4KB)
-        }?;
+        unsafe { PageTable::unmap_page(virt_addr, PageSize::Size4KB) }?;
     }
 
     let phys_addr = virt_addr.subtract_hhdm_offset();

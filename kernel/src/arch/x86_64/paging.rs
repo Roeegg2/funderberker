@@ -151,7 +151,6 @@ impl<'a> TryFrom<Entry> for &'a mut PageTable {
     }
 }
 
-
 /// Finalize the paging system initialization
 #[inline]
 unsafe fn final_init(pml_addr: PhysAddr) {
@@ -188,11 +187,11 @@ pub unsafe fn init_from_limine(
                 let virt_addr = VirtAddr((virt_addr_start.0 + i) >> 12);
                 pml.get_create_entry_specific(virt_addr, PAGING_LEVEL - 1)
             }?;
-    
+
             // Populate the PTE with the desired PhysAddr + Flags
             pte.set((phys_addr_start.0 + i) | flags);
         }
-    
+
         Ok(())
     }
 

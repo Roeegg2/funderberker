@@ -10,15 +10,6 @@ pub unsafe fn memset(ptr: *mut u8, value: u8, len: usize) {
 }
 
 #[macro_export]
-macro_rules! ptr_add_layout {
-    ($ptr:expr, $i:expr, $layout:expr, $type:ty) => {
-        //let _: usize = $i;
-        //let _: Layout = $layout;
-        $ptr.cast::<u8>().add($i * $layout.size()).cast::<$type>()
-    };
-}
-
-#[macro_export]
 macro_rules! sanity_assert {
     ($cond:expr) => {
         debug_assert!($cond, "Sanity check failed!");
