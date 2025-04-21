@@ -212,8 +212,8 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
 mod tests {
     use super::*;
 
-    #[test_case]
-    fn test_alloc() {
+    #[test_fn]
+    fn test_bump_alloc() {
         let allocator = unsafe {
             #[allow(static_mut_refs)]
             &mut BUMP_ALLOCATOR
@@ -251,8 +251,8 @@ mod tests {
         unsafe { allocator.free(addr2, NonZero::new_unchecked(2)).unwrap() };
     }
 
-    #[test_case]
-    fn test_error() {
+    #[test_fn]
+    fn test_bump_error() {
         let allocator = unsafe {
             #[allow(static_mut_refs)]
             &mut BUMP_ALLOCATOR

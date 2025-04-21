@@ -21,9 +21,10 @@ pub(super) struct KernelHeapAllocator([UnsafeCell<InternalSlabAllocator>; Self::
 macro_rules! create_slab_allocators {
     ($($size:expr),*) => {
         [
-            $(unsafe { UnsafeCell::new(InternalSlabAllocator::new(Layout::new::<[u8; $size]>(), true)) },)*
+            $(UnsafeCell::new( InternalSlabAllocator::new(Layout::new::<[u8; $size]>())),)*
         ]
     };
+
 }
 
 impl KernelHeapAllocator {
@@ -100,9 +101,10 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 #[cfg(test)]
 mod tests {
     use alloc::{boxed::Box, string::ToString, vec::Vec};
+    use macros::test_fn;
 
-    #[test_case]
-    fn generic_allocs() {
+    #[test_fn]
+    fn test_heap_generic_allocs() {
         let a = Box::new(5_usize);
         let string = Box::new("Hello, World!".to_string());
         assert_eq!(*a, 5);

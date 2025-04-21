@@ -1,5 +1,6 @@
 /kernel/target
 /utils/target
+/macros/target
 /iso_root
 /limine
 /ovmf

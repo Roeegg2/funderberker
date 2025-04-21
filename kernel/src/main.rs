@@ -18,6 +18,7 @@ mod print;
 mod acpi;
 mod arch;
 mod mem;
+#[macro_use]
 #[cfg(test)]
 mod test;
 

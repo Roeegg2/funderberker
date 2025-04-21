@@ -504,10 +504,12 @@ impl<'a> BuddyAllocator<'a> {
 
 #[cfg(test)]
 mod tests {
+    use macros::test_fn;
+
     use super::*;
 
-    #[test_case]
-    fn test_utility_functions() {
+    #[test_fn]
+    fn test_buddy_utility_functions() {
         // Test index_to_bucket_size
         assert_eq!(BuddyAllocator::index_to_bucket_size(0), BASIC_PAGE_SIZE);
         assert_eq!(BuddyAllocator::index_to_bucket_size(1), BASIC_PAGE_SIZE * 2);
@@ -570,8 +572,8 @@ mod tests {
         );
     }
 
-    #[test_case]
-    fn test_alloc_n_frees() {
+    #[test_fn]
+    fn test_buddy_alloc_n_frees() {
         let allocator = unsafe {
             #[allow(static_mut_refs)]
             &mut BUDDY_ALLOCATOR
@@ -647,8 +649,8 @@ mod tests {
         unsafe { allocator.free(addr4, NonZero::new_unchecked(1)).unwrap() };
     }
 
-    #[test_case]
-    fn test_errors() {
+    #[test_fn]
+    fn test_buddy_errors() {
         let allocator = unsafe {
             #[allow(static_mut_refs)]
             &mut BUDDY_ALLOCATOR

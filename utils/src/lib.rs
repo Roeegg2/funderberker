@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(let_chains)]
+#![feature(box_vec_non_null)]
 
 pub mod collections;
 pub mod mem;
@@ -20,5 +21,14 @@ macro_rules! sum_fields {
                 0 $(+ self.$field as usize)*
             }
         }
+    };
+}
+
+#[macro_export]
+macro_rules! ptr_add_layout {
+    ($ptr:expr, $i:expr, $layout:expr, $type:ty) => {
+        //let _: usize = $i;
+        //let _: Layout = $layout;
+        $ptr.cast::<u8>().add($i * $layout.size()).cast::<$type>()
     };
 }
