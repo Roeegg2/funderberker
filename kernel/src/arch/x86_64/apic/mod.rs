@@ -1,3 +1,5 @@
+//! APIC implementation
+
 pub mod ioapic;
 pub mod lapic;
 
@@ -34,17 +36,15 @@ pub enum Mask {
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum PinPolarity {
-    BusDefault = 0b0,
-    ActiveHigh = 0b1,
-    ActiveLow = 0b11,
+    ActiveHigh = 0b0,
+    ActiveLow = 0b1,
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum TriggerMode {
-    BusDefault = 0b0,
-    EdgeTriggered = 0b1,
-    LevelTriggered = 0b11,
+    EdgeTriggered = 0b0,
+    LevelTriggered = 0b1,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -104,7 +104,8 @@ impl TryFrom<u16> for TriggerMode {
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
-            0b0 => Ok(TriggerMode::BusDefault),
+            // 0 is the bus default: on ISA, this is edge triggered
+            0b0 => Ok(TriggerMode::EdgeTriggered),
             0b1 => Ok(TriggerMode::EdgeTriggered),
             0b11 => Ok(TriggerMode::LevelTriggered),
             _ => Err(()),
@@ -116,7 +117,9 @@ impl TryFrom<u16> for PinPolarity {
     type Error = ();
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
-            0b0 => Ok(PinPolarity::BusDefault),
+            // 0 is the bus default: on EISA, this is active low
+            // XXX: Is this the default only for Level or for Edge as well?
+            0b0 => Ok(PinPolarity::ActiveLow),
             0b1 => Ok(PinPolarity::ActiveHigh),
             0b11 => Ok(PinPolarity::ActiveLow),
             _ => Err(()),

@@ -1,9 +1,11 @@
 use core::mem::transmute;
 
+use alloc::vec;
+use alloc::vec::Vec;
 use modular_bitfield::prelude::*;
 use utils::const_max;
 
-use crate::mem::mmio::{MmioArea, MmioReg};
+use crate::mem::mmio::{MmioArea, Offsetable};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HpetError {
@@ -92,11 +94,10 @@ struct Timer {
 }
 
 pub struct Hpet {
-    base: MmioArea<usize, usize, u64>,
+    area: MmioArea<usize, usize, u64>,
     main_clock_period: u64,
     minimum_tick: u16,
-    max_timer_amount: usize,
-    timers: [Option<Timer>; 32],
+    timers: Vec<Option<Timer>>,
 }
 
 // TODO: Move this out of here
@@ -121,7 +122,7 @@ impl Hpet {
     unsafe fn set_interrupt_routing(&mut self) {
         // Make sure it's supported
         let capabilities: GeneralCapabilities =
-            unsafe { transmute(self.base.read(ReadableRegs::GENERAL_CAPABILITIES)) };
+            unsafe { transmute(self.area.read(ReadableRegs::GENERAL_CAPABILITIES)) };
         assert!(
             capabilities.leg_route_cap() == true.into(),
             "HPET: Legacy routing not supported"
@@ -129,10 +130,10 @@ impl Hpet {
 
         // Enable legacy routing
         let mut config: GeneralConfiguration =
-            unsafe { transmute(self.base.read(ReadableRegs::GENERAL_CONFIGURATION)) };
+            unsafe { transmute(self.area.read(ReadableRegs::GENERAL_CONFIGURATION)) };
         config.set_legacy_route(true.into());
         unsafe {
-            self.base
+            self.area
                 .write(WriteableRegs::GENERAL_CONFIGURATION, config.into())
         };
     }
@@ -146,7 +147,7 @@ impl Hpet {
             // Set and configure the interrupt routing
             self.set_interrupt_routing();
             // Reset the main counter value to a known state
-            self.base.write(WriteableRegs::MAIN_COUNTER_VALUE, 50);
+            self.area.write(WriteableRegs::MAIN_COUNTER_VALUE, 0);
             // Enable the HPET
             self.set_state(true);
         }
@@ -155,17 +156,16 @@ impl Hpet {
     /// Create the new HPET instance
     pub unsafe fn new(base: *mut u64, minimum_tick: u16) -> Self {
         let mut hpet = Self {
-            base: MmioArea::new(base),
+            area: MmioArea::new(base),
             main_clock_period: 0,
             minimum_tick,
-            max_timer_amount: 0,
-            timers: [None; 32],
+            timers: Vec::new(),
         };
 
         // Get the main clock's period
         hpet.main_clock_period = {
             let capabilities: GeneralCapabilities =
-                unsafe { transmute(hpet.base.read(ReadableRegs::GENERAL_CAPABILITIES)) };
+                unsafe { transmute(hpet.area.read(ReadableRegs::GENERAL_CAPABILITIES)) };
             utils::sanity_assert!(capabilities.counter_clock_period() != 0);
             utils::sanity_assert!(capabilities.counter_clock_period() < 0x5F5E100);
 
@@ -173,13 +173,15 @@ impl Hpet {
         };
 
         // Get the number of timers
-        hpet.max_timer_amount = {
+        let max_timer_amount = {
             let capabilities: GeneralCapabilities =
-                unsafe { transmute(hpet.base.read(ReadableRegs::GENERAL_CAPABILITIES)) };
+                unsafe { transmute(hpet.area.read(ReadableRegs::GENERAL_CAPABILITIES)) };
             let max_timer_index: u64 = capabilities.num_tim_cap().into();
-            utils::sanity_assert!(max_timer_index < 31);
+            utils::sanity_assert!(max_timer_index < 32);
             max_timer_index as usize + 1
         };
+
+        hpet.timers = vec![None; max_timer_amount];
 
         // Initialize the main counter & other stuff
         unsafe { hpet.init() };
@@ -190,33 +192,34 @@ impl Hpet {
     /// Enable/disable the HPET (halt the main counter, effectively disabling all the timers)
     #[inline]
     unsafe fn set_state(&mut self, state: bool) {
-        println!("this is config before {:?}", unsafe {self.base.read(ReadableRegs::GENERAL_CONFIGURATION)});
         let mut config: GeneralConfiguration =
-            unsafe { transmute(self.base.read(ReadableRegs::GENERAL_CONFIGURATION)) };
+            unsafe { transmute(self.area.read(ReadableRegs::GENERAL_CONFIGURATION)) };
+
         config.set_enable(state.into());
+
         unsafe {
-            self.base
+            self.area
                 .write(WriteableRegs::GENERAL_CONFIGURATION, config.into())
         };
-        println!("this is config after {:?}", unsafe {self.base.read(ReadableRegs::GENERAL_CONFIGURATION)});
     }
 
     /// Get the status of the interrupt line of the timer with index `timer_index`
-    fn get_timer_interrupt_status(&mut self, timer_index: usize) -> Result<bool, HpetError> {
+    pub fn get_timer_interrupt_status(&mut self, timer_index: usize) -> Result<bool, HpetError> {
         let timer = self
             .timers
             .get(timer_index)
             .ok_or(HpetError::NoSuchTimer)?
             .as_ref()
             .ok_or(HpetError::UnusedTimer)?;
+
         let general_interrupt_status =
-            unsafe { self.base.read(ReadableRegs::GENERAL_INTERRUPT_STATUS) };
+            unsafe { self.area.read(ReadableRegs::GENERAL_INTERRUPT_STATUS) };
 
         let mask = 1 << timer_index;
         let status = (general_interrupt_status & mask) != 0;
         if status && timer.trigger_mode == TriggerMode::LevelTriggered {
             unsafe {
-                self.base
+                self.area
                     .write(WriteableRegs::GENERAL_INTERRUPT_STATUS, mask)
             };
         }
@@ -235,15 +238,9 @@ impl Hpet {
         trigger_mode: TriggerMode,
     ) {
         unsafe {
-            println!(
-                "MAIN COUNTER: {} cycles {}",
-                self.base.read(ReadableRegs::MAIN_COUNTER_VALUE),
-                cycles_per_period
-            );
-            let cycles = self.base.read(ReadableRegs::MAIN_COUNTER_VALUE) + cycles_per_period;
+            let cycles = self.area.read(ReadableRegs::MAIN_COUNTER_VALUE) + cycles_per_period;
 
-            // XXX: Swap me when you finish fixing
-            self.base
+            self.area
                 .write(Timer::index_to_comparator_reg(timer_index), cycles);
         }
 
@@ -252,15 +249,10 @@ impl Hpet {
         timer_config.set_int_enable(true.into());
 
         let time: u64 = timer_config.into();
-        println!("this is config: {:?}", time);
         unsafe {
-            self.base
+            self.area
                 .write(Timer::index_to_config_reg(timer_index), timer_config.into())
         };
-
-        println!("this is config: {:?}", unsafe {
-            self.base.read(Timer::index_to_config_reg(timer_index))
-        });
     }
 
     /// Allocate a timer with the given parameters and initialize it
@@ -270,7 +262,6 @@ impl Hpet {
         mode: TimerMode,
         trigger_mode: TriggerMode,
     ) -> Result<usize, HpetError> {
-        println!("this is timer period: {:?}", self.main_clock_period);
         if time as u64 > FEMTOSEC {
             return Err(HpetError::InvalidTimePeriod);
         }
@@ -282,7 +273,7 @@ impl Hpet {
             .ok_or(HpetError::NoFreeTimer)?;
 
         let timer_config: TimerConfiguration =
-            unsafe { transmute(self.base.read(Timer::index_to_config_reg(index))) };
+            unsafe { transmute(self.area.read(Timer::index_to_config_reg(index))) };
         if mode == TimerMode::Periodic && timer_config.periodic_int_capable() == false.into() {
             return Err(HpetError::UnsupportedTimerMode);
         }
@@ -304,7 +295,7 @@ impl Hpet {
             .ok_or(HpetError::UnusedTimer)?;
 
         let mut timer_config: TimerConfiguration =
-            unsafe { transmute(self.base.read(Timer::index_to_config_reg(index))) };
+            unsafe { transmute(self.area.read(Timer::index_to_config_reg(index))) };
 
         if timer_config.int_enable() == false.into() {
             return Err(HpetError::UnusedTimer);
@@ -312,7 +303,7 @@ impl Hpet {
 
         timer_config.set_int_enable(false.into());
         unsafe {
-            self.base
+            self.area
                 .write(Timer::index_to_config_reg(index), timer_config.into())
         };
 
@@ -360,7 +351,7 @@ impl Timer {
     }
 }
 
-impl MmioReg for usize {
+impl Offsetable for usize {
     fn offset(self) -> usize {
         self
     }

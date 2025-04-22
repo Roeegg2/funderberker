@@ -45,7 +45,7 @@ impl Hpet {
         unsafe {
             let mut hpet = hpet::Hpet::new(virt_addr.into(), self.minimum_tick);
 
-            let timer = hpet
+            let timer_id = hpet
                 .alloc_timer(41666667 * 2, TimerMode::OneShot, TriggerMode::EdgeTriggered)
                 .unwrap();
         }

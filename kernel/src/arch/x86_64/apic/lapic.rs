@@ -1,12 +1,15 @@
+//! Local APIC driver and interface
+
 use super::{
-    DeliveryMode, Destination, DestinationShorthand, Level, Mask, PinPolarity, RemoteIrr,
+    DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity,
     TriggerMode,
 };
 use crate::{
-    arch::x86_64::paging::{Entry, PageSize, PageTable},
-    mem::PhysAddr,
+    arch::x86_64::{cpu::{wrmsr, Msr}, paging::{Entry, PageSize, PageTable}},
+    mem::{mmio::{MmioArea, Offsetable}, PhysAddr},
 };
 use alloc::vec::Vec;
+use modular_bitfield::prelude::*;
 
 pub static mut LOCAL_APICS: Vec<LocalApic> = Vec::new();
 
@@ -102,15 +105,35 @@ pub enum DeliveryStatus {
     SendPending = 0b1,
 }
 
-/// Wrapper for an LVT register.
+#[bitfield]
 #[derive(Debug, Clone, Copy)]
-struct LvtReg(u32);
+#[repr(u32)]
+/// Represents the LVT register
+struct LvtReg {
+    /// The vector to be used for this interrupt
+    vector: B8,
+    /// The delivery mode of the interrupt
+    delivery_mode: B3,
+    _reserved: B1,
+    /// The delivery status of the interrupt
+    delivery_status: B1,
+    /// The pin polarity of the interrupt
+    pin_polarity: B1,
+    /// The remote IRR of the interrupt
+    remote_irr: B1,
+    /// The trigger mode of the interrupt
+    trigger_mode: B1,
+    /// The mask of the interrupt
+    mask: B1,
+    _reserved2: B15,
+}
+
 
 /// Represents a Local APIC on the system, and contains all the info needed to manage it
 #[derive(Debug)]
 pub struct LocalApic {
     /// Pointer to the base address of the MMIO of the APIC
-    base: *mut u32,
+    area: MmioArea<ReadableRegs, WriteableRegs, u32>,
     // NOTE: This is a 32-bit value, since on x2APIC systems the ID is 32 bit instead of 8 bit
     /// The APIC ID assigned to the processor
     apic_id: u32,
@@ -122,67 +145,34 @@ pub struct LocalApic {
     // TODO: Maybe also store ACPI ID?
 }
 
-#[allow(dead_code)]
-impl LvtReg {
-    /// Sets the vector field of the LVT register
-    #[inline]
-    fn set_vector(&mut self, vector: u8) {
-        self.0 = (self.0 & !0xff) | vector as u32;
-    }
-
-    /// Sets the delivery mode field of the LVT register
-    #[inline]
-    fn set_delivery_mode(&mut self, delivery_mode: DeliveryMode) {
-        self.0 = (self.0 & !(0b111 << 8)) | ((delivery_mode as u32) << 8);
-    }
-
-    /// Sets the delivery status field of the LVT register
-    #[inline]
-    const fn set_trigger_mode(&mut self, trigger_mode: TriggerMode) {
-        self.0 = (self.0 & !(0b1 << 15)) | ((trigger_mode as u32) << 15);
-    }
-
-    /// Sets the pin polarity field of the LVT register
-    #[inline]
-    const fn set_pin_polarity(&mut self, pin_polarity: PinPolarity) {
-        self.0 = (self.0 & !(0b1 << 13)) | ((pin_polarity as u32) << 13);
-    }
-
-    /// Sets the remote IRR field of the LVT register
-    #[inline]
-    fn set_remote_irr(&mut self, remote_irr: RemoteIrr) {
-        self.0 = (self.0 & !(0b1 << 14)) | ((remote_irr as u32) << 14);
-    }
-
-    /// Sets the mask field of the LVT register
-    #[inline]
-    fn set_mask(&mut self, mask: Mask) {
-        self.0 = (self.0 & !(0b1 << 16)) | ((mask as u32) << 16);
-    }
-}
-
 impl LocalApic {
-    /// Creates a new Local APIC instance
+    // #[inline]
+    // unsafe fn hardware_enable(&self) {
+    //     unsafe {wrmsr(Msr::Ia32ApicBase, low, high)};
+    // }
+
     #[inline]
-    unsafe fn new(base: *mut u32, acpi_processor_id: u32, apic_id: u32, flags: ApicFlags) -> Self {
-        Self {
-            base,
-            acpi_processor_id,
-            apic_id,
-            flags: ApicFlags::from(flags),
+    unsafe fn init(&self) {
+        unsafe {
+            self.area.write(WriteableRegs::SpuriousInterruptVector, 0xff);
         }
     }
 
-    /// Reads from the passed APICs MMIO register
+    /// Creates a new Local APIC instance
     #[inline]
-    fn read(&self, reg: ReadableRegs) -> u32 {
-        unsafe { core::ptr::read_volatile(self.base.add(reg as usize)) }
-    }
+    unsafe fn new(base: *mut u32, acpi_processor_id: u32, apic_id: u32, flags: ApicFlags) -> Self {
+        let apic = Self {
+            area: MmioArea::new(base),
+            acpi_processor_id,
+            apic_id,
+            flags: ApicFlags::from(flags),
+        };
 
-    /// Writes to the passed APICs MMIO register
-    #[inline]
-    unsafe fn write(&self, reg: WriteableRegs, data: u32) {
-        unsafe { core::ptr::write_volatile(self.base.add(reg as usize), data) }
+        unsafe {
+            apic.init();
+        };
+
+        apic
     }
 
     /// Sets the LVT register for the passed LINT as an NMI
@@ -193,22 +183,20 @@ impl LocalApic {
         pin_polarity: PinPolarity,
         trigger_mode: TriggerMode,
     ) -> Result<(), ()> {
-        let mut entry = match lint {
-            0 => LvtReg(self.read(ReadableRegs::LvtLint0)),
-            1 => LvtReg(self.read(ReadableRegs::LvtLint1)),
+        let mut entry: LvtReg = match lint {
+            0 => unsafe {self.area.read(ReadableRegs::LvtLint0).into()},
+            1 => unsafe {self.area.read(ReadableRegs::LvtLint1).into()},
             _ => return Err(()),
         };
 
-        entry.set_delivery_mode(DeliveryMode::Nmi);
-        entry.set_trigger_mode(trigger_mode);
-        entry.set_pin_polarity(pin_polarity);
+        entry.set_delivery_mode(DeliveryMode::Nmi as u8);
+        entry.set_trigger_mode(trigger_mode as u8);
+        entry.set_pin_polarity(pin_polarity as u8);
 
-        unsafe {
-            match lint {
-                0 => self.write(WriteableRegs::LvtLint0, entry.0),
-                1 => self.write(WriteableRegs::LvtLint1, entry.0),
-                _ => return Err(()),
-            }
+        match lint {
+            0 => unsafe {self.area.write(WriteableRegs::LvtLint0, entry.into())},
+            1 => unsafe {self.area.write(WriteableRegs::LvtLint1, entry.into())},
+            _ => return Err(()),
         }
 
         Ok(())
@@ -224,16 +212,14 @@ impl LocalApic {
         self.flags
     }
 
-    pub fn base(&self) -> *mut u32 {
-        self.base
-    }
-
     /// Read the error status register
     pub fn read_errors(&self) -> u32 {
         // We should write to the ESR before reading from it to discard any stale data
-        unsafe { self.write(WriteableRegs::ErrorStatus, 0) };
+        unsafe { 
+            self.area.write(WriteableRegs::ErrorStatus, 0);
 
-        self.read(ReadableRegs::ErrorStatus)
+            self.area.read(ReadableRegs::ErrorStatus)
+        }
     }
 
     /// Configure and send an inter-processor interrupt.
@@ -256,7 +242,7 @@ impl LocalApic {
     ) {
         let destination = destination.get();
         unsafe {
-            self.write(
+            self.area.write(
                 WriteableRegs::InterruptCommand1,
                 (destination.1 as u32) << 24,
             )
@@ -269,11 +255,11 @@ impl LocalApic {
             | ((trigger_mode as u32) << 15)
             | ((destination_shorthand as u32) << 18);
 
-        unsafe { self.write(WriteableRegs::InterruptCommand0, lower_part_data) }
+        unsafe { self.area.write(WriteableRegs::InterruptCommand0, lower_part_data) }
     }
 
     pub fn ipi_status(&self) -> DeliveryStatus {
-        let status = self.read(ReadableRegs::InterruptCommand0);
+        let status = unsafe {self.area.read(ReadableRegs::InterruptCommand0)};
         if status & (1 << 12) == 0 {
             DeliveryStatus::Idle
         } else {
@@ -345,7 +331,7 @@ pub unsafe fn override_base(base: *mut u32) {
     unsafe {
         #[allow(static_mut_refs)]
         LOCAL_APICS.iter_mut().for_each(|apic| {
-            apic.base = base;
+            apic.area.override_base(base);
         });
     }
 }
@@ -359,5 +345,17 @@ impl TryFrom<u32> for ApicFlags {
             0x1 => Ok(ApicFlags::OnlineCapable),
             _ => Err(()),
         }
+    }
+}
+
+impl Offsetable for ReadableRegs {
+    fn offset(self) -> usize {
+        self as usize
+    }
+}
+
+impl Offsetable for WriteableRegs {
+    fn offset(self) -> usize {
+        self as usize
     }
 }

@@ -60,13 +60,14 @@ pub(super) fn init_cores() {
 
         let destination =
             Destination::new(apic.apic_id() as u8, false).expect("Possibly invalid APIC ID");
+        // XXX: Not sure about the trigger mode
         unsafe {
             apic.send_ipi(
                 0,
                 DeliveryMode::Init,
                 destination,
                 Level::Assert,
-                TriggerMode::BusDefault,
+                TriggerMode::EdgeTriggered,
                 DestinationShorthand::NoShorthand,
             );
         }
@@ -79,6 +80,7 @@ pub(super) fn init_cores() {
 
         // tsc::ms_spin(10);
 
+        // XXX: Not sure about the trigger mode
         // XXX: Not sure about this interrupt vector, I just copied whatever from the osdev wiki
         // XXX: Are you sure there is no danger of the page ID wrapping over?
         for _ in 0..2 {
@@ -88,7 +90,7 @@ pub(super) fn init_cores() {
                     DeliveryMode::StartUp,
                     destination,
                     Level::Assert,
-                    TriggerMode::BusDefault,
+                    TriggerMode::EdgeTriggered,
                     DestinationShorthand::NoShorthand,
                 );
             }

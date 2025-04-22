@@ -1,4 +1,5 @@
 //! Everything IDT and interrupts
+
 use core::{
     arch::{asm, global_asm},
     mem::size_of,
@@ -102,7 +103,7 @@ fn install_isr_handlers() {
         // protection fault handler
         IDT.0[13].register(int_stub_13 as u64, cs, 0, 0b1111, 0, 1);
         // test timer handling
-        IDT.0[60].register(int_stub_32 as u64, cs, 0, 0b1110, 0, 1);
+        IDT.0[32].register(int_stub_32 as u64, cs, 0, 0b1110, 0, 1);
     };
 }
 
