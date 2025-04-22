@@ -1,5 +1,7 @@
 use rsdp::Rsdp2;
 
+#[cfg(all(target_arch = "x86_64", feature = "hpet"))]
+mod hpet;
 mod madt;
 mod rsdp;
 mod xsdt;

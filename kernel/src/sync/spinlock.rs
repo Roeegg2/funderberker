@@ -31,7 +31,7 @@ impl<T> Spinlock<T> {
 
             if !self.lock.swap(true, Ordering::Acquire) {
                 break;
-            } 
+            }
         }
     }
 

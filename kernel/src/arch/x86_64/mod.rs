@@ -10,7 +10,6 @@ pub mod apic;
 mod interrupts;
 #[cfg(feature = "mp")]
 mod mp;
-mod tsc;
 pub mod paging;
 
 /// a ZST to implement the Arch trait on
@@ -32,7 +31,6 @@ impl Architecture for X86_64 {
             Idt::init();
             // now pesky interrupts can interrupt us
             cpu::sti();
-            tsc::init();
         };
     }
 
@@ -40,7 +38,7 @@ impl Architecture for X86_64 {
     #[cfg(feature = "mp")]
     #[inline]
     unsafe fn init_cores() {
-        mp::init_cores();
+        // mp::init_cores();
         // make sure we are on an MP system, otherwise return
         //
     }
