@@ -118,9 +118,9 @@ impl InternalSlabAllocator {
     /// full, it will try to grow the cache and return a pointer to an object in the new slab
     pub(super) fn alloc(&mut self) -> Result<NonNull<()>, SlabError> {
         // First, try allocating from the partial slabs
-        if let Some(slab_node) = self.partial_slabs.peek_mut() && let ret @ Ok(_) = slab_node.alloc() {
+        if let Some(partial_slab) = self.partial_slabs.peek_mut() && let ret @ Ok(_) = partial_slab.alloc() {
             // If the allocation resulted in the slab being empty, move it to the full slabs
-            if slab_node.free_objs.is_empty() {
+            if partial_slab.free_objs.is_empty() {
                 self.partial_slabs.pop_into(&mut self.full_slabs);
             }
 
@@ -133,8 +133,8 @@ impl InternalSlabAllocator {
         }
 
         // Try allocating from a free slab
-        if let Some(slab_node) = self.free_slabs.peek_mut() {
-            let ret = slab_node.alloc()?;
+        if let Some(free_slab) = self.free_slabs.peek_mut() {
+            let ret = free_slab.alloc()?;
             self.free_slabs.pop_into(&mut self.partial_slabs);
 
             return Ok(ret);
@@ -277,7 +277,7 @@ impl Slab {
     #[inline]
     fn is_in_range(&self, ptr: NonNull<ObjectNode>, obj_count: usize, obj_layout: Layout) -> bool {
         self.buff_ptr <= ptr
-            && ptr < unsafe { ptr.byte_add(obj_count * obj_layout.size()) }
+            && ptr < unsafe { self.buff_ptr.byte_add(obj_count * obj_layout.size()) }
     }
 
     /// Constructs a new slab with the given parameters. 

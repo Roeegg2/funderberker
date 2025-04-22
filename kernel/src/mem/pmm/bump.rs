@@ -210,6 +210,8 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
 
 #[cfg(test)]
 mod tests {
+    use macros::test_fn;
+
     use super::*;
 
     #[test_fn]

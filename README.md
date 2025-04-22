@@ -1,10 +1,11 @@
 # Funderberker
 
-Funderberker is a WIP minimal type 1 VMM written in Rust.
+Funderberker is a WIP type 1 VMM written in Rust, with a focus on customizability and performance. 
+It uses as few dependencies as possible, implementing close to everything from scratch which reduces code bloat, and improves performance and stability.
 
-Currently only x86_64 is supported, but support for aarch64 (and possibly RISC-V when it's HA virtualization is more mature) is planned.
+Currently only `x86_64` (both `Intel` and `AMD` CPUs) is supported, but support for `aarch64` (and possibly `RISC-V` when it's HA virtualization is more mature) is planned.
 
-See [this](kernel/Cargo.toml) for all available features.
+See [this list](kernel/Cargo.toml) of all available features.
 
 ## Building
 
@@ -18,3 +19,9 @@ For more info, run
 ```
 just help
 ```
+
+## Contributing
+
+Contributions are more than welcome!
+
+Funderberker is still in its infancy, so there are many things to do.
