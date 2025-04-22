@@ -2,11 +2,18 @@
 
 use interrupts::Idt;
 
+use super::Architecture;
+
 #[macro_use]
 pub mod cpu;
 pub mod apic;
 mod interrupts;
+#[cfg(feature = "mp")]
+mod mp;
 pub mod paging;
+
+/// a ZST to implement the Arch trait on
+pub(super) struct X86_64;
 
 /// Pointer to some descriptor table (IDTR, GDTR, etc)
 #[repr(C, packed)]
@@ -16,14 +23,23 @@ pub(super) struct DescriptorTablePtr {
     base: u64,
 }
 
-/// Initilize everything arch related
-#[inline(always)]
-pub(super) unsafe fn init() {
-    unsafe {
-        // make sure no pesky interrupt interrupt us
-        cpu::cli();
-        Idt::init();
-        // now pesky interrupts can interrupt us
-        cpu::sti();
-    };
+impl Architecture for X86_64 {
+    unsafe fn init() {
+        unsafe {
+            // make sure no pesky interrupt interrupt us
+            cpu::cli();
+            Idt::init();
+            // now pesky interrupts can interrupt us
+            cpu::sti();
+        };
+    }
+
+    /// Initialize the other cores on an MP system
+    #[cfg(feature = "mp")]
+    #[inline]
+    unsafe fn init_cores() {
+        // mp::init_cores();
+        // make sure we are on an MP system, otherwise return
+        //
+    }
 }

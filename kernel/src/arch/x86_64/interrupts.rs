@@ -5,6 +5,7 @@ use core::{
     ptr::from_ref,
 };
 
+/// The number of entries in the IDT
 const IDT_ENTRIES_NUM: usize = 256;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
@@ -100,6 +101,8 @@ fn install_isr_handlers() {
         IDT.0[14].register(int_stub_14 as u64, cs, 0, 0b1111, 0, 1);
         // protection fault handler
         IDT.0[13].register(int_stub_13 as u64, cs, 0, 0b1111, 0, 1);
+        // test timer handling
+        IDT.0[60].register(int_stub_32 as u64, cs, 0, 0b1110, 0, 1);
     };
 }
 
@@ -116,12 +119,14 @@ global_asm! {
 
     define_int_stub 14
     define_int_stub 13
+    define_int_stub 32
     "#
 }
 
 unsafe extern "C" {
     fn int_stub_14();
     fn int_stub_13();
+    fn int_stub_32();
 }
 
 #[unsafe(no_mangle)]
@@ -132,4 +137,9 @@ extern "C" fn vec_int_13() {
 #[unsafe(no_mangle)]
 extern "C" fn vec_int_14() {
     println!("got page fault! address: {:#x}", read_cr!(cr2));
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn vec_int_32() {
+    println!("GOT TIMER INTERRUPT!!!!");
 }

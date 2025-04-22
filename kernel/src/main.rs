@@ -17,8 +17,10 @@ mod boot;
 mod print;
 mod acpi;
 mod arch;
+mod dev;
 mod mem;
 #[macro_use]
+mod sync;
 #[cfg(test)]
 mod test;
 
@@ -28,6 +30,10 @@ pub fn funderberker_main(rsdp: *const ()) {
     test_main();
 
     unsafe { crate::acpi::init(rsdp).expect("Failed to initialize ACPI") };
+
+    unsafe {
+        crate::arch::init_cores();
+    }
 
     log_info!("Starting Funderberker main operation!");
 }

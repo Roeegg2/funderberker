@@ -1,2 +1,0 @@
-1. the page to which the regs of the LAPIC are mapped must be "strongly uncacheable"
-2. every access to a LAPIC reg must be in 32bit accesses

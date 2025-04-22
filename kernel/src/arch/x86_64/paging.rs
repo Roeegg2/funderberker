@@ -23,8 +23,10 @@ const PAGING_LEVEL: u8 = 4;
 #[cfg(feature = "paging_5")]
 const PAGING_LEVEL: u8 = 5;
 
+/// Number of entries per page table
 const ENTRIES_PER_TABLE: usize = 512;
 
+/// Minimum, basic page size
 pub const BASIC_PAGE_SIZE: usize = 0x1000;
 
 /// Errors that the paging system might encounter

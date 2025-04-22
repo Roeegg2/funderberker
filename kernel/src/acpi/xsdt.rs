@@ -1,4 +1,4 @@
-use crate::mem::PhysAddr;
+use crate::{acpi::hpet::Hpet, mem::PhysAddr};
 
 use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};
 
@@ -29,6 +29,11 @@ impl Xsdt {
                 Madt::SIGNATURE => {
                     let madt = unsafe { entry.cast::<Madt>().as_ref().unwrap() };
                     madt.parse()?;
+                }
+                #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
+                Hpet::SIGNATURE => {
+                    let hpet = unsafe { entry.cast::<Hpet>().as_ref().unwrap() };
+                    hpet.parse()?;
                 }
                 _ => {
                     log_warn!(

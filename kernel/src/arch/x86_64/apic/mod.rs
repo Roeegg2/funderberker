@@ -10,6 +10,7 @@ pub enum DeliveryMode {
     Smi = 0b010,
     Nmi = 0b100,
     Init = 0b101,
+    StartUp = 0b110,
     ExtInt = 0b111,
 }
 
@@ -44,6 +45,58 @@ pub enum TriggerMode {
     BusDefault = 0b0,
     EdgeTriggered = 0b1,
     LevelTriggered = 0b11,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum Level {
+    Deassert = 0b0,
+    Assert = 0b1,
+}
+
+/// The destination mode and an ID matching it's type
+#[derive(Debug, Clone, Copy)]
+pub enum Destination {
+    Physical(u8),
+    Logical(u8),
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum DestinationShorthand {
+    NoShorthand = 0b00,
+    SelfDestination = 0b01,
+    AllIncludingSelf = 0b10,
+    AllExcludingSelf = 0b11,
+}
+
+impl Destination {
+    const PHYSICAL_MODE: u8 = 0b0;
+    const LOGICAL_MODE: u8 = 0b1;
+
+    /// Create the destination struct
+    #[inline]
+    pub const fn new(dest: u8, is_logical: bool) -> Result<Self, ()> {
+        if is_logical {
+            if dest | 0x0f != 0 {
+                // TODO: Add error message here.
+                // In this mode, the destination is a 4-bit logical destination ID.
+                return Err(());
+            }
+            Ok(Destination::Logical(dest))
+        } else {
+            Ok(Destination::Physical(dest))
+        }
+    }
+
+    /// Break the struct down into the destination mode and ID
+    #[inline]
+    pub const fn get(&self) -> (u8, u8) {
+        match self {
+            Destination::Physical(dest) => (Self::PHYSICAL_MODE, *dest),
+            Destination::Logical(dest) => (Self::LOGICAL_MODE, *dest),
+        }
+    }
 }
 
 impl TryFrom<u16> for TriggerMode {

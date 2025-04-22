@@ -15,10 +15,9 @@ use limine::request::{
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;
 
-use crate::arch::BASIC_PAGE_SIZE;
-use crate::arch::x86_64;
+use crate::arch::{self, BASIC_PAGE_SIZE, x86_64};
+use crate::dev::{framebuffer, serial};
 use crate::mem::{PhysAddr, VirtAddr, pmm};
-use crate::print;
 use crate::println;
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -95,7 +94,7 @@ unsafe extern "C" fn kmain() -> ! {
     {
         #[allow(static_mut_refs)]
         unsafe {
-            print::serial::SERIAL_WRITER.init().unwrap()
+            serial::SERIAL_WRITER.init().unwrap()
         };
     }
     #[cfg(feature = "framebuffer")]
@@ -105,12 +104,12 @@ unsafe extern "C" fn kmain() -> ! {
             .expect("Can't get Limine framebuffer feature response");
         #[allow(static_mut_refs)]
         unsafe {
-            print::framebuffer::FRAMEBUFFER_WRITER
+            framebuffer::FRAMEBUFFER_WRITER
                 .init_from_limine(framebuffer_reponse.framebuffers().next().unwrap())
         };
     }
 
-    unsafe { crate::arch::init() };
+    unsafe { arch::init() };
 
     let hhdm = HHDM_REQUEST
         .get_response()
@@ -169,12 +168,12 @@ pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 fn hcf() -> ! {
-    unsafe {
-        #[cfg(target_arch = "x86_64")]
-        asm!("hlt");
-        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-        asm!("wfi");
+    loop {
+        unsafe {
+            #[cfg(target_arch = "x86_64")]
+            asm!("hlt");
+            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+            asm!("wfi");
+        }
     }
-
-    unreachable!();
 }

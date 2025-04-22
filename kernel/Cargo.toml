@@ -8,31 +8,42 @@ limine = { version = "0.3.1", optional = true }
 
 alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc"}
 
+modular-bitfield = { version = "0.11.2"}
 utils = { path = "../utils" }
 macros = { path = "../macros" }
 
 [features]
-# default = []
-default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy"]
+default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "hpet", "pit"]
 
-# x86_64 CPU vendors
+# x86_64 CPU vendors. Pick the one you intend to use.
 intel = []
 amd = []
 
-# booting method
+# Booting method
 limine = ["dep:limine"]
 
-# logging methods
+# Logging methods
 serial = []
 framebuffer = []
 
-# paging modes
+# Paging modes. Only one can be enabled (TODO: Remove this limitation)
 paging_4 = []
 paging_5 = [] # UNTESTED
 
-# PMM page allocator algorithm
+# PMM page allocator algorithm. Only one can be enabled
 pmm_bump = []
 pmm_buddy = []
+
+# Disable on the weird case you wouldn't want to use multiple cores on the system
+mp = []
+
+# Choose which general timer to use.
+# If the HPET feature is enabled and the HPET is found during boot, the system will use HPET.
+# Otherwise if the PIT feature is enabled and the PIT is found the system will use PIT.
+# Otherwise, the system will error out. So you must enable one of them (or both).
+hpet = []
+pit = [] # UNIMPLEMENTED YET
+
 
 [profile.dev]
 debug = true
