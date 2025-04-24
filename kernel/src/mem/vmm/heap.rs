@@ -75,7 +75,8 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 
         // Try accessing allocators, and then also try to allocate
         if let Some(allocator) = unsafe { self.0[index].get().as_mut() }
-            && let Ok(ptr) = allocator.alloc() {
+            && let Ok(ptr) = allocator.alloc()
+        {
             return ptr.as_ptr().cast::<u8>();
         }
 
@@ -89,8 +90,9 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 
         // Convert ptr to a NonNull one + cast, get the allocator and pass the pointer to the
         // allocator
-        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<ObjectNode>()) 
-            && let Some(allocator) = unsafe { self.0[index].get().as_mut() } {
+        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<ObjectNode>())
+            && let Some(allocator) = unsafe { self.0[index].get().as_mut() }
+        {
             unsafe {
                 let _ = allocator.free(non_null_ptr);
             };

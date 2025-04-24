@@ -26,11 +26,9 @@ pub(super) struct DescriptorTablePtr {
 impl Architecture for X86_64 {
     unsafe fn init() {
         unsafe {
-            // make sure no pesky interrupt interrupt us
+            // Make sure no pesky interrupt interrupt us
             cpu::cli();
             Idt::init();
-            // now pesky interrupts can interrupt us
-            cpu::sti();
         };
     }
 

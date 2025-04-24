@@ -1,13 +1,20 @@
 //! Interface and driver for the IO APIC
 
-use super::DeliveryMode;
+use super::{DeliveryMode, Destination};
+use crate::arch::x86_64::cpu::outb_8;
+use crate::arch::x86_64::interrupts::{self, Irq};
 use crate::arch::x86_64::paging::{Entry, PageSize, PageTable};
-use crate::mem::mmio::MmioCell;
 use crate::mem::PhysAddr;
+use crate::mem::mmio::MmioCell;
 use alloc::vec::Vec;
 use modular_bitfield::prelude::*;
 
-static mut IO_APICS: Vec<IoApic> = Vec::new();
+#[derive(Debug, Copy, Clone)]
+pub enum IoApicError {
+    InvalidGsi,
+}
+
+pub static mut IO_APICS: Vec<IoApic> = Vec::new();
 
 /// Struct representing the IO APIC, containing everything needed to interact with it
 #[derive(Debug)]
@@ -19,10 +26,11 @@ pub struct IoApic {
     io_win: MmioCell<u32>,
     /// The base of the global system interrupts (GSIs) that this IO APIC is responsible for
     gsi_base: u32,
+    /// The number of GSIs that this IO APIC is responsible for
+    gsi_count: u32,
 }
 
 struct IoApicReg;
-
 
 /// The IO APIC's redirection table entry, which configure the behaviour and mapping of the
 /// external interrupts
@@ -73,19 +81,88 @@ impl IoApic {
     /// address
     const OFFSET_FROM_SEL_TO_WIN: usize = 0x10;
 
+    unsafe fn disable_pic() {
+        unsafe {
+            outb_8(0x21, 0xff); // ICW1
+            outb_8(0xa1, 0xff); // ICW2
+        }
+    }
+
     /// Creates a new IO APIC
     unsafe fn new(base: *mut u32, gsi_base: u32) -> Self {
+        unsafe {
+            Self::disable_pic();
+        }
+
         let io_sel = MmioCell::new(base);
-        let io_win = MmioCell::new(unsafe {base.byte_add(Self::OFFSET_FROM_SEL_TO_WIN)});
-        IoApic {
+        let io_win = MmioCell::new(unsafe { base.byte_add(Self::OFFSET_FROM_SEL_TO_WIN) });
+        let mut ret = IoApic {
             io_sel,
             io_win,
             gsi_base,
+            gsi_count: 0,
+        };
+
+        let max_gsi = unsafe {
+            // Read the version register to get the number of GSIs
+            ret.io_sel.write(IoApicReg::APIC_VERSION);
+            let version = ret.io_win.read();
+            (version >> 16) & 0xff
+        };
+        utils::sanity_assert!(0 < max_gsi && max_gsi < 256);
+
+        ret.gsi_count = max_gsi as u32 + 1;
+
+        println!("this is the max gsi: {}", ret.gsi_count);
+
+        ret
+    }
+
+    #[inline]
+    unsafe fn read_redirection_entry(&self, offset: u32) -> RedirectionEntry {
+        // TODO: Return error if the offset is invalid
+        unsafe {
+            self.io_sel.write(IoApicReg::red_tbl_index(offset));
+            let mut raw: u64 = self.io_win.read() as u64;
+
+            self.io_sel.write(IoApicReg::red_tbl_index(offset + 1));
+            raw |= (self.io_win.read() as u64) << 32;
+
+            RedirectionEntry::from(raw)
         }
+    }
+
+    #[inline]
+    unsafe fn write_redirection_entry(&self, offset: u32, entry: RedirectionEntry) {
+        // TODO: Return error if the offset is invalid
+        unsafe {
+            self.io_sel.write(IoApicReg::red_tbl_index(offset));
+            self.io_win.write(entry.get_low());
+            self.io_sel.write(IoApicReg::red_tbl_index(offset + 1));
+            self.io_win.write(entry.get_high());
+        }
+    }
+
+    /// Disable a certain IRQ that belongs to this IO APIC by masking it.
+    ///
+    /// SAFETY: This function is unsafe because any fiddling with interrupts can cause UB
+    pub unsafe fn set_irq_status(&mut self, irq: u32, status: bool) -> Result<(), IoApicError> {
+        // TODO: Perhaps remove this check? It can be checked beforehand during initialization or
+        // something
+        if irq < self.gsi_base || irq >= self.gsi_base + self.gsi_count {
+            return Err(IoApicError::InvalidGsi);
+        }
+
+        let offset = IoApicReg::red_tbl_index(irq - self.gsi_base);
+
+        let mut entry: RedirectionEntry = unsafe { self.read_redirection_entry(offset) };
+        entry.set_mask(status.into());
+        unsafe { self.write_redirection_entry(offset, entry) };
+
+        Ok(())
     }
 }
 
-#[allow(dead_code)]
 impl RedirectionEntry {
     /// Get the low 32 bits of the entry
     #[inline]
@@ -123,11 +200,13 @@ pub unsafe fn add(phys_addr: PhysAddr, gsi_base: u32) {
 /// Overrides the identity mapping of a specific IRQ in the system
 #[inline]
 pub unsafe fn override_irq(
-    irq_source: u8,
+    irq_source: Irq,
     gsi: u32,
     flags: u16,
     delivery_mode: DeliveryMode,
-) -> Result<(), ()> {
+) -> Result<(), IoApicError> {
+    let vector = irq_source.to_vector();
+
     unsafe {
         #[allow(static_mut_refs)]
         IO_APICS
@@ -136,26 +215,18 @@ pub unsafe fn override_irq(
             .map(|io_apic| {
                 let offset = IoApicReg::red_tbl_index(gsi - io_apic.gsi_base);
 
-                let mut entry: RedirectionEntry = {
-                    io_apic.io_sel.write(offset);
-                    let mut raw: u64 = io_apic.io_win.read() as u64;
-                    io_apic.io_sel.write(offset + 1);
-                    raw |= (io_apic.io_win.read() as u64) << 32;
+                let mut entry: RedirectionEntry = io_apic.read_redirection_entry(offset);
 
-                    raw.into()
-                };
-
-                entry.set_vector(irq_source);
+                entry.set_vector(vector as u8);
                 entry.set_pin_polarity(((flags & 2) >> 1) as u8);
                 entry.set_trigger_mode(((flags & 8) >> 3) as u8);
                 entry.set_delivery_mode(delivery_mode as u8);
+                entry.set_destination_mode(Destination::PHYSICAL_MODE);
+                entry.set_destination(0x0); // TODO: Set this to the correct destination
+                entry.set_mask(false.into());
 
-                io_apic.io_sel.write(offset);
-                io_apic.io_win.write(entry.get_low());
-                io_apic.io_sel.write(offset + 1);
-                io_apic.io_win.write(entry.get_high());
-            });
+                io_apic.write_redirection_entry(offset, entry);
+            })
+            .ok_or(IoApicError::InvalidGsi)
     }
-
-    Ok(())
 }

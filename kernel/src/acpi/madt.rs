@@ -1,7 +1,11 @@
 use super::{AcpiError, AcpiTable, SdtHeader};
 
 use crate::{
-    arch::x86_64::apic::{DeliveryMode, ioapic, lapic},
+    arch::x86_64::apic::{
+        DeliveryMode,
+        ioapic::{self, override_irq},
+        lapic,
+    },
     mem::PhysAddr,
 };
 
@@ -182,6 +186,7 @@ impl Madt {
             match entry_type {
                 EntryType::LOCAL_APIC => {
                     let entry = unsafe { entry.cast::<LocalApicEntry>().as_ref().unwrap() };
+                    println!("entry {:?}", entry);
                     unsafe {
                         lapic::add(
                             PhysAddr(self.local_apic_addr as usize),
@@ -199,7 +204,7 @@ impl Madt {
                     let entry = unsafe { entry.cast::<IoApicIsoEntry>().as_ref().unwrap() };
                     unsafe {
                         ioapic::override_irq(
-                            entry.irq_source,
+                            entry.irq_source.into(),
                             entry.gsi,
                             entry.flags,
                             DeliveryMode::Fixed,
@@ -211,7 +216,7 @@ impl Madt {
                     let entry = unsafe { entry.cast::<IoApicNmiIsoEntry>().as_ref().unwrap() };
                     unsafe {
                         ioapic::override_irq(
-                            entry.nmi_source,
+                            entry.nmi_source.into(),
                             entry.gsi,
                             entry.flags,
                             DeliveryMode::Nmi,
@@ -222,7 +227,7 @@ impl Madt {
                 EntryType::LOCAL_APIC_NMI => {
                     let entry = unsafe { entry.cast::<LocalApicNmiEntry>().as_ref().unwrap() };
                     unsafe {
-                        lapic::set_as_nmi(
+                        lapic::config_lints(
                             entry.acpi_processor_id as u32,
                             entry.lint,
                             entry.flags.try_into().unwrap(),
@@ -231,7 +236,7 @@ impl Madt {
                 }
                 EntryType::LOCAL_APIC_ADDR_OVERRIDE => {
                     // XXX: I think this entry should always come before the local apic and all the
-                    // override entries but that might be wrong. Fuck it if that's the case I guess
+                    // override entries but that might be wrong. But eh womp womp if that's the case I guess
                     let entry =
                         unsafe { entry.cast::<LocalApicAddrOverrideEntry>().as_ref().unwrap() };
                     unsafe {

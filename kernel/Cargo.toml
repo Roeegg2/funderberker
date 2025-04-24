@@ -13,7 +13,7 @@ utils = { path = "../utils" }
 macros = { path = "../macros" }
 
 [features]
-default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "hpet", "pit"]
+default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "pit", ]
 
 # x86_64 CPU vendors. Pick the one you intend to use.
 intel = []
@@ -42,7 +42,7 @@ mp = []
 # Otherwise if the PIT feature is enabled and the PIT is found the system will use PIT.
 # Otherwise, the system will error out. So you must enable one of them (or both).
 hpet = []
-pit = [] # UNIMPLEMENTED YET
+pit = []
 
 
 [profile.dev]

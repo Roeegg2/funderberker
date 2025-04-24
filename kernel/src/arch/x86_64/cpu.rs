@@ -4,38 +4,62 @@
 
 use core::arch::asm;
 
-#[allow(unused_imports)]
-pub use core::arch::x86_64;
-
 #[repr(u32)]
 pub enum Msr {
     Ia32ApicBase = 0x1b,
 }
 
-/// Wrapper for the 'outb' instruction
-#[cfg(feature = "serial")]
+/// Wrapper for the 'outb' instruction, accessing a `u32` port
 #[inline]
-pub unsafe fn outb(port: u16, offset: u16, value: u8) {
+pub unsafe fn outb_32(port: u16, value: u32) {
+    unsafe {
+        asm! (
+            "out dx, eax",
+            in("dx") port,
+            in("eax") value,
+            options(nomem, nostack),
+        )
+    };
+}
+
+/// Wrapper for the 'out' instruction, accessing a `u8` port
+#[inline]
+pub unsafe fn outb_8(port: u16, value: u8) {
     unsafe {
         asm! (
             "out dx, al",
-            in("dx") port + offset,
+            in("dx") port,
             in("al") value,
             options(nomem, nostack),
         )
     };
 }
 
-/// Wrapper for the 'in' instruction
-#[cfg(feature = "serial")]
+/// Wrapper for the 'in' instruction, accessing a `u32` port
 #[inline]
-pub unsafe fn inb(port: u16, offset: u16) -> u8 {
+pub unsafe fn inb_32(port: u16) -> u32 {
+    let res: u32;
+    unsafe {
+        asm! (
+            "in eax, dx",
+            out("eax") res,
+            in("dx") port,
+            options(nomem, nostack),
+        )
+    };
+
+    res
+}
+
+/// Wrapper for the 'in' instruction, accessing a `u8` port
+#[inline]
+pub unsafe fn inb_8(port: u16) -> u8 {
     let res: u8;
     unsafe {
         asm! (
             "in al, dx",
             out("al") res,
-            in("dx") port + offset,
+            in("dx") port,
             options(nomem, nostack),
         )
     };
@@ -45,19 +69,19 @@ pub unsafe fn inb(port: u16, offset: u16) -> u8 {
 
 /// Clear `RFLAGS` interrupt flag to mask all maskable external interrupts
 #[inline]
-pub(super) unsafe fn cli() {
+pub unsafe fn cli() {
     unsafe { asm!("cli", options(nostack, nomem)) };
 }
 
 /// Set `RFLAGS` interrupt flag to enable handling of external interrupts
 #[inline]
-pub(super) unsafe fn sti() {
+pub unsafe fn sti() {
     unsafe { asm!("sti", options(nostack, nomem)) };
 }
 
 /// Read the value of a model specific register (MSR)
 #[inline]
-pub(super) unsafe fn rdmsr(msr: Msr) -> (u32, u32) {
+pub unsafe fn rdmsr(msr: Msr) -> (u32, u32) {
     let low: u32;
     let high: u32;
     unsafe {
@@ -72,10 +96,9 @@ pub(super) unsafe fn rdmsr(msr: Msr) -> (u32, u32) {
     (low, high)
 }
 
-
 /// Write a value to a model specific register (MSR)
 #[inline]
-pub(super) unsafe fn wrmsr(msr: Msr, low: u32, high: u32) {
+pub unsafe fn wrmsr(msr: Msr, low: u32, high: u32) {
     unsafe {
         asm!(
             "wrmsr",

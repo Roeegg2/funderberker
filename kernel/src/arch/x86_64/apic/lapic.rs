@@ -1,12 +1,17 @@
 //! Local APIC driver and interface
 
-use super::{
-    DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity,
-    TriggerMode,
-};
+use core::mem::transmute;
+
+use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use crate::{
-    arch::x86_64::{cpu::{wrmsr, Msr}, paging::{Entry, PageSize, PageTable}},
-    mem::{mmio::{MmioArea, Offsetable}, PhysAddr},
+    arch::x86_64::{
+        cpu::{Msr, cli, rdmsr, wrmsr},
+        paging::{Entry, PageSize, PageTable},
+    },
+    mem::{
+        PhysAddr,
+        mmio::{MmioArea, Offsetable},
+    },
 };
 use alloc::vec::Vec;
 use modular_bitfield::prelude::*;
@@ -128,7 +133,6 @@ struct LvtReg {
     _reserved2: B15,
 }
 
-
 /// Represents a Local APIC on the system, and contains all the info needed to manage it
 #[derive(Debug)]
 pub struct LocalApic {
@@ -146,16 +150,28 @@ pub struct LocalApic {
 }
 
 impl LocalApic {
-    // #[inline]
-    // unsafe fn hardware_enable(&self) {
-    //     unsafe {wrmsr(Msr::Ia32ApicBase, low, high)};
-    // }
+    #[inline]
+    pub fn validate_apic_support() {
+        const CPUID_APIC_BIT: u32 = 0x1 << 9;
+
+        let cpuid = unsafe { core::arch::x86_64::__cpuid(1) };
+
+        assert!(
+            cpuid.edx & CPUID_APIC_BIT != 0,
+            "Local APIC not supported on this CPU"
+        );
+    }
 
     #[inline]
-    unsafe fn init(&self) {
-        unsafe {
-            self.area.write(WriteableRegs::SpuriousInterruptVector, 0xff);
-        }
+    unsafe fn hardware_enable(&self) {
+        Self::validate_apic_support();
+
+        const APIC_ENABLE: u32 = 1 << 11;
+
+        let mut value = unsafe { rdmsr(Msr::Ia32ApicBase) };
+        value.0 |= APIC_ENABLE;
+
+        unsafe { wrmsr(Msr::Ia32ApicBase, value.0, value.1) };
     }
 
     /// Creates a new Local APIC instance
@@ -168,42 +184,81 @@ impl LocalApic {
             flags: ApicFlags::from(flags),
         };
 
+        // Initialize the local APIC
         unsafe {
-            apic.init();
-        };
+            // Make sure the APIC enable bit on the IA32_APIC_BASE MSR is set
+            apic.hardware_enable();
+
+            // Configure the SIV and software enable the APIC
+            apic.area
+                .write(WriteableRegs::SpuriousInterruptVector, 0x1ff);
+            apic.area.write(WriteableRegs::TaskPriority, 0x0);
+        }
 
         apic
     }
 
     /// Sets the LVT register for the passed LINT as an NMI
     #[inline]
-    unsafe fn set_lint_as_nmi(
+    unsafe fn config_lints(
         &self,
-        lint: u8,
-        pin_polarity: PinPolarity,
-        trigger_mode: TriggerMode,
-    ) -> Result<(), ()> {
-        let mut entry: LvtReg = match lint {
-            0 => unsafe {self.area.read(ReadableRegs::LvtLint0).into()},
-            1 => unsafe {self.area.read(ReadableRegs::LvtLint1).into()},
-            _ => return Err(()),
+        nmi_lint: u8,
+        nmi_lint_pin_polarity: PinPolarity,
+        nmi_lint_trigger_mode: TriggerMode,
+    ) {
+        let (nmi_lint, ext_int_lint) = match nmi_lint {
+            0 => (ReadableRegs::LvtLint0, ReadableRegs::LvtLint1),
+            1 => (ReadableRegs::LvtLint1, ReadableRegs::LvtLint0),
+            _ => panic!("Invalid LINT number"),
         };
 
-        entry.set_delivery_mode(DeliveryMode::Nmi as u8);
-        entry.set_trigger_mode(trigger_mode as u8);
-        entry.set_pin_polarity(pin_polarity as u8);
+        let (mut nmi_lint_entry, mut ext_int_lint_entry): (LvtReg, LvtReg) = unsafe {
+            (
+                self.area.read(nmi_lint).into(),
+                self.area.read(ext_int_lint).into(),
+            )
+        };
 
-        match lint {
-            0 => unsafe {self.area.write(WriteableRegs::LvtLint0, entry.into())},
-            1 => unsafe {self.area.write(WriteableRegs::LvtLint1, entry.into())},
-            _ => return Err(()),
+        // Configure the NMI LINT
+        nmi_lint_entry.set_delivery_mode(DeliveryMode::Nmi as u8);
+        nmi_lint_entry.set_trigger_mode(nmi_lint_trigger_mode as u8);
+        nmi_lint_entry.set_pin_polarity(nmi_lint_pin_polarity as u8);
+        nmi_lint_entry.set_mask(false.into());
+
+        // Configure the other LINT to be for external interrupts
+        ext_int_lint_entry.set_delivery_mode(DeliveryMode::ExtInt as u8);
+        // XXX: IIRC Some newer devices need this to be level, so this might cause trouble
+        ext_int_lint_entry.set_trigger_mode(TriggerMode::EdgeTriggered as u8);
+        // ext_int_lint_entry.set_pin_polarity(PinPolarity::ActiveHigh as u8);
+        ext_int_lint_entry.set_mask(false.into());
+
+        // Enable the other LVT regs
+        let mut lvt_error: LvtReg = unsafe { self.area.read(ReadableRegs::LvtError).into() };
+        let mut lvt_timer: LvtReg = unsafe { self.area.read(ReadableRegs::LvtTimer).into() };
+        let mut lvt_thermal: LvtReg = unsafe { self.area.read(ReadableRegs::LvtThermal).into() };
+        let mut lvt_performance: LvtReg =
+            unsafe { self.area.read(ReadableRegs::LvtPerformance).into() };
+
+        lvt_error.set_mask(false.into());
+        lvt_timer.set_mask(false.into());
+        lvt_thermal.set_mask(false.into());
+        lvt_performance.set_mask(false.into());
+
+        // Write the results back
+        unsafe {
+            // XXX: Perhaps get rid of the transmute here?
+            self.area.write(transmute(nmi_lint), nmi_lint_entry.into());
+            self.area
+                .write(transmute(ext_int_lint), ext_int_lint_entry.into());
+            self.area.write(WriteableRegs::LvtError, lvt_error.into());
+            self.area.write(WriteableRegs::LvtTimer, lvt_timer.into());
+            self.area
+                .write(WriteableRegs::LvtThermal, lvt_thermal.into());
+            self.area
+                .write(WriteableRegs::LvtPerformance, lvt_performance.into());
         }
-
-        Ok(())
     }
-}
 
-impl LocalApic {
     pub fn apic_id(&self) -> u32 {
         self.apic_id
     }
@@ -215,7 +270,7 @@ impl LocalApic {
     /// Read the error status register
     pub fn read_errors(&self) -> u32 {
         // We should write to the ESR before reading from it to discard any stale data
-        unsafe { 
+        unsafe {
             self.area.write(WriteableRegs::ErrorStatus, 0);
 
             self.area.read(ReadableRegs::ErrorStatus)
@@ -255,11 +310,14 @@ impl LocalApic {
             | ((trigger_mode as u32) << 15)
             | ((destination_shorthand as u32) << 18);
 
-        unsafe { self.area.write(WriteableRegs::InterruptCommand0, lower_part_data) }
+        unsafe {
+            self.area
+                .write(WriteableRegs::InterruptCommand0, lower_part_data)
+        }
     }
 
     pub fn ipi_status(&self) -> DeliveryStatus {
-        let status = unsafe {self.area.read(ReadableRegs::InterruptCommand0)};
+        let status = unsafe { self.area.read(ReadableRegs::InterruptCommand0) };
         if status & (1 << 12) == 0 {
             DeliveryStatus::Idle
         } else {
@@ -294,7 +352,7 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: A
 }
 
 /// Marks the matching processor's LINT as NMI with the passed flags
-pub unsafe fn set_as_nmi(acpi_processor_id: u32, lint: u8, flags: u16) {
+pub unsafe fn config_lints(acpi_processor_id: u32, lint: u8, flags: u16) {
     const ALL_PROCESSORS_ID: u32 = 0xff;
 
     unsafe {
@@ -302,12 +360,11 @@ pub unsafe fn set_as_nmi(acpi_processor_id: u32, lint: u8, flags: u16) {
         if acpi_processor_id == ALL_PROCESSORS_ID {
             #[allow(static_mut_refs)]
             LOCAL_APICS.iter().for_each(|apic| {
-                apic.set_lint_as_nmi(
+                apic.config_lints(
                     lint,
                     (flags & 0b11).try_into().unwrap(),
                     ((flags >> 2) & 0b11).try_into().unwrap(),
-                )
-                .unwrap();
+                );
             });
         } else {
             #[allow(static_mut_refs)]
@@ -315,12 +372,11 @@ pub unsafe fn set_as_nmi(acpi_processor_id: u32, lint: u8, flags: u16) {
                 .iter()
                 .find(|&apic| apic.acpi_processor_id == acpi_processor_id)
                 .map(|apic| {
-                    apic.set_lint_as_nmi(
+                    apic.config_lints(
                         lint,
                         (flags & 0b11).try_into().unwrap(),
                         ((flags >> 2) & 0b11).try_into().unwrap(),
-                    )
-                    .unwrap();
+                    );
                 });
         }
     }

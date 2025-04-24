@@ -107,16 +107,15 @@ impl<T> StackList<T> {
         let node = self.pop_node();
         if let Some(node) = node {
             // SAFETY: The node is valid and not aliased.
-            unsafe {other.push_node(Box::into_non_null(node))};
+            unsafe { other.push_node(Box::into_non_null(node)) };
         }
-
     }
 
     pub fn remove_into(&mut self, other: &mut Self, index: usize) {
         let node = self.remove_at(index);
         if let Some(node) = node {
             // SAFETY: The node is valid and not aliased.
-            unsafe {other.push_node(Box::into_non_null(node))};
+            unsafe { other.push_node(Box::into_non_null(node)) };
         }
     }
 

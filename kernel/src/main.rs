@@ -11,6 +11,8 @@
 #![test_runner(crate::test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+use core::time::Duration;
+
 mod boot;
 #[macro_use]
 #[cfg(any(feature = "serial", feature = "framebuffer"))]
@@ -31,9 +33,17 @@ pub fn funderberker_main(rsdp: *const ()) {
 
     unsafe { crate::acpi::init(rsdp).expect("Failed to initialize ACPI") };
 
+    unsafe { crate::dev::time::pit::Pit::init() };
+
+    let mut pit = crate::dev::time::pit::PIT.lock();
+    pit.new_periodic(Duration::from_micros(1000))
+        .expect("Failed to set up periodic timer");
+
     unsafe {
         crate::arch::init_cores();
     }
 
     log_info!("Starting Funderberker main operation!");
+
+    loop {}
 }

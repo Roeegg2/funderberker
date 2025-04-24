@@ -16,7 +16,9 @@ use limine::request::{
 use limine::request::FramebufferRequest;
 
 use crate::arch::{self, BASIC_PAGE_SIZE, x86_64};
-use crate::dev::{framebuffer, serial};
+#[cfg(feature = "framebuffer")]
+use crate::dev::framebuffer;
+use crate::dev::serial;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
 use crate::println;
 

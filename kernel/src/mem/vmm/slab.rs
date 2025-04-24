@@ -85,9 +85,7 @@ impl InternalSlabAllocator {
     /// allocated externally using the kernel's heap
     ///
     // TODO: Possibly return an error instead of asserting
-    pub(super) const fn new(
-        mut obj_layout: Layout,
-    ) -> InternalSlabAllocator {
+    pub(super) const fn new(mut obj_layout: Layout) -> InternalSlabAllocator {
         /// Calculates the amount of objects with `obj_layout` that can fit in a slab
         const fn calc_obj_count(pages_per_slab: usize, obj_size: usize) -> usize {
             (pages_per_slab * BASIC_PAGE_SIZE - Layout::new::<Node<Slab>>().pad_to_align().size())
@@ -99,8 +97,14 @@ impl InternalSlabAllocator {
 
         let pages_per_slab = Self::calc_pages_per_slab(obj_layout);
 
-        assert!(obj_layout.size() >= size_of::<ObjectNode>(), "Object size is too small");
-        assert!((BASIC_PAGE_SIZE * pages_per_slab) % obj_layout.align() == 0, "Object alignment is not valid");
+        assert!(
+            obj_layout.size() >= size_of::<ObjectNode>(),
+            "Object size is too small"
+        );
+        assert!(
+            (BASIC_PAGE_SIZE * pages_per_slab) % obj_layout.align() == 0,
+            "Object alignment is not valid"
+        );
 
         let obj_count = calc_obj_count(pages_per_slab, obj_layout.size());
 
@@ -118,7 +122,9 @@ impl InternalSlabAllocator {
     /// full, it will try to grow the cache and return a pointer to an object in the new slab
     pub(super) fn alloc(&mut self) -> Result<NonNull<()>, SlabError> {
         // First, try allocating from the partial slabs
-        if let Some(partial_slab) = self.partial_slabs.peek_mut() && let ret @ Ok(_) = partial_slab.alloc() {
+        if let Some(partial_slab) = self.partial_slabs.peek_mut()
+            && let ret @ Ok(_) = partial_slab.alloc()
+        {
             // If the allocation resulted in the slab being empty, move it to the full slabs
             if partial_slab.free_objs.is_empty() {
                 self.partial_slabs.pop_into(&mut self.full_slabs);
@@ -208,16 +214,15 @@ impl InternalSlabAllocator {
             // is OK since BASIC_PAGE_SIZE * n is always aligned to Node<Slab>, and so BASIC_PAGE_SIZE * n -
             // size_of(Node<Slab>) is also aligned to Node<Slab>
             let slab_ptr = buff_ptr
-                .byte_add(self.pages_per_slab * BASIC_PAGE_SIZE - Layout::new::<Node<Slab>>().pad_to_align().size())
+                .byte_add(
+                    self.pages_per_slab * BASIC_PAGE_SIZE
+                        - Layout::new::<Node<Slab>>().pad_to_align().size(),
+                )
                 .cast::<Node<Slab>>();
 
             NonNull::write(
                 slab_ptr,
-                Node::<Slab>::new(Slab::new(
-                    buff_ptr,
-                    self.obj_count,
-                    self.obj_layout,
-                ).unwrap()),
+                Node::<Slab>::new(Slab::new(buff_ptr, self.obj_count, self.obj_layout).unwrap()),
             );
 
             self.free_slabs.push_node(slab_ptr);
@@ -271,7 +276,6 @@ struct Slab {
     free_objs: StackList<()>,
 }
 
-
 impl Slab {
     /// Check if the given pointer **to the allocated data** belongs to this slab
     #[inline]
@@ -280,9 +284,9 @@ impl Slab {
             && ptr < unsafe { self.buff_ptr.byte_add(obj_count * obj_layout.size()) }
     }
 
-    /// Constructs a new slab with the given parameters. 
+    /// Constructs a new slab with the given parameters.
     ///
-    /// SAFETY: This is unsafe because `buff_ptr` must be a valid pointer to a slab of memory 
+    /// SAFETY: This is unsafe because `buff_ptr` must be a valid pointer to a slab of memory
     /// that is at least `obj_count` objects in size
     #[inline]
     unsafe fn new(
@@ -297,8 +301,7 @@ impl Slab {
             unsafe {
                 // SAFETY: This is OK because we already checked to make sure the ptr is aligned,
                 // and the size is fine (already checked in the allocator)
-                let ptr = buff_ptr
-                    .byte_add(i * obj_layout.size());
+                let ptr = buff_ptr.byte_add(i * obj_layout.size());
 
                 free_objs.push_node(ptr);
             };
@@ -313,9 +316,9 @@ impl Slab {
     /// Allocates an object from the slab
     fn alloc(&mut self) -> Result<NonNull<()>, SlabError> {
         self.free_objs
-        .pop_node()
-        .map(|node| Box::into_non_null(node).cast::<()>())
-        .ok_or(SlabError::SlabFullInternalError)
+            .pop_node()
+            .map(|node| Box::into_non_null(node).cast::<()>())
+            .ok_or(SlabError::SlabFullInternalError)
     }
 
     /// Frees an object from the slab
@@ -323,7 +326,7 @@ impl Slab {
     /// SAFETY: This function is unsafe because the passed pointer needs to be a valid pointer to
     /// an allocated object.
     unsafe fn free(&mut self, obj_ptr: NonNull<ObjectNode>) -> Result<(), SlabError> {
-        if self 
+        if self
             .free_objs
             .iter_node()
             .find(|&node| NonNull::from_ref(node).cast::<ObjectNode>() == obj_ptr)
@@ -333,10 +336,7 @@ impl Slab {
         }
 
         // Turns obj_ptr to a new node to add to the list of free objects
-        unsafe {
-            self.free_objs
-                .push_node(obj_ptr)
-        };
+        unsafe { self.free_objs.push_node(obj_ptr) };
 
         Ok(())
     }
@@ -366,14 +366,18 @@ mod tests {
         // Free in reverse order
         for ptr in pointers.iter().rev() {
             unsafe {
-                allocator.free(ptr.cast::<ObjectNode>()).expect("Free failed");
+                allocator
+                    .free(ptr.cast::<ObjectNode>())
+                    .expect("Free failed");
             }
         }
 
         // Allocate again to ensure slab reuse
         let ptr = allocator.alloc().expect("Allocation after free failed");
         unsafe {
-            allocator.free(ptr.cast::<ObjectNode>()).expect("Free failed");
+            allocator
+                .free(ptr.cast::<ObjectNode>())
+                .expect("Free failed");
         }
     }
 
@@ -394,14 +398,18 @@ mod tests {
         let free_order = [2, 0, 4, 1, 3];
         for &i in &free_order {
             unsafe {
-                allocator.free(pointers[i].cast::<ObjectNode>()).expect("Free failed");
+                allocator
+                    .free(pointers[i].cast::<ObjectNode>())
+                    .expect("Free failed");
             }
         }
 
         // Allocate one more to test partial slab
         let ptr = allocator.alloc().expect("Allocation after free failed");
         unsafe {
-            allocator.free(ptr.cast::<ObjectNode>()).expect("Free failed");
+            allocator
+                .free(ptr.cast::<ObjectNode>())
+                .expect("Free failed");
         }
     }
 
@@ -428,13 +436,17 @@ mod tests {
             // Free every other object
             for i in (0..8).step_by(2) {
                 unsafe {
-                    allocator.free(pointers[i].cast::<ObjectNode>()).expect("Free failed");
+                    allocator
+                        .free(pointers[i].cast::<ObjectNode>())
+                        .expect("Free failed");
                 }
             }
 
             // Allocate 4 more
             for _ in 0..4 {
-                let ptr = allocator.alloc().expect("Allocation after partial free failed");
+                let ptr = allocator
+                    .alloc()
+                    .expect("Allocation after partial free failed");
                 assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
                 pointers.push(ptr);
             }
@@ -442,7 +454,9 @@ mod tests {
             // Free all remaining
             for ptr in pointers.iter().skip(1).step_by(2) {
                 unsafe {
-                    allocator.free(ptr.cast::<ObjectNode>()).expect("Free failed");
+                    allocator
+                        .free(ptr.cast::<ObjectNode>())
+                        .expect("Free failed");
                 }
             }
         }
@@ -463,13 +477,17 @@ mod tests {
         }
 
         // Allocate one more to trigger cache growth
-        let extra_ptr = allocator.alloc().expect("Allocation after full slab failed");
+        let extra_ptr = allocator
+            .alloc()
+            .expect("Allocation after full slab failed");
         pointers.push(extra_ptr);
 
         // Free in forward order
         for ptr in pointers {
             unsafe {
-                allocator.free(ptr.cast::<ObjectNode>()).expect("Free failed");
+                allocator
+                    .free(ptr.cast::<ObjectNode>())
+                    .expect("Free failed");
             }
         }
     }

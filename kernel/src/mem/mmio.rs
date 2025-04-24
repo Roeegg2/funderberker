@@ -10,11 +10,10 @@ pub trait Offsetable {
 #[derive(Debug)]
 pub struct MmioCell<T>
 where
-    T: Copy + Sized
+    T: Copy + Sized,
 {
     base: *mut T,
 }
-
 
 /// A wrapper for a MMIO area. This is the same as `MmioCell`, but for a range of registers.
 #[derive(Debug)]
@@ -22,7 +21,7 @@ pub struct MmioArea<R, W, T>
 where
     R: Offsetable,
     W: Offsetable,
-    T: Copy + Sized
+    T: Copy + Sized,
 {
     base: *mut T,
     _writable: marker::PhantomData<W>,
@@ -33,7 +32,7 @@ impl<R, W, T> MmioArea<R, W, T>
 where
     R: Offsetable,
     W: Offsetable,
-    T: Copy + Sized
+    T: Copy + Sized,
 {
     /// Creates a new `MmioArea` with the given base address.
     #[inline]
@@ -45,13 +44,15 @@ where
         }
     }
 
-    /// Read an MMIO register in the area
+    /// Read an MMIO register in the area. `reg` should have `reg.offset()` return the offset **in
+    /// bytes**
     #[inline]
     pub unsafe fn read(&self, reg: R) -> T {
         unsafe { core::ptr::read_volatile(self.base.byte_add(reg.offset())) }
     }
 
-    /// Write to an MMIO register in the area
+    /// Write to an MMIO register in the area reg` should have `reg.offset()` return the offset **in
+    /// bytes**
     #[inline]
     pub unsafe fn write(&self, reg: W, value: T) {
         unsafe { core::ptr::write_volatile(self.base.byte_add(reg.offset()), value) }
@@ -62,11 +63,17 @@ where
     pub const unsafe fn override_base(&mut self, ptr: *mut T) {
         self.base = ptr;
     }
+
+    /// Get the base address of the MMIO area
+    #[inline]
+    pub const fn base(&self) -> *mut T {
+        self.base
+    }
 }
 
 impl<T> MmioCell<T>
 where
-    T: Copy + Sized
+    T: Copy + Sized,
 {
     /// Creates a new `MmioCell` with the given base address.
     #[inline]
@@ -74,13 +81,15 @@ where
         Self { base }
     }
 
-    /// Read an MMIO register in the area
+    /// Read an MMIO register in the area. `reg` should have `reg.offset()` return the offset **in
+    /// bytes**
     #[inline]
     pub unsafe fn read(&self) -> T {
         unsafe { core::ptr::read_volatile(self.base) }
     }
 
-    /// Write to an MMIO register in the area
+    /// Write to an MMIO register in the area reg` should have `reg.offset()` return the offset **in
+    /// bytes**
     #[inline]
     pub unsafe fn write(&self, value: T) {
         unsafe { core::ptr::write_volatile(self.base, value) }
@@ -90,5 +99,11 @@ where
     #[inline]
     pub const unsafe fn override_base(&mut self, ptr: *mut T) {
         self.base = ptr;
+    }
+
+    /// Get the base address of the MMIO area
+    #[inline]
+    pub const fn base(&self) -> *mut T {
+        self.base
     }
 }
