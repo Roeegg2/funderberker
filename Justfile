@@ -120,7 +120,7 @@ _run-qemu: _download-firmware
     qemu-system-x86_64 \
         -vga virtio \
         -nodefaults \
-        -serial stdio \
+        -monitor stdio \
         -no-reboot \
         -drive if=pflash,unit=0,format=raw,file={{ovmf-code}},readonly=on \
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \

@@ -33,11 +33,10 @@ pub fn funderberker_main(rsdp: *const ()) {
 
     unsafe { crate::acpi::init(rsdp).expect("Failed to initialize ACPI") };
 
-    unsafe { crate::dev::time::pit::Pit::init() };
+    let mut pit = crate::dev::timer::pit::PIT.lock();
 
-    let mut pit = crate::dev::time::pit::PIT.lock();
-    pit.new_periodic(Duration::from_micros(1000))
-        .expect("Failed to set up periodic timer");
+    pit.init(Duration::from_millis(10000000), crate::dev::timer::pit::OperatingMode::SquareWaveGenerator)
+        .expect("Failed to initialize PIT timer");
 
     unsafe {
         crate::arch::init_cores();

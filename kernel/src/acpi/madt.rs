@@ -2,9 +2,7 @@ use super::{AcpiError, AcpiTable, SdtHeader};
 
 use crate::{
     arch::x86_64::apic::{
-        DeliveryMode,
-        ioapic::{self, override_irq},
-        lapic,
+        ioapic::{self, override_irq, IoApic}, lapic, DeliveryMode
     },
     mem::PhysAddr,
 };
@@ -181,6 +179,9 @@ impl Madt {
     pub(super) fn parse(&self) -> Result<(), AcpiError> {
         unsafe { self.header.validate_checksum()? };
 
+        // Mask off all of the old PIC interrupts
+        unsafe { IoApic::mask_off_pic() };
+
         for entry in self.iter() {
             let entry_type = unsafe { entry.read().entry_type };
             match entry_type {
@@ -198,16 +199,16 @@ impl Madt {
                 }
                 EntryType::IO_APIC => {
                     let entry = unsafe { entry.cast::<IoApicEntry>().as_ref().unwrap() };
-                    unsafe { ioapic::add(PhysAddr(entry.io_apic_addr as usize), entry.gsi_base) };
+                    unsafe { ioapic::add(PhysAddr(entry.io_apic_addr as usize), entry.gsi_base, entry.io_apic_id) };
                 }
                 EntryType::IO_APIC_ISO => {
                     let entry = unsafe { entry.cast::<IoApicIsoEntry>().as_ref().unwrap() };
                     unsafe {
                         ioapic::override_irq(
-                            entry.irq_source.into(),
+                            entry.irq_source,
                             entry.gsi,
                             entry.flags,
-                            DeliveryMode::Fixed,
+                            None,
                         )
                         .expect("Failed to override IOAPIC IRQ");
                     };
@@ -216,10 +217,10 @@ impl Madt {
                     let entry = unsafe { entry.cast::<IoApicNmiIsoEntry>().as_ref().unwrap() };
                     unsafe {
                         ioapic::override_irq(
-                            entry.nmi_source.into(),
+                            entry.nmi_source,
                             entry.gsi,
                             entry.flags,
-                            DeliveryMode::Nmi,
+                            Some(DeliveryMode::Nmi),
                         )
                         .expect("Failed to override IOAPIC NMI IRQ");
                     };

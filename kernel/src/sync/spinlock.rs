@@ -5,15 +5,19 @@ use core::hint;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-pub trait SpinLockDropable {
+/// A trait for types that can be used with the spinlock
+///
+/// SAFETY: This trait is unsafe because it CANNOT be implemented for non custom types.
+pub unsafe trait SpinLockDropable: Send + Sync {
     /// Additional cleanup code for the spinlock, that will be called **BEFORE** the lock is
     /// released.
     /// NOTE: There is no need to release the lock here, it will be released for you. This simply an option for when you need to
     /// run some code before the lock is released.
-    unsafe fn custom_unlock(&mut self) {}
+    fn custom_unlock(&mut self) {}
 }
 
 /// A simple spinlock implementation
+#[derive(Debug)]
 pub struct SpinLock<T>
 where
     T: SpinLockDropable,
@@ -23,6 +27,7 @@ where
 }
 
 /// A guard for the spinlock, which unlocks the spinlock when dropped
+#[derive(Debug)]
 pub struct SpinLockGuard<'a, T>
 where
     T: SpinLockDropable,
@@ -47,6 +52,7 @@ where
     }
 
     /// Spin until you can lock the spinlock, then lock it
+    #[inline]
     pub fn lock(&self) -> SpinLockGuard<T> {
         loop {
             // Tell the processor we're spinning so it can optimize some stuff
@@ -66,6 +72,16 @@ where
     /// Release the spinlock
     unsafe fn unlock(&self) {
         self.lock.store(false, Ordering::Release);
+    }
+
+    // #[inline]
+    // fn undisciplined_lock(&self) -> Option<SpinLockGuard<T>> {
+    //
+    // }
+
+    #[inline]
+    pub fn is_locked(&self) -> bool {
+        self.lock.load(Ordering::Relaxed)
     }
 }
 

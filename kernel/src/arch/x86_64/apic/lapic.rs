@@ -5,12 +5,10 @@ use core::mem::transmute;
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use crate::{
     arch::x86_64::{
-        cpu::{Msr, cli, rdmsr, wrmsr},
-        paging::{Entry, PageSize, PageTable},
+        cpu::{cli, rdmsr, wrmsr, Msr}, interrupts::InterruptVector, paging::{Entry, PageSize, PageTable}
     },
     mem::{
-        PhysAddr,
-        mmio::{MmioArea, Offsetable},
+        mmio::{MmioArea, Offsetable}, PhysAddr
     },
 };
 use alloc::vec::Vec;
@@ -233,16 +231,11 @@ impl LocalApic {
         ext_int_lint_entry.set_mask(false.into());
 
         // Enable the other LVT regs
-        let mut lvt_error: LvtReg = unsafe { self.area.read(ReadableRegs::LvtError).into() };
-        let mut lvt_timer: LvtReg = unsafe { self.area.read(ReadableRegs::LvtTimer).into() };
-        let mut lvt_thermal: LvtReg = unsafe { self.area.read(ReadableRegs::LvtThermal).into() };
-        let mut lvt_performance: LvtReg =
-            unsafe { self.area.read(ReadableRegs::LvtPerformance).into() };
+        let mut error: LvtReg = unsafe { self.area.read(ReadableRegs::LvtError).into() };
+        // let mut timer: LvtReg = unsafe { self.area.read(ReadableRegs::LvtTimer).into() };
 
-        lvt_error.set_mask(false.into());
-        lvt_timer.set_mask(false.into());
-        lvt_thermal.set_mask(false.into());
-        lvt_performance.set_mask(false.into());
+        // timer.set_mask(false.into());
+        error.set_mask(false.into());
 
         // Write the results back
         unsafe {
@@ -250,12 +243,7 @@ impl LocalApic {
             self.area.write(transmute(nmi_lint), nmi_lint_entry.into());
             self.area
                 .write(transmute(ext_int_lint), ext_int_lint_entry.into());
-            self.area.write(WriteableRegs::LvtError, lvt_error.into());
-            self.area.write(WriteableRegs::LvtTimer, lvt_timer.into());
-            self.area
-                .write(WriteableRegs::LvtThermal, lvt_thermal.into());
-            self.area
-                .write(WriteableRegs::LvtPerformance, lvt_performance.into());
+            self.area.write(WriteableRegs::LvtError, error.into());
         }
     }
 
@@ -324,6 +312,10 @@ impl LocalApic {
             DeliveryStatus::SendPending
         }
     }
+
+    pub fn signal_eoi(&self) {
+        unsafe { self.area.write(WriteableRegs::EndOfInterrupt, 0) };
+    }
 }
 
 /// Adds a new Local APIC to the systems global list of Local APICs
@@ -351,7 +343,9 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: A
     }
 }
 
-/// Marks the matching processor's LINT as NMI with the passed flags
+/// Marks the matching processor's LINT as NMI with the passed flags, making the other ExtInt
+///
+/// SAFTEY: 
 pub unsafe fn config_lints(acpi_processor_id: u32, lint: u8, flags: u16) {
     const ALL_PROCESSORS_ID: u32 = 0xff;
 

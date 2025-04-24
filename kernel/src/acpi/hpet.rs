@@ -1,6 +1,6 @@
 use crate::{
-    arch::x86_64::paging::{Entry, PageSize, PageTable},
-    dev::time::hpet::{self, TimerMode, TriggerMode},
+    arch::x86_64::{cpu::{cli, sti}, paging::{Entry, PageSize, PageTable}},
+    dev::timer::hpet::{self, TimerMode, TriggerMode},
     mem::PhysAddr,
 };
 
@@ -42,12 +42,9 @@ impl Hpet {
             PageSize::Size4KB,
         )
         .unwrap();
-        unsafe {
-            let mut hpet = hpet::Hpet::new(virt_addr.into(), self.minimum_tick);
 
-            let timer_id = hpet
-                .alloc_timer(41666667 * 2, TimerMode::OneShot, TriggerMode::EdgeTriggered)
-                .unwrap();
+        unsafe {
+            hpet::Hpet::init(virt_addr.into(), self.minimum_tick);
         }
 
         println!("HPET");

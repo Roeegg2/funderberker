@@ -8,6 +8,10 @@ use core::{
 
 use modular_bitfield::prelude::*;
 
+use crate::arch::x86_64::apic::lapic;
+
+use super::cpu::{cli, sti};
+
 /// The number of entries in the IDT
 const IDT_ENTRIES_NUM: usize = 256;
 
@@ -86,10 +90,10 @@ impl Idt {
     pub(super) unsafe fn init() {
         unsafe {
             #[allow(static_mut_refs)]
-            IDT.load();
+            IDT.install_init_isrs();
 
             #[allow(static_mut_refs)]
-            IDT.install_init_isrs();
+            IDT.load();
         };
 
         log_info!("Installed ISRs successfully");
@@ -144,7 +148,7 @@ impl Idt {
             Present::Present,
         );
         self.0[InterruptVector::Pit as usize].register(
-            int_stub_32 as u64,
+            int_stub_60 as u64,
             cs,
             0,
             GateType::Interrupt,
@@ -167,33 +171,49 @@ impl Idt {
 pub enum InterruptVector {
     PageFault = 14,
     ProtectionFault = 13,
-    Pit = 32,
+    Pit = 60,
     Unhandled = 33,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Irq {
-    Pit = 0,
-    Unhandled = 1,
-}
+pub const PIT_IRQ: u8 = 0x0;
 
-impl Irq {
-    /// Get the vector for this IRQ
-    pub const fn to_vector(self) -> InterruptVector {
-        match self {
-            Irq::Pit => InterruptVector::Pit,
-            Irq::Unhandled => InterruptVector::Unhandled,
-        }
+pub const fn irq_to_vector(irq: u8) -> InterruptVector {
+    match irq {
+        0x0 => InterruptVector::Pit,
+        _ => InterruptVector::Unhandled,
     }
 }
 
-impl From<u8> for Irq {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Irq::Pit,
-            _ => Irq::Unhandled,
+pub fn check_interrupts_disabled() -> bool {
+    let flags: u64;
+    unsafe {
+        asm!(
+            "pushfq",
+            "pop {flags}",
+            flags = out(reg) flags,
+        )
+    }
+    (flags & 0x200) == 0
+}
+
+pub fn do_inside_interrupts_disabled_window<T, F>(f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    let old = check_interrupts_disabled(); 
+    unsafe {
+        cli();
+    }
+
+    let ret = f();
+
+    if !old {
+        unsafe {
+        sti();
         }
     }
+
+    ret
 }
 
 // Small stubs that redirect to the actual ISR handlers
@@ -209,7 +229,7 @@ global_asm! {
 
     define_int_stub 14
     define_int_stub 13
-    define_int_stub 32
+    define_int_stub 60
     define_int_stub 33
     "#
 }
@@ -217,7 +237,7 @@ global_asm! {
 unsafe extern "C" {
     fn int_stub_14();
     fn int_stub_13();
-    fn int_stub_32();
+    fn int_stub_60();
     fn int_stub_33();
 }
 
@@ -232,8 +252,13 @@ extern "C" fn vec_int_14() {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn vec_int_32() {
+extern "C" fn vec_int_60() {
     println!("GOT TIMER INTERRUPT!!!!");
+    unsafe {
+        #[allow(static_mut_refs)]
+        // XXX: BAD CHANGE ME
+        lapic::LOCAL_APICS[0].signal_eoi()
+    };
 }
 
 #[unsafe(no_mangle)]

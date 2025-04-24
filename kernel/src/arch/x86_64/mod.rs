@@ -7,7 +7,7 @@ use super::Architecture;
 #[macro_use]
 pub mod cpu;
 pub mod apic;
-mod interrupts;
+pub mod interrupts;
 #[cfg(feature = "mp")]
 mod mp;
 pub mod paging;
@@ -29,6 +29,7 @@ impl Architecture for X86_64 {
             // Make sure no pesky interrupt interrupt us
             cpu::cli();
             Idt::init();
+            cpu::sti();
         };
     }
 

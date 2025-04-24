@@ -1,56 +1,59 @@
-//! Bitmap data structure and wrappers
-// TODO: Add memsetting, iter, etc
+//! A simple bitmap implementation, with the option to grow/shrink the bitmap
 
-pub struct Bitmap<'a> {
-    entries: &'a mut [u8],
+#[cfg(test)]
+use std::vec;
+#[cfg(test)]
+use std::vec::Vec;
+#[cfg(not(test))]
+use alloc::vec;
+#[cfg(not(test))]
+use alloc::vec::Vec;
+
+
+/// The bitmap 
+pub struct Bitmap {
+    entries: Vec<u8>,
     used_bits_count: usize,
 }
 
-impl<'a> Bitmap<'a> {
-    pub const BLOCK_TAKEN: u8 = 0xff;
-    pub const FREE: u8 = 0x0;
-
+impl Bitmap {
     /// Get an uninitilized instance of a bitmap
     pub const fn uninit() -> Self {
         Self {
-            entries: &mut [],
+            entries: Vec::new(),
             used_bits_count: 0,
         }
     }
 
     /// Construct a new bitmap
-    pub const fn new(entries: &'a mut [u8], used_bits_count: usize) -> Self {
+    pub fn new(used_bits_count: usize) -> Self {
+        let entries_count = (used_bits_count + 7) / 8;
         Self {
-            entries,
+            entries: vec![0; entries_count],
             used_bits_count,
         }
     }
 
-    /// Index into the bitmap and unset the status of an entry
-    pub const fn unset(&mut self, index: usize) {
+    /// Unset the bit with the given `index`
+    pub fn unset(&mut self, index: usize) {
         self.entries[index / 8] &= !(1 << (index % 8));
     }
 
-    /// Index into the bitmap and set the status of a page
-    pub const fn set(&mut self, index: usize) {
+    /// Set the bit with the given `index`
+    pub fn set(&mut self, index: usize) {
         self.entries[index / 8] |= 1 << (index % 8);
     }
 
-    /// Index into the bitmap and get the status of a page
-    pub const fn get(&self, index: usize) -> u8 {
-        self.entries[index / 8] & (1 << (index % 8))
+    /// Check if the bit at `index` is set. `true` if set, `false` otherwise
+    pub fn is_set(&self, index: usize) -> bool {
+        let entry = self.entries[index / 8];
+
+        (entry & (1 << (index % 8))) != 0
     }
 
-    // NOTE: not sure having this function is the correct way to provide a readonly view into
-    // `used_bits_count` in Rust...
     /// Get `used_bits_count` readonly value
     pub const fn used_bits_count(&self) -> usize {
         self.used_bits_count
     }
 }
 
-// impl
-// fn set
-// fn unset
-// fn get
-// fn new

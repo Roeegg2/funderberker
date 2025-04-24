@@ -10,14 +10,14 @@ use crate::boot::limine::get_page_count_from_mem_map;
 
 use super::super::{addr_to_page_id, page_id_to_addr};
 use super::{PhysAddr, PmmAllocator, PmmError};
-use utils::collections::bitmap::Bitmap;
+use utils::collections::bitmap::StaticBitmap;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// Singleton instance of the bump allocator
-pub(super) static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator(Bitmap::uninit());
+pub(super) static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator(StaticBitmap::uninit());
 
 /// Singleton bump allocator implemented using bitmap
-pub(super) struct BumpAllocator<'a>(Bitmap<'a>);
+pub(super) struct BumpAllocator<'a>(StaticBitmap<'a>);
 
 impl<'a> PmmAllocator for BumpAllocator<'a> {
     fn alloc_any(
@@ -33,7 +33,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
 
             // Check if the block is free. If it isn't go next
             for j in 0..page_count.get() {
-                if self.0.get(i + j) != Bitmap::FREE {
+                if self.0.get(i + j) != StaticBitmap::FREE {
                     continue 'main;
                 }
             }
@@ -62,7 +62,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
 
         // Make sure we can allocate the block. If we can't we propergate the error
         for i in 0..page_count.get() {
-            if self.0.get(id + i) != Bitmap::FREE {
+            if self.0.get(id + i) != StaticBitmap::FREE {
                 return Err(PmmError::NoAvailableBlock);
             }
         }
@@ -89,7 +89,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         // For each page ID in the range, try freeing the value. If an error is encountered, stop
         // and return
         for i in 0..page_count.get() {
-            if self.0.get(id + i) == Bitmap::FREE {
+            if self.0.get(id + i) == StaticBitmap::FREE {
                 return Err(PmmError::FreeOfAlreadyFree);
             }
         }
@@ -113,7 +113,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         }
 
         for i in 0..page_count.get() {
-            if self.0.get(id + i) != Bitmap::FREE {
+            if self.0.get(id + i) != StaticBitmap::FREE {
                 return Ok(false);
             }
         }
@@ -162,7 +162,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                 let ptr = bitmap_virt_addr.0 as *mut u8;
 
                 // Set all of memory to taken by default
-                utils::mem::memset(ptr, Bitmap::BLOCK_TAKEN, bitmap_alloc_size as usize);
+                utils::mem::memset(ptr, StaticBitmap::BLOCK_TAKEN, bitmap_alloc_size as usize);
                 // Convert to a bitmap slice
                 from_raw_parts_mut(ptr, bitmap_alloc_size as usize)
             };
@@ -185,7 +185,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
 
             // Set the actual bitmap size to the page count, since these are the pages we can
             // actually use
-            BUMP_ALLOCATOR.0 = Bitmap::new(bitmap, page_count.get());
+            BUMP_ALLOCATOR.0 = StaticBitmap::new(bitmap, page_count.get());
 
             // Update the bitmaps contents to the current memory map + entry allocated for the
             // bitmap
