@@ -5,10 +5,14 @@ use core::mem::transmute;
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use crate::{
     arch::x86_64::{
-        cpu::{rdmsr, wrmsr, Msr}, paging::{Entry, PageSize, PageTable}
+        cpu::{Msr, rdmsr, wrmsr},
+        interrupts,
+        paging::{Entry, PageSize, PageTable},
     },
+    dev::timer::apic::TimerMode,
     mem::{
-        mmio::{MmioArea, Offsetable}, PhysAddr
+        PhysAddr,
+        mmio::{MmioArea, Offsetable},
     },
 };
 use alloc::vec::Vec;
@@ -112,7 +116,7 @@ pub enum DeliveryStatus {
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
 /// Represents the LVT register
-struct LvtReg {
+pub struct LvtReg {
     /// The vector to be used for this interrupt
     vector: B8,
     /// The delivery mode of the interrupt
@@ -148,6 +152,7 @@ pub struct LocalApic {
 }
 
 impl LocalApic {
+    /// Verifies that the CPU actually supports APIC
     #[inline]
     pub fn validate_apic_support() {
         const CPUID_APIC_BIT: u32 = 0x1 << 9;
@@ -160,6 +165,7 @@ impl LocalApic {
         );
     }
 
+    /// Enables the local APIC in the IA32_APIC_BASE MSR, in case firmware didn't do it already
     #[inline]
     unsafe fn hardware_enable(&self) {
         Self::validate_apic_support();
@@ -247,21 +253,50 @@ impl LocalApic {
         }
     }
 
-    pub fn apic_id(&self) -> u32 {
-        self.apic_id
-    }
-
-    pub fn flags(&self) -> ApicFlags {
-        self.flags
-    }
-
     /// Read the error status register
     pub fn read_errors(&self) -> u32 {
-        // We should write to the ESR before reading from it to discard any stale data
         unsafe {
+            // We write to the ESR before reading from it to discard any stale data
             self.area.write(WriteableRegs::ErrorStatus, 0);
 
             self.area.read(ReadableRegs::ErrorStatus)
+        }
+    }
+
+    /// Reads and calculates the divide value for the APIC timer frequency
+    pub fn get_timer_divide_config(&self) -> u8 {
+        unsafe {
+            let ret = self.area.read(ReadableRegs::TimerDivideConfig);
+            // Bits 0,1 and 3
+            let pow = ((ret & 0b1000) >> 1) | (ret & 0b11);
+
+            2_usize.pow(pow) as u8
+        }
+    }
+
+    /// Configure the timer
+    pub fn configure_timer(&self, cycle_count: u32, timer_mode: TimerMode) {
+        // Set the timer to be periodic
+        // XXX: Shouldn't I set more fields?
+        let mut lvtt: LvtReg = unsafe { self.area.read(ReadableRegs::LvtTimer).into() };
+        // TODO: Maybe use a union for this?
+        // This field is reserved on all LVT registers except for the timer
+        lvtt.set__reserved2(timer_mode as u16);
+
+        unsafe {
+            self.area.write(WriteableRegs::LvtTimer, lvtt.into());
+
+            self.area
+                .write(WriteableRegs::TimerInitialCount, cycle_count);
+        }
+    }
+
+    /// Disable the timer
+    pub fn set_timer_disabled(&self, disable: bool) {
+        unsafe {
+            let mut lvtt: LvtReg = self.area.read(ReadableRegs::LvtTimer).into();
+            lvtt.set_mask(disable.into());
+            self.area.write(WriteableRegs::LvtTimer, lvtt.into());
         }
     }
 
@@ -304,6 +339,7 @@ impl LocalApic {
         }
     }
 
+    /// Checks the status of the IPI sent
     pub fn ipi_status(&self) -> DeliveryStatus {
         let status = unsafe { self.area.read(ReadableRegs::InterruptCommand0) };
         if status & (1 << 12) == 0 {
@@ -313,8 +349,21 @@ impl LocalApic {
         }
     }
 
+    /// Writes to the EOI register, signaling the end of an interrupt.
+    ///
+    /// This function **MUST** be called from every IRQ ISR so new interrupts can be processed.
     pub fn signal_eoi(&self) {
         unsafe { self.area.write(WriteableRegs::EndOfInterrupt, 0) };
+    }
+
+    /// Get the APIC ID of this local APIC
+    pub fn apic_id(&self) -> u32 {
+        self.apic_id
+    }
+
+    /// Get the ACPI processor ID of this local APIC
+    pub fn flags(&self) -> ApicFlags {
+        self.flags
     }
 }
 
@@ -345,7 +394,7 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: A
 
 /// Marks the matching processor's LINT as NMI with the passed flags, making the other ExtInt
 ///
-/// SAFTEY: 
+/// SAFTEY:
 pub unsafe fn config_lints(acpi_processor_id: u32, lint: u8, flags: u16) {
     const ALL_PROCESSORS_ID: u32 = 0xff;
 

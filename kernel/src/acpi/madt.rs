@@ -2,7 +2,9 @@ use super::{AcpiError, AcpiTable, SdtHeader};
 
 use crate::{
     arch::x86_64::apic::{
-        ioapic::{self, override_irq, IoApic}, lapic, DeliveryMode
+        DeliveryMode,
+        ioapic::{self, IoApic, override_irq},
+        lapic,
     },
     mem::PhysAddr,
 };
@@ -187,7 +189,6 @@ impl Madt {
             match entry_type {
                 EntryType::LOCAL_APIC => {
                     let entry = unsafe { entry.cast::<LocalApicEntry>().as_ref().unwrap() };
-                    println!("entry {:?}", entry);
                     unsafe {
                         lapic::add(
                             PhysAddr(self.local_apic_addr as usize),
@@ -199,18 +200,19 @@ impl Madt {
                 }
                 EntryType::IO_APIC => {
                     let entry = unsafe { entry.cast::<IoApicEntry>().as_ref().unwrap() };
-                    unsafe { ioapic::add(PhysAddr(entry.io_apic_addr as usize), entry.gsi_base, entry.io_apic_id) };
+                    unsafe {
+                        ioapic::add(
+                            PhysAddr(entry.io_apic_addr as usize),
+                            entry.gsi_base,
+                            entry.io_apic_id,
+                        )
+                    };
                 }
                 EntryType::IO_APIC_ISO => {
                     let entry = unsafe { entry.cast::<IoApicIsoEntry>().as_ref().unwrap() };
                     unsafe {
-                        ioapic::override_irq(
-                            entry.irq_source,
-                            entry.gsi,
-                            entry.flags,
-                            None,
-                        )
-                        .expect("Failed to override IOAPIC IRQ");
+                        ioapic::override_irq(entry.irq_source, entry.gsi, entry.flags, None)
+                            .expect("Failed to override IOAPIC IRQ");
                     };
                 }
                 EntryType::IO_APIC_NMI_ISO => {

@@ -10,7 +10,7 @@ use crate::boot::limine::get_page_count_from_mem_map;
 
 use super::super::{addr_to_page_id, page_id_to_addr};
 use super::{PhysAddr, PmmAllocator, PmmError};
-use utils::collections::bitmap::StaticBitmap;
+use utils::collections::static_bitmap::StaticBitmap;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// Singleton instance of the bump allocator

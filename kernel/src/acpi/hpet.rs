@@ -27,7 +27,7 @@ pub(super) struct Hpet {
 }
 
 impl Hpet {
-    pub fn init_hpet(&self) -> Result<(), AcpiError> {
+    pub fn setup_hpet(&self) -> Result<(), AcpiError> {
         unsafe { self.header.validate_checksum()? };
 
         let phys_addr = PhysAddr(self.base_addr.addr as usize);

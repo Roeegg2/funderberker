@@ -5,12 +5,8 @@ use core::time::Duration;
 use modular_bitfield::prelude::*;
 
 use crate::{
-    arch::x86_64::{
-        apic::ioapic,
-        cpu::outb_8,
-        interrupts,
-    },
-    sync::spinlock::{SpinLock, SpinLockDropable},
+    arch::x86_64::{apic::ioapic, cpu::outb_8, interrupts},
+    sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard},
 };
 
 use super::{Timer, TimerError};
@@ -95,10 +91,12 @@ pub struct Pit(u8);
 impl Timer for Pit {
     type TimerMode = OperatingMode;
 
-    fn new(period: Duration, operating_mode: Self::TimerMode) -> Result<Pit, TimerError> {
-        let mut pit = PIT.lock();
-
-        interrupts::do_inside_interrupts_disabled_window(|| -> Result<Pit, TimerError> {
+    fn start(
+        &mut self,
+        period: Duration,
+        operating_mode: Self::TimerMode,
+    ) -> Result<(), TimerError> {
+        interrupts::do_inside_interrupts_disabled_window(|| -> Result<(), TimerError> {
             let command = Command::new()
                 .with_channel(Channel::Channel0 as u8)
                 .with_access_mode(AccessMode::LowAndHighByte as u8)
@@ -108,12 +106,12 @@ impl Timer for Pit {
             let divisor = Pit::time_to_cycles(period, operating_mode)?;
 
             unsafe {
-                pit.write(command, divisor);
+                self.write(command, divisor);
             }
 
-            pit.set_disabled(false);
+            self.set_disabled(false);
 
-            Ok(Pit(0))
+            Ok(())
         })
     }
 
@@ -124,7 +122,6 @@ impl Timer for Pit {
                 .expect("Failed to set PIT IRQ disabled");
         }
     }
-
 }
 
 impl Pit {
@@ -132,7 +129,10 @@ impl Pit {
         const BASE_FREQUENCY: u32 = 1193182; // Hz
 
         match operating_mode {
-            OperatingMode::RateGenerator | OperatingMode::SquareWaveGenerator | OperatingMode::_RateGenerator2 | OperatingMode::_SquareWaveGenerator2 => {
+            OperatingMode::RateGenerator
+            | OperatingMode::SquareWaveGenerator
+            | OperatingMode::_RateGenerator2
+            | OperatingMode::_SquareWaveGenerator2 => {
                 if period.as_micros() == 0 {
                     return Err(TimerError::InvalidTimePeriod);
                 }

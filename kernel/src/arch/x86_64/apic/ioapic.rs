@@ -85,8 +85,8 @@ impl IoApic {
     /// address
     const OFFSET_FROM_SEL_TO_WIN: usize = 0x10;
 
-    /// Mask all of the PICs interrupt, effectively disabling it. 
-    /// This is required so the PICs don't interfere with the APIC stack 
+    /// Mask all of the PICs interrupt, effectively disabling it.
+    /// This is required so the PICs don't interfere with the APIC stack
     pub unsafe fn mask_off_pic() {
         unsafe {
             outb_8(0x21, 0xff); // ICW1
@@ -145,7 +145,6 @@ impl IoApic {
         }
     }
 
-
     /// Get the GSI base of this IO APIC
     #[inline]
     pub fn gsi_base(&self) -> u32 {
@@ -195,7 +194,11 @@ pub unsafe fn add(phys_addr: PhysAddr, gsi_base: u32, apic_id: u8) {
 
     unsafe {
         #[allow(static_mut_refs)]
-        IO_APICS.push(IoApic::new(phys_addr.add_hhdm_offset().into(), gsi_base, apic_id))
+        IO_APICS.push(IoApic::new(
+            phys_addr.add_hhdm_offset().into(),
+            gsi_base,
+            apic_id,
+        ))
     };
 }
 

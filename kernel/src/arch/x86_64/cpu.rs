@@ -6,7 +6,10 @@ use core::arch::asm;
 
 #[repr(u32)]
 pub enum Msr {
+    /// Address of the IA32_APIC_BASE MSR
     Ia32ApicBase = 0x1b,
+    /// Address of the IA32_TSC_DEADLINE MSR
+    Ia32TscDeadline = 0x6e0,
 }
 
 /// Wrapper for the 'outb' instruction, accessing a `u32` port
@@ -69,13 +72,13 @@ pub unsafe fn inb_8(port: u16) -> u8 {
 
 /// Clear `RFLAGS` interrupt flag to mask all maskable external interrupts
 #[inline]
-pub unsafe fn cli() {
+pub fn cli() {
     unsafe { asm!("cli", options(nostack, nomem)) };
 }
 
 /// Set `RFLAGS` interrupt flag to enable handling of external interrupts
 #[inline]
-pub unsafe fn sti() {
+pub fn sti() {
     unsafe { asm!("sti", options(nostack, nomem)) };
 }
 

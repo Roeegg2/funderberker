@@ -70,6 +70,15 @@ pub enum DestinationShorthand {
     AllExcludingSelf = 0b11,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum SharedFlags {
+    ActiveHighEdgeTriggered = 0,
+    ActiveHighLevelTriggered = 2,
+    ActiveLowEdgeTriggered = 8,
+    ActiveLowLevelTriggered = 2 | 8,
+}
+
 impl Destination {
     const PHYSICAL_MODE: u8 = 0b0;
     const LOGICAL_MODE: u8 = 0b1;
@@ -122,6 +131,20 @@ impl TryFrom<u16> for PinPolarity {
             0b0 => Ok(PinPolarity::ActiveLow),
             0b1 => Ok(PinPolarity::ActiveHigh),
             0b11 => Ok(PinPolarity::ActiveLow),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<u16> for SharedFlags {
+    type Error = ();
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        const FOO: u16 = 8 | 2;
+        match value {
+            0 => Ok(SharedFlags::ActiveHighEdgeTriggered),
+            2 => Ok(SharedFlags::ActiveHighLevelTriggered),
+            8 => Ok(SharedFlags::ActiveLowEdgeTriggered),
+            FOO => Ok(SharedFlags::ActiveLowLevelTriggered),
             _ => Err(()),
         }
     }

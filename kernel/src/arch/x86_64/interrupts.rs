@@ -8,7 +8,10 @@ use core::{
 
 use modular_bitfield::prelude::*;
 
-use crate::arch::x86_64::apic::lapic::{self, LOCAL_APICS};
+use crate::{
+    arch::x86_64::apic::lapic::{self, LOCAL_APICS},
+    dev::clock::rtc,
+};
 
 use super::cpu::{cli, sti};
 
@@ -131,56 +134,102 @@ impl Idt {
             )
         }
 
-        self.0[InterruptVector::PageFault as usize].register(
-            int_stub_14 as u64,
-            cs,
-            0,
-            GateType::Trap,
-            Dpl::Kernel,
-            Present::Present,
-        );
-        self.0[InterruptVector::ProtectionFault as usize].register(
-            int_stub_13 as u64,
-            cs,
-            0,
-            GateType::Trap,
-            Dpl::Kernel,
-            Present::Present,
-        );
-        self.0[InterruptVector::Pit as usize].register(
-            int_stub_60 as u64,
-            cs,
-            0,
-            GateType::Interrupt,
-            Dpl::Kernel,
-            Present::Present,
-        );
-        self.0[InterruptVector::Unhandled as usize].register(
-            int_stub_33 as u64,
-            cs,
-            0,
-            GateType::Interrupt,
-            Dpl::Kernel,
-            Present::Present,
-        );
+        #[rustfmt::skip]
+        {
+            self.0[0].register(stub_vec_0 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[1].register(stub_vec_1 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[2].register(stub_vec_2 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[3].register(stub_vec_3 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[4].register(stub_vec_4 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[5].register(stub_vec_5 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[6].register(stub_vec_6 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[7].register(stub_vec_7 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[8].register(stub_vec_8 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[9].register(stub_vec_9 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[10].register(stub_vec_10 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[11].register(stub_vec_11 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[12].register(stub_vec_12 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[13].register(stub_vec_13 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[14].register(stub_vec_14 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[15].register(stub_vec_15 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[16].register(stub_vec_16 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[17].register(stub_vec_17 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[18].register(stub_vec_18 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[19].register(stub_vec_19 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[20].register(stub_vec_20 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[21].register(stub_vec_21 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[22].register(stub_vec_22 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[23].register(stub_vec_23 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[24].register(stub_vec_24 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[25].register(stub_vec_25 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[26].register(stub_vec_26 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[27].register(stub_vec_27 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[28].register(stub_vec_28 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[29].register(stub_vec_29 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[30].register(stub_vec_30 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+            self.0[31].register(stub_vec_31 as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+
+            self.0[32].register(stub_vec_32 as u64, cs, 0, GateType::Interrupt, Dpl::Kernel, Present::Present);
+            self.0[33].register(stub_vec_33 as u64, cs, 0, GateType::Interrupt, Dpl::Kernel, Present::Present);
+            self.0[34].register(stub_vec_34 as u64, cs, 0, GateType::Interrupt, Dpl::Kernel, Present::Present);
+            self.0[254].register(stub_vec_254 as u64, cs, 0, GateType::Interrupt, Dpl::Kernel, Present::Present);
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum InterruptVector {
-    PageFault = 14,
-    ProtectionFault = 13,
-    Pit = 60,
-    Unhandled = 33,
+unsafe extern "C" {
+    fn stub_vec_0();
+    fn stub_vec_1();
+    fn stub_vec_2();
+    fn stub_vec_3();
+    fn stub_vec_4();
+    fn stub_vec_5();
+    fn stub_vec_6();
+    fn stub_vec_7();
+    fn stub_vec_8();
+    fn stub_vec_9();
+    fn stub_vec_10();
+    fn stub_vec_11();
+    fn stub_vec_12();
+    fn stub_vec_13();
+    fn stub_vec_14();
+    fn stub_vec_15();
+    fn stub_vec_16();
+    fn stub_vec_17();
+    fn stub_vec_18();
+    fn stub_vec_19();
+    fn stub_vec_20();
+    fn stub_vec_21();
+    fn stub_vec_22();
+    fn stub_vec_23();
+    fn stub_vec_24();
+    fn stub_vec_25();
+    fn stub_vec_26();
+    fn stub_vec_27();
+    fn stub_vec_28();
+    fn stub_vec_29();
+    fn stub_vec_30();
+    fn stub_vec_31();
+
+    fn stub_vec_32();
+    fn stub_vec_33();
+    fn stub_vec_34();
+    fn stub_vec_254();
+
 }
 
-pub const PIT_IRQ: u8 = 0x0;
+pub type Irq = u8;
 
-pub const fn irq_to_vector(irq: u8) -> InterruptVector {
+pub type InterruptVector = u8;
+
+pub const PIT_IRQ: u8 = 0x0;
+pub const RTC_IRQ: u8 = 0x8;
+
+pub const fn irq_to_vector(irq: Irq) -> InterruptVector {
     match irq {
-        0x0 => InterruptVector::Pit,
-        _ => InterruptVector::Unhandled,
+        PIT_IRQ => 33,
+        RTC_IRQ => 34,
+        _ => 254,
     }
 }
 
@@ -200,71 +249,13 @@ pub fn do_inside_interrupts_disabled_window<T, F>(f: F) -> T
 where
     F: FnOnce() -> T,
 {
-    let old = check_interrupts_disabled(); 
-    unsafe {
-        cli();
-    }
-
+    let old = check_interrupts_disabled();
+    cli();
     let ret = f();
 
     if !old {
-        unsafe {
         sti();
-        }
     }
 
     ret
-}
-
-// Small stubs that redirect to the actual ISR handlers
-global_asm! {
-    r#"
-    .section .text
-    .macro define_int_stub int_id
-    .global int_stub_\int_id
-    int_stub_\int_id:
-        call vec_int_\int_id
-        iretq
-    .endm
-
-    define_int_stub 14
-    define_int_stub 13
-    define_int_stub 60
-    define_int_stub 33
-    "#
-}
-
-unsafe extern "C" {
-    fn int_stub_14();
-    fn int_stub_13();
-    fn int_stub_60();
-    fn int_stub_33();
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn vec_int_13() {
-    unsafe { asm!("hlt") };
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn vec_int_14() {
-    println!("got page fault! address: {:#x}", read_cr!(cr2));
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn vec_int_60() {
-    println!("GOT TIMER INTERRUPT!!!!");
-
-    // TODO: Keep this in a global variable or something instead of looking for it everytime
-    let this_apic_id = unsafe { (__cpuid_count(1, 0).ebx >> 24) & 0xff } as u32;
-    unsafe {
-        #[allow(static_mut_refs)]
-        let lapic = LOCAL_APICS.iter().find(|&lapic| lapic.apic_id() == this_apic_id).unwrap();
-        lapic.signal_eoi();
-    };
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn vec_int_33() {
-    println!("unhandled interrupt received");
 }

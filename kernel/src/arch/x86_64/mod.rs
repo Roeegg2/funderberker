@@ -8,6 +8,7 @@ use super::Architecture;
 pub mod cpu;
 pub mod apic;
 pub mod interrupts;
+mod isrs;
 #[cfg(feature = "mp")]
 mod mp;
 pub mod paging;

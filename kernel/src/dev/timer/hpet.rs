@@ -5,7 +5,11 @@ use core::{mem::transmute, ptr, time::Duration};
 use modular_bitfield::prelude::*;
 use utils::id_allocator::{Id, IdAllocator};
 
-use crate::{arch::x86_64::{apic::ioapic, interrupts}, mem::mmio::{MmioArea, Offsetable}, sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard}};
+use crate::{
+    arch::x86_64::{apic::ioapic, interrupts},
+    mem::mmio::{MmioArea, Offsetable},
+    sync::spinlock::{SpinLock, SpinLockDropable},
+};
 
 use super::{Timer, TimerError};
 
@@ -96,13 +100,12 @@ pub struct Hpet {
 // TODO: Move this out of here
 const NANO_TO_FEMTOSEC: u128 = 1_000_000;
 
-
 static HPET: SpinLock<Hpet> = SpinLock::new(Hpet {
-            area: MmioArea::new(ptr::dangling_mut()),
-            main_clock_period: 0,
-            minimum_tick: 0,
-            timer_ids: IdAllocator::uninit(),
-        });
+    area: MmioArea::new(ptr::dangling_mut()),
+    main_clock_period: 0,
+    minimum_tick: 0,
+    timer_ids: IdAllocator::uninit(),
+});
 
 impl Hpet {
     /// The maximum amount of timers supported by the HPET
@@ -148,6 +151,10 @@ impl Hpet {
 
     /// Initialize the HPET
     ///
+    /// NOTE: This enabled the HPET, but in order for the HPET to send interrupts we need to unmask
+    /// the interrupts in the IOAPIC as well.
+    /// This will be done only later on the general secondary timer initialization.
+    ///
     /// SAFETY: This function is unsafe because it writes to MMIO registers, which can cause UB
     /// if the parameters passed are not valid.
     #[inline]
@@ -155,22 +162,18 @@ impl Hpet {
         let mut hpet = HPET.lock();
 
         *hpet = Hpet::new(base, minimum_tick);
-        
+
+        // Sanity disable the HPET before we do anything
+        hpet.set_disabled(true);
         unsafe {
-            // Sanity disable the HPET before we do anything
-            hpet.set_disabled(true);
             // Set and configure the interrupt routing
             hpet.set_interrupt_routing();
             // Reset the main counter value to a known state
             hpet.area.write(WriteableRegs::MAIN_COUNTER_VALUE, 0);
-            // Enable the HPET
-            hpet.set_disabled(false);
         }
 
-        unsafe {
-            ioapic::set_disabled(interrupts::PIT_IRQ, false)
-                .expect("Failed to set PIT IRQ disabled");
-        }
+        // Enable the HPET
+        hpet.set_disabled(false);
     }
 
     /// Create the new HPET instance
@@ -197,20 +200,18 @@ impl Hpet {
             let capabilities: GeneralCapabilities =
                 unsafe { transmute(hpet.area.read(ReadableRegs::GENERAL_CAPABILITIES)) };
             let max_timer_index: u64 = capabilities.num_tim_cap().into();
-            utils::sanity_assert!(max_timer_index < Self::MAX_TIMER_AMOUNT); 
+            utils::sanity_assert!(max_timer_index < Self::MAX_TIMER_AMOUNT);
             max_timer_index as usize + 1
         };
-        
+
         hpet.timer_ids = IdAllocator::new(Id(0)..Id(max_timer_amount));
 
         hpet
     }
 
     /// Enable/disable the HPET (halt the main counter, effectively disabling all the timers)
-    ///
-    /// SAFETY: This function is unsafe because disabling while the HPET is in use can be UB.
     #[inline]
-    pub unsafe fn set_disabled(&mut self, state: bool) {
+    pub fn set_disabled(&mut self, state: bool) {
         let mut config: GeneralConfiguration =
             unsafe { transmute(self.area.read(ReadableRegs::GENERAL_CONFIGURATION)) };
 
@@ -225,30 +226,24 @@ impl Hpet {
 
 impl HpetTimer {
     /// Initialize the timer with the given `time `and `timer_mode`
-    unsafe fn init<'a>(&mut self, hpet: SpinLockGuard<'a, Hpet>, time: Duration, timer_mode: TimerMode) -> Result<(), TimerError> {
-        let mut config: TimerConfiguration = unsafe { transmute(self.area.read(self.config_reg_offset())) };
+    #[must_use]
+    pub fn new() -> Result<Self, TimerError> {
+        let mut hpet = HPET.lock();
 
-        if timer_mode == TimerMode::Periodic && config.periodic_int_capable() == false.into() {
-            return Err(TimerError::UnsupportedTimerMode);
-        }
+        let base = hpet.area.base();
+        let id = hpet
+            .timer_ids
+            .allocate()
+            .map_err(|_| TimerError::NoTimerAvailable)?;
 
-        let cycles = unsafe {
-            hpet.area.read(ReadableRegs::MAIN_COUNTER_VALUE) + hpet.time_to_cycles(time)
-        };
-        
-        drop(hpet);
+        // TODO: Remove this limitation someday by allocating IRQ lines on IOAPIC so we could
+        // allocate other timers than just 0
+        assert!(id.0 == 0, "HPET: Only timer 0 is supported currently");
 
-        unsafe {self.area.write(self.comparator_reg_offset(), cycles)};
-
-        config.set_timer_type(timer_mode as u8);
-        config.set_int_type(TriggerMode::EdgeTriggered as u8);
-        config.set_int_enable(true.into());
-
-        unsafe {
-            self.area.write(self.config_reg_offset(), config.into());
-        }
-
-        Ok(())
+        Ok(Self {
+            area: MmioArea::new(base),
+            id,
+        })
     }
 
     /// Get the timer's `TimerConfiguration` register address
@@ -279,37 +274,38 @@ impl HpetTimer {
 impl Timer for HpetTimer {
     type TimerMode = TimerMode;
 
-    /// Allocate a new timer
-    fn new(time: Duration, timer_mode: Self::TimerMode) -> Result<Self, TimerError> {
-        let mut hpet = HPET.lock();
+    fn start<'a>(&mut self, time: Duration, timer_mode: TimerMode) -> Result<(), TimerError> {
+        let hpet = HPET.lock();
 
-        // Allocate a new timer ID and create a new timer instance
-        let mut timer = {
-            let base = hpet.area.base();
-            let id = hpet.timer_ids.allocate().map_err(|_| TimerError::NoTimerAvailable)?;
+        let mut config: TimerConfiguration =
+            unsafe { transmute(self.area.read(self.config_reg_offset())) };
 
-            // TODO: Remove this limitation someday by allocating IRQ lines on IOAPIC so we could
-            // allocate other timers than just 0
-            assert!(id.0 == 0, "HPET: Only timer 0 is supported currently");
-
-
-            Self {
-                area: MmioArea::new(base),
-                id,
-            }
-        };
-
-        // Initialize the timer
-        unsafe {
-            timer.init(hpet, time, timer_mode)?;
+        if timer_mode == TimerMode::Periodic && config.periodic_int_capable() == false.into() {
+            return Err(TimerError::UnsupportedTimerMode);
         }
 
-        Ok(timer)
+        let cycles =
+            unsafe { hpet.area.read(ReadableRegs::MAIN_COUNTER_VALUE) + hpet.time_to_cycles(time) };
+
+        drop(hpet);
+
+        unsafe { self.area.write(self.comparator_reg_offset(), cycles) };
+
+        config.set_timer_type(timer_mode as u8);
+        config.set_int_type(TriggerMode::EdgeTriggered as u8);
+        config.set_int_enable(true.into());
+
+        unsafe {
+            self.area.write(self.config_reg_offset(), config.into());
+        }
+
+        Ok(())
     }
 
     /// Disable this specific timer (it just masks off the interrupts, so it's effectively disabled)
     fn set_disabled(&mut self, state: bool) {
-        let mut config: TimerConfiguration = unsafe { transmute(self.area.read(self.config_reg_offset())) };
+        let mut config: TimerConfiguration =
+            unsafe { transmute(self.area.read(self.config_reg_offset())) };
 
         config.set_int_enable((!state).into());
 

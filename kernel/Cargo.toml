@@ -13,7 +13,7 @@ utils = { path = "../utils" }
 macros = { path = "../macros" }
 
 [features]
-default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "pit", "hpet"]
+default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_bump", "mp", "hpet"]
 
 # x86_64 CPU vendors. Pick the one you intend to use.
 intel = []
