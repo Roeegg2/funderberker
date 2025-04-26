@@ -12,6 +12,7 @@
 #![reexport_test_harness_main = "test_main"]
 
 use core::time::Duration;
+use crate::dev::timer::Timer;
 
 mod boot;
 #[macro_use]
@@ -32,11 +33,10 @@ pub fn funderberker_main(rsdp: *const ()) {
     test_main();
 
     unsafe { crate::acpi::init(rsdp).expect("Failed to initialize ACPI") };
-
-    let mut pit = crate::dev::timer::pit::PIT.lock();
-
-    pit.init(Duration::from_millis(10000000), crate::dev::timer::pit::OperatingMode::SquareWaveGenerator)
-        .expect("Failed to initialize PIT timer");
+    
+    let pit = crate::dev::timer::pit::Pit::new(Duration::from_millis(100), crate::dev::timer::pit::OperatingMode::SoftwareTriggeredStrobe)
+        .expect("Failed to create PIT");
+    println!("PIT: {:?}", pit);
 
     unsafe {
         crate::arch::init_cores();

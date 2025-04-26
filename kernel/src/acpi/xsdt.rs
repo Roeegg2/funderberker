@@ -35,7 +35,7 @@ impl Xsdt {
                 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
                 Hpet::SIGNATURE => {
                     let hpet = unsafe { entry.cast::<Hpet>().as_ref().unwrap() };
-                    hpet.parse()?;
+                    hpet.init_hpet()?;
                 }
                 _ => {
                     log_warn!(

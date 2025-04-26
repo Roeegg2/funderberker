@@ -5,7 +5,7 @@ use core::mem::transmute;
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use crate::{
     arch::x86_64::{
-        cpu::{cli, rdmsr, wrmsr, Msr}, interrupts::InterruptVector, paging::{Entry, PageSize, PageTable}
+        cpu::{rdmsr, wrmsr, Msr}, paging::{Entry, PageSize, PageTable}
     },
     mem::{
         mmio::{MmioArea, Offsetable}, PhysAddr

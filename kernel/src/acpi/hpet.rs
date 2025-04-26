@@ -1,6 +1,6 @@
 use crate::{
-    arch::x86_64::{cpu::{cli, sti}, paging::{Entry, PageSize, PageTable}},
-    dev::timer::hpet::{self, TimerMode, TriggerMode},
+    arch::x86_64::paging::{Entry, PageSize, PageTable},
+    dev::timer::hpet,
     mem::PhysAddr,
 };
 
@@ -27,11 +27,12 @@ pub(super) struct Hpet {
 }
 
 impl Hpet {
-    pub fn parse(&self) -> Result<(), AcpiError> {
+    pub fn init_hpet(&self) -> Result<(), AcpiError> {
         unsafe { self.header.validate_checksum()? };
 
         let phys_addr = PhysAddr(self.base_addr.addr as usize);
         let virt_addr = phys_addr.add_hhdm_offset();
+
         // XXX: This might fuck things up very badly, since we're mapping without letting the
         // allocator know, but AFAIK the address the local APIC is mapped to never appears on the
         // memory map
@@ -47,7 +48,7 @@ impl Hpet {
             hpet::Hpet::init(virt_addr.into(), self.minimum_tick);
         }
 
-        println!("HPET");
+        log_info!("Configured HPET as timer");
 
         Ok(())
     }

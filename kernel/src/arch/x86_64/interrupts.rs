@@ -1,14 +1,14 @@
 //! Everything IDT and interrupts
 
 use core::{
-    arch::{asm, global_asm},
+    arch::{asm, global_asm, x86_64::__cpuid_count},
     mem::{size_of, transmute},
     ptr::from_ref,
 };
 
 use modular_bitfield::prelude::*;
 
-use crate::arch::x86_64::apic::lapic;
+use crate::arch::x86_64::apic::lapic::{self, LOCAL_APICS};
 
 use super::cpu::{cli, sti};
 
@@ -254,10 +254,13 @@ extern "C" fn vec_int_14() {
 #[unsafe(no_mangle)]
 extern "C" fn vec_int_60() {
     println!("GOT TIMER INTERRUPT!!!!");
+
+    // TODO: Keep this in a global variable or something instead of looking for it everytime
+    let this_apic_id = unsafe { (__cpuid_count(1, 0).ebx >> 24) & 0xff } as u32;
     unsafe {
         #[allow(static_mut_refs)]
-        // XXX: BAD CHANGE ME
-        lapic::LOCAL_APICS[0].signal_eoi()
+        let lapic = LOCAL_APICS.iter().find(|&lapic| lapic.apic_id() == this_apic_id).unwrap();
+        lapic.signal_eoi();
     };
 }
 

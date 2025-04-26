@@ -1,18 +1,13 @@
+//! An HPET driver
+
 use core::{mem::transmute, ptr, time::Duration};
 
 use modular_bitfield::prelude::*;
 use utils::id_allocator::{Id, IdAllocator};
 
-use crate::{mem::mmio::{MmioArea, Offsetable}, sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard}};
+use crate::{arch::x86_64::{apic::ioapic, interrupts}, mem::mmio::{MmioArea, Offsetable}, sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard}};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum HpetError {
-    NoFreeTimer,
-    NoSuchTimer,
-    UnsupportedTimerMode,
-    InvalidTimePeriod,
-    UnusedTimer,
-}
+use super::{Timer, TimerError};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TriggerMode {
@@ -86,7 +81,7 @@ struct TimerFsbInterruptRoute {
 }
 
 // NOTE: I could make this a ZST, but I don't think it's worth the trouble
-pub struct Timer {
+pub struct HpetTimer {
     area: MmioArea<usize, usize, u64>,
     id: Id,
 }
@@ -98,43 +93,32 @@ pub struct Hpet {
     timer_ids: IdAllocator,
 }
 
-// XXX: THIS IS DEFINITELY NOT SAFE TO DO, SINCE IT'S NOT ALWAYS MAPPED ON THE OTHER CORES
-unsafe impl Send for Hpet {}
-unsafe impl Sync for Hpet {}
-
 // TODO: Move this out of here
 const NANO_TO_FEMTOSEC: u128 = 1_000_000;
 
-impl ReadableRegs {
-    const GENERAL_CAPABILITIES: usize = 0x0;
-    const GENERAL_CONFIGURATION: usize = 0x10;
-    const GENERAL_INTERRUPT_STATUS: usize = 0x20;
-    const MAIN_COUNTER_VALUE: usize = 0xf0;
-}
 
-impl WriteableRegs {
-    const GENERAL_CONFIGURATION: usize = 0x10;
-    const GENERAL_INTERRUPT_STATUS: usize = 0x20;
-    const MAIN_COUNTER_VALUE: usize = 0xf0;
-}
-
-pub static HPET: SpinLock<Hpet> = SpinLock::new(Hpet::DEFAULT());
-
-impl Hpet {
-    const MAX_TIMER_AMOUNT: u64 = 32;
-
-    const fn DEFAULT() -> Self {
-        Self {
+static HPET: SpinLock<Hpet> = SpinLock::new(Hpet {
             area: MmioArea::new(ptr::dangling_mut()),
             main_clock_period: 0,
             minimum_tick: 0,
             timer_ids: IdAllocator::uninit(),
-        }
-    }
+        });
 
+impl Hpet {
+    /// The maximum amount of timers supported by the HPET
+    ///
+    /// NOTE: This is not a guarantee, but a limit. The hardware might have less (usually it has 3)
+    const MAX_TIMER_AMOUNT: u64 = 32;
+
+    /// Converts the time to cycles.
+    ///
+    /// IMPORATANT NODE: If the time is not a multiple of the main clock period, it will be rounded
+    /// up to the next multiple of the main clock period.
     #[inline]
     fn time_to_cycles(&self, time: Duration) -> u64 {
-        ((time.as_nanos() * NANO_TO_FEMTOSEC) / (self.main_clock_period as u128)) as u64
+        let diff = (time.as_nanos() * NANO_TO_FEMTOSEC) % (self.main_clock_period as u128);
+
+        (((time.as_nanos() * NANO_TO_FEMTOSEC) + diff) / (self.main_clock_period as u128)) as u64
     }
 
     // TODO: Possibly support other interrupt routing methods as well?
@@ -174,13 +158,18 @@ impl Hpet {
         
         unsafe {
             // Sanity disable the HPET before we do anything
-            hpet.set_disable(true);
+            hpet.set_disabled(true);
             // Set and configure the interrupt routing
             hpet.set_interrupt_routing();
             // Reset the main counter value to a known state
             hpet.area.write(WriteableRegs::MAIN_COUNTER_VALUE, 0);
             // Enable the HPET
-            hpet.set_disable(false);
+            hpet.set_disabled(false);
+        }
+
+        unsafe {
+            ioapic::set_disabled(interrupts::PIT_IRQ, false)
+                .expect("Failed to set PIT IRQ disabled");
         }
     }
 
@@ -221,7 +210,7 @@ impl Hpet {
     ///
     /// SAFETY: This function is unsafe because disabling while the HPET is in use can be UB.
     #[inline]
-    pub unsafe fn set_disable(&mut self, state: bool) {
+    pub unsafe fn set_disabled(&mut self, state: bool) {
         let mut config: GeneralConfiguration =
             unsafe { transmute(self.area.read(ReadableRegs::GENERAL_CONFIGURATION)) };
 
@@ -234,18 +223,14 @@ impl Hpet {
     }
 }
 
-impl Timer {
+impl HpetTimer {
     /// Initialize the timer with the given `time `and `timer_mode`
-    unsafe fn init<'a>(&mut self, hpet: SpinLockGuard<'a, Hpet>, time: Duration, timer_mode: TimerMode) -> Result<(), HpetError> {
+    unsafe fn init<'a>(&mut self, hpet: SpinLockGuard<'a, Hpet>, time: Duration, timer_mode: TimerMode) -> Result<(), TimerError> {
         let mut config: TimerConfiguration = unsafe { transmute(self.area.read(self.config_reg_offset())) };
 
         if timer_mode == TimerMode::Periodic && config.periodic_int_capable() == false.into() {
-            return Err(HpetError::UnsupportedTimerMode);
+            return Err(TimerError::UnsupportedTimerMode);
         }
-
-        println!("these are the cycles: {:?}", unsafe {
-            hpet.area.read(ReadableRegs::MAIN_COUNTER_VALUE)
-        });
 
         let cycles = unsafe {
             hpet.area.read(ReadableRegs::MAIN_COUNTER_VALUE) + hpet.time_to_cycles(time)
@@ -254,7 +239,6 @@ impl Timer {
         drop(hpet);
 
         unsafe {self.area.write(self.comparator_reg_offset(), cycles)};
-
 
         config.set_timer_type(timer_mode as u8);
         config.set_int_type(TriggerMode::EdgeTriggered as u8);
@@ -265,41 +249,6 @@ impl Timer {
         }
 
         Ok(())
-    }
-
-    /// Allocate a new timer
-    #[must_use]
-    pub fn new(time: Duration, timer_mode: TimerMode) -> Result<Self, HpetError> {
-        let mut hpet = HPET.lock();
-
-        let mut timer = {
-            let base = hpet.area.base();
-            let id = hpet.timer_ids.allocate().map_err(|_| HpetError::NoFreeTimer)?;
-
-            println!("HPET: Allocated timer ID: {}", id.0);
-
-            Self {
-                area: MmioArea::new(base),
-                id,
-            }
-        };
-
-        unsafe {
-            timer.init(hpet, time, timer_mode)?;
-        }
-
-        Ok(timer)
-    }
-
-    /// Disable this specific timer (it just masks off the interrupts, so it's effectively disabled)
-    unsafe fn set_disable(&mut self, state: bool) {
-        let mut config: TimerConfiguration = unsafe { transmute(self.area.read(self.config_reg_offset())) };
-
-        config.set_int_enable((!state).into());
-
-        unsafe {
-            self.area.write(self.config_reg_offset(), config.into());
-        }
     }
 
     /// Get the timer's `TimerConfiguration` register address
@@ -327,11 +276,52 @@ impl Timer {
     }
 }
 
-impl Drop for Timer {
-    fn drop(&mut self) {
+impl Timer for HpetTimer {
+    type TimerMode = TimerMode;
+
+    /// Allocate a new timer
+    fn new(time: Duration, timer_mode: Self::TimerMode) -> Result<Self, TimerError> {
+        let mut hpet = HPET.lock();
+
+        // Allocate a new timer ID and create a new timer instance
+        let mut timer = {
+            let base = hpet.area.base();
+            let id = hpet.timer_ids.allocate().map_err(|_| TimerError::NoTimerAvailable)?;
+
+            // TODO: Remove this limitation someday by allocating IRQ lines on IOAPIC so we could
+            // allocate other timers than just 0
+            assert!(id.0 == 0, "HPET: Only timer 0 is supported currently");
+
+
+            Self {
+                area: MmioArea::new(base),
+                id,
+            }
+        };
+
+        // Initialize the timer
         unsafe {
-            self.set_disable(true);
+            timer.init(hpet, time, timer_mode)?;
         }
+
+        Ok(timer)
+    }
+
+    /// Disable this specific timer (it just masks off the interrupts, so it's effectively disabled)
+    fn set_disabled(&mut self, state: bool) {
+        let mut config: TimerConfiguration = unsafe { transmute(self.area.read(self.config_reg_offset())) };
+
+        config.set_int_enable((!state).into());
+
+        unsafe {
+            self.area.write(self.config_reg_offset(), config.into());
+        }
+    }
+}
+
+unsafe impl SpinLockDropable for HpetTimer {
+    fn custom_unlock(&mut self) {
+        self.set_disabled(true);
     }
 }
 
@@ -340,5 +330,24 @@ impl Offsetable for usize {
         self
     }
 }
+
+impl ReadableRegs {
+    const GENERAL_CAPABILITIES: usize = 0x0;
+    const GENERAL_CONFIGURATION: usize = 0x10;
+    const GENERAL_INTERRUPT_STATUS: usize = 0x20;
+    const MAIN_COUNTER_VALUE: usize = 0xf0;
+}
+
+impl WriteableRegs {
+    const GENERAL_CONFIGURATION: usize = 0x10;
+    const GENERAL_INTERRUPT_STATUS: usize = 0x20;
+    const MAIN_COUNTER_VALUE: usize = 0xf0;
+}
+
+unsafe impl Send for Hpet {}
+unsafe impl Sync for Hpet {}
+
+unsafe impl Send for HpetTimer {}
+unsafe impl Sync for HpetTimer {}
 
 unsafe impl SpinLockDropable for Hpet {}
