@@ -3,6 +3,9 @@
 use core::arch::asm;
 use core::num::NonZero;
 
+use alloc::vec::Vec;
+use limine::memory_map::Entry;
+use limine::memory_map::EntryType;
 use limine::BaseRevision;
 use limine::memory_map;
 use limine::paging;
@@ -19,8 +22,8 @@ use crate::arch::{self, BASIC_PAGE_SIZE, x86_64};
 #[cfg(feature = "framebuffer")]
 use crate::dev::framebuffer;
 use crate::dev::serial;
+use crate::mem::pmm::PmmAllocator;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
-use crate::println;
 
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.
@@ -93,12 +96,10 @@ unsafe extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     #[cfg(feature = "serial")]
-    {
-        #[allow(static_mut_refs)]
-        unsafe {
-            serial::SERIAL_WRITER.init().unwrap()
-        };
-    }
+    #[allow(static_mut_refs)]
+    unsafe {
+        serial::SERIAL_WRITER.init().unwrap()
+    };
     #[cfg(feature = "framebuffer")]
     {
         let framebuffer_reponse = FRAMEBUFFER_REQUEST
@@ -156,26 +157,41 @@ unsafe extern "C" fn kmain() -> ! {
         .unwrap()
     };
 
-    crate::funderberker_main(rsdp.address());
+    unsafe { crate::acpi::init(rsdp.address()).expect("Failed to initialize ACPI") };
 
-    hcf();
+    // XXX: As I've stated in the comment in the function below, this is technically bad since
+    // there is a period of time our stack is marked as free, but during that time period nothing
+    // gets allocated, so these pages will stay intact and so it shouldn't be a problem. 
+    unsafe { free_bootloader_reclaimable(mem_map.entries()) };
+    
+    unsafe { arch::migrate_to_new_stack() };
+
+    crate::funderberker_main();
 }
 
-#[panic_handler]
-pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    use crate::println;
 
-    println!("{}", info);
-    hcf();
-}
+/// Free all `BOOTLOADER_RECLAIMABLE`` memory regions
+/// 
+/// NOTE: We need to make sure we call this only after we transitioned to our own paging AND setup
+/// the stack for the BSP. Otherwise, this will lead to us to freeing memory that we are still
+/// using.
+unsafe fn free_bootloader_reclaimable(mem_map: &[&memory_map::Entry]) {
+    // XXX: I think doing it this way is OK since I doubt anything will get allocated while doing
+    // this, but it's still a bit sketchy.
+    let pmm = pmm::get();
+    for entry in mem_map {
+        if entry.entry_type == EntryType::BOOTLOADER_RECLAIMABLE {
+            let page_count = entry.length as usize / BASIC_PAGE_SIZE;
 
-fn hcf() -> ! {
-    loop {
-        unsafe {
-            #[cfg(target_arch = "x86_64")]
-            asm!("hlt");
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-            asm!("wfi");
+            // NOTE: We are doing this in a loop, since the buddy allocator only frees pages in blocks,
+            // and this might not be aligned.
+            // This code gets executed once during boot, so it's not worth optimizing
+            for i in 0..page_count {
+                unsafe {
+                pmm.free(PhysAddr(entry.base as usize + (i * BASIC_PAGE_SIZE)), NonZero::new_unchecked(1)).unwrap();
+                }
+            }
         }
     }
 }
+

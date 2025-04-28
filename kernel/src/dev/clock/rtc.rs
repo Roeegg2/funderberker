@@ -1,14 +1,12 @@
-use core::arch::x86_64::__cpuid_count;
-
 use utils::sanity_assert;
 
 use crate::{
     arch::x86_64::{
-        apic::{ioapic, lapic::LOCAL_APICS},
-        interrupts::{self, PIT_IRQ, RTC_IRQ},
+        apic::ioapic,
+        interrupts::{self, RTC_IRQ},
     },
     dev::cmos::{self, CmosIndex, NmiStatus},
-    sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard},
+    sync::spinlock::{SpinLock, SpinLockDropable},
 };
 
 pub static RTC: SpinLock<Rtc> = SpinLock::new(Rtc {});
@@ -32,6 +30,7 @@ impl Rtc {
 
         interrupts::do_inside_interrupts_disabled_window(|| {
             let status_b = cmos::read_cmos(CmosIndex::StatusB, nmi_status);
+
             cmos::write_cmos(CmosIndex::StatusB, status_b | 0x40, nmi_status);
         })
     }
@@ -51,22 +50,6 @@ impl Rtc {
         32768 >> (rate - 1)
     }
 
-    #[unsafe(no_mangle)]
-    pub unsafe fn handle_rtc_interrupt() {
-        cmos::read_cmos(CmosIndex::StatusC, NmiStatus::Enabled);
-
-        // TODO: Keep this in a global variable or something instead of looking for it everytime
-        let this_apic_id = unsafe { (__cpuid_count(1, 0).ebx >> 24) & 0xff } as u32;
-        unsafe {
-            #[allow(static_mut_refs)]
-            let lapic = LOCAL_APICS
-                .iter()
-                .find(|&lapic| lapic.apic_id() == this_apic_id)
-                .unwrap();
-            lapic.signal_eoi();
-        };
-    }
-
     #[inline]
     fn set_disabled(&mut self, status: bool) {
         unsafe {
@@ -76,10 +59,10 @@ impl Rtc {
     }
 }
 
-unsafe impl SpinLockDropable for Rtc {
+impl SpinLockDropable for Rtc {
     fn custom_unlock(&mut self) {
         println!("RTC: Unlocking RTC");
-        self.set_disabled(true);
+        // self.set_disabled(true);
     }
 }
 

@@ -6,6 +6,7 @@ use crate::{
 
 use super::{AcpiError, AcpiTable, SdtHeader};
 
+/// The ACPI GAS (Generic Address Structure IIRC)
 #[repr(C, packed)]
 #[derive(Debug)]
 struct Addr {
@@ -16,6 +17,7 @@ struct Addr {
     addr: u64,
 }
 
+/// The HPET table structure
 #[repr(C)]
 #[derive(Debug)]
 pub(super) struct Hpet {

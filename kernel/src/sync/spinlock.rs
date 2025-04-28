@@ -1,14 +1,15 @@
 //! A simple spinlock implementation
 
 use core::cell::UnsafeCell;
-use core::hint;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
+
+use utils::spin_until;
 
 /// A trait for types that can be used with the spinlock
 ///
 /// SAFETY: This trait is unsafe because it CANNOT be implemented for non custom types.
-pub unsafe trait SpinLockDropable: Send + Sync {
+pub trait SpinLockDropable: Send + Sync {
     /// Additional cleanup code for the spinlock, that will be called **BEFORE** the lock is
     /// released.
     /// NOTE: There is no need to release the lock here, it will be released for you. This simply an option for when you need to
@@ -54,14 +55,7 @@ where
     /// Spin until you can lock the spinlock, then lock it
     #[inline]
     pub fn lock(&self) -> SpinLockGuard<T> {
-        loop {
-            // Tell the processor we're spinning so it can optimize some stuff
-            hint::spin_loop();
-
-            if !self.lock.swap(true, Ordering::Acquire) {
-                break;
-            }
-        }
+        spin_until!(!self.lock.swap(true, Ordering::Acquire));
 
         SpinLockGuard {
             lock: self,
@@ -72,16 +66,6 @@ where
     /// Release the spinlock
     unsafe fn unlock(&self) {
         self.lock.store(false, Ordering::Release);
-    }
-
-    // #[inline]
-    // fn undisciplined_lock(&self) -> Option<SpinLockGuard<T>> {
-    //
-    // }
-
-    #[inline]
-    pub fn is_locked(&self) -> bool {
-        self.lock.load(Ordering::Relaxed)
     }
 }
 
@@ -100,7 +84,6 @@ where
     }
 }
 
-// Deref to access the underlying data
 impl<T> Deref for SpinLockGuard<'_, T>
 where
     T: SpinLockDropable,
@@ -119,3 +102,7 @@ where
         self.data
     }
 }
+
+// ---- IMPLEMENTING SpinLockDropable for some primitive types ----
+
+impl SpinLockDropable for () {}

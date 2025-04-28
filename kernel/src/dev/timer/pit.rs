@@ -91,7 +91,7 @@ pub struct Pit(u8);
 impl Timer for Pit {
     type TimerMode = OperatingMode;
 
-    fn start(
+    fn configure(
         &mut self,
         period: Duration,
         operating_mode: Self::TimerMode,
@@ -108,8 +108,6 @@ impl Timer for Pit {
             unsafe {
                 self.write(command, divisor);
             }
-
-            self.set_disabled(false);
 
             Ok(())
         })
@@ -164,7 +162,7 @@ impl Pit {
     }
 }
 
-unsafe impl SpinLockDropable for Pit {
+impl SpinLockDropable for Pit {
     fn custom_unlock(&mut self) {
         self.set_disabled(true);
     }

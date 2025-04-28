@@ -49,6 +49,7 @@ pub enum PagingError {
     MissingPagingTable(u8),
 }
 
+/// The possible page sizes that can be used
 #[derive(Debug, Clone, Copy)]
 pub enum PageSize {
     Size4KB = 0,

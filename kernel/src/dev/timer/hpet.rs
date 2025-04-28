@@ -6,7 +6,6 @@ use modular_bitfield::prelude::*;
 use utils::id_allocator::{Id, IdAllocator};
 
 use crate::{
-    arch::x86_64::{apic::ioapic, interrupts},
     mem::mmio::{MmioArea, Offsetable},
     sync::spinlock::{SpinLock, SpinLockDropable},
 };
@@ -85,6 +84,7 @@ struct TimerFsbInterruptRoute {
 }
 
 // NOTE: I could make this a ZST, but I don't think it's worth the trouble
+/// A HPET specific timer
 pub struct HpetTimer {
     area: MmioArea<usize, usize, u64>,
     id: Id,
@@ -100,7 +100,7 @@ pub struct Hpet {
 // TODO: Move this out of here
 const NANO_TO_FEMTOSEC: u128 = 1_000_000;
 
-static HPET: SpinLock<Hpet> = SpinLock::new(Hpet {
+pub static HPET: SpinLock<Hpet> = SpinLock::new(Hpet {
     area: MmioArea::new(ptr::dangling_mut()),
     main_clock_period: 0,
     minimum_tick: 0,
@@ -115,10 +115,10 @@ impl Hpet {
 
     /// Converts the time to cycles.
     ///
-    /// IMPORATANT NODE: If the time is not a multiple of the main clock period, it will be rounded
+    /// IMPORTANT NODE: If the time is not a multiple of the main clock period, it will be rounded
     /// up to the next multiple of the main clock period.
     #[inline]
-    fn time_to_cycles(&self, time: Duration) -> u64 {
+    pub const fn time_to_cycles(&self, time: Duration) -> u64 {
         let diff = (time.as_nanos() * NANO_TO_FEMTOSEC) % (self.main_clock_period as u128);
 
         (((time.as_nanos() * NANO_TO_FEMTOSEC) + diff) / (self.main_clock_period as u128)) as u64
@@ -246,6 +246,44 @@ impl HpetTimer {
         })
     }
 
+    /// Check if the timer has fired
+    ///
+    /// **NOTE:** This is only valid for timers where the interrupts are level triggered.
+    /// For edge triggered interrupts, the status bit will always be set to `0` and so `false` will be
+    /// returned.
+    #[inline]
+    pub fn get_status(&self) -> bool {
+        unsafe {
+            let read = self.area.read(ReadableRegs::GENERAL_INTERRUPT_STATUS) & (1 << self.id.0);
+            // If the timer has fired, we write 1 to clear the status bit
+            if read != 0 {
+                self.area
+                    .write(WriteableRegs::GENERAL_INTERRUPT_STATUS, read);
+
+                return true;
+            }
+
+            false
+        }
+    }
+
+    /// Read the main counter value
+    #[inline]
+    pub fn read_main_counter(&self) -> u64 {
+        unsafe { self.area.read(ReadableRegs::MAIN_COUNTER_VALUE) }
+    }
+
+    // /// Resets the main counter value to 0
+    // ///
+    // /// SAFETY: This function is unsafe because it can mess up the other timers waiting time, so
+    // /// make sure no other timers are being used before using this.
+    // #[inline]
+    // pub unsafe fn reset_main_counter(&self) {
+    //     unsafe {
+    //         self.area.write(WriteableRegs::MAIN_COUNTER_VALUE, 0);
+    //     }
+    // }
+
     /// Get the timer's `TimerConfiguration` register address
     #[inline]
     const fn config_reg_offset(&self) -> usize {
@@ -274,7 +312,7 @@ impl HpetTimer {
 impl Timer for HpetTimer {
     type TimerMode = TimerMode;
 
-    fn start<'a>(&mut self, time: Duration, timer_mode: TimerMode) -> Result<(), TimerError> {
+    fn configure(&mut self, time: Duration, timer_mode: TimerMode) -> Result<u64, TimerError> {
         let hpet = HPET.lock();
 
         let mut config: TimerConfiguration =
@@ -292,14 +330,14 @@ impl Timer for HpetTimer {
         unsafe { self.area.write(self.comparator_reg_offset(), cycles) };
 
         config.set_timer_type(timer_mode as u8);
-        config.set_int_type(TriggerMode::EdgeTriggered as u8);
+        config.set_int_type(TriggerMode::LevelTriggered as u8);
         config.set_int_enable(true.into());
 
         unsafe {
             self.area.write(self.config_reg_offset(), config.into());
         }
 
-        Ok(())
+        Ok(cycles)
     }
 
     /// Disable this specific timer (it just masks off the interrupts, so it's effectively disabled)
@@ -315,7 +353,7 @@ impl Timer for HpetTimer {
     }
 }
 
-unsafe impl SpinLockDropable for HpetTimer {
+impl SpinLockDropable for HpetTimer {
     fn custom_unlock(&mut self) {
         self.set_disabled(true);
     }
@@ -346,4 +384,4 @@ unsafe impl Sync for Hpet {}
 unsafe impl Send for HpetTimer {}
 unsafe impl Sync for HpetTimer {}
 
-unsafe impl SpinLockDropable for Hpet {}
+impl SpinLockDropable for Hpet {}

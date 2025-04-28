@@ -12,7 +12,13 @@
 #![reexport_test_harness_main = "test_main"]
 #![feature(stmt_expr_attributes)]
 
-use dev::timer::{self, Timer};
+use core::arch::asm;
+
+use dev::timer::{
+    self,
+    apic::{self, ApicTimer},
+    hpet::HpetTimer,
+};
 
 mod boot;
 #[macro_use]
@@ -27,39 +33,41 @@ mod sync;
 #[cfg(test)]
 mod test;
 
+#[inline(always)]
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
-pub fn funderberker_main(rsdp: *const ()) {
+pub fn funderberker_main() -> ! {
     #[cfg(test)]
     test_main();
 
-    unsafe { crate::acpi::init(rsdp).expect("Failed to initialize ACPI") };
+    timer::enable_secondary_timer();
 
-    timer::init_secondary_timer();
-
-    // let mut pit = dev::timer::pit::PIT.lock();
-    // pit.start(
-    //     core::time::Duration::from_millis(1),
-    //     dev::timer::pit::OperatingMode::InterruptOnTerminalCount,
-    // )
-    // .unwrap();
-
-    // let mut timer = dev::timer::hpet::HpetTimer::new().unwrap();
-    // timer.start(core::time::Duration::from_secs(1), dev::timer::hpet::TimerMode::Periodic).unwrap();
-    // timer.start(core::time::Duration::from_millis(1), dev::timer::pit::OperatingMode::_RateGenerator2).unwrap();
-
-    // let mut timer = dev::timer::apic::ApicTimer::new();
-    // timer.start(core::time::Duration::from_millis(1), dev::timer::apic::TimerMode::Periodic).unwrap();
-
-    let mut rtc = dev::clock::rtc::RTC.lock();
-    rtc.new_periodic_interrupts(dev::cmos::NmiStatus::Enabled);
-
-    println!("Timer started!");
-
-    loop {}
+    // let timer = ApicTimer::new();
 
     unsafe {
         crate::arch::init_cores();
     }
 
     log_info!("Starting Funderberker main operation!");
+
+    hcf();
+}
+
+#[panic_handler]
+pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    use crate::println;
+
+    println!("{}", info);
+
+    hcf();
+}
+
+pub fn hcf() -> ! {
+    loop {
+        unsafe {
+            #[cfg(target_arch = "x86_64")]
+            asm!("hlt");
+            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+            asm!("wfi");
+        }
+    }
 }

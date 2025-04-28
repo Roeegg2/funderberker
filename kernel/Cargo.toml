@@ -13,7 +13,7 @@ utils = { path = "../utils" }
 macros = { path = "../macros" }
 
 [features]
-default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_bump", "mp", "hpet"]
+default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "hpet"]
 
 # x86_64 CPU vendors. Pick the one you intend to use.
 intel = []
@@ -38,11 +38,9 @@ pmm_buddy = []
 mp = []
 
 # Choose which general timer to use.
-# If the HPET feature is enabled and the HPET is found during boot, the system will use HPET.
-# Otherwise if the PIT feature is enabled and the PIT is found the system will use PIT.
-# Otherwise, the system will error out. So you must enable one of them (or both).
-hpet = []
-pit = []
+# HPET is prefered over PIT + RTC, but some systems may not support it
+hpet = [] # use HPET
+legacy = [] # use PIT + RTC
 
 
 [profile.dev]

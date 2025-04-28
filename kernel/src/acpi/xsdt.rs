@@ -1,9 +1,7 @@
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 use crate::acpi::hpet::Hpet;
 
-use crate::
-     mem::PhysAddr
-;
+use crate::mem::PhysAddr;
 
 use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};
 

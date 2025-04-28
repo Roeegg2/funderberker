@@ -116,8 +116,6 @@ impl IoApic {
 
         ret.gsi_count = max_gsi as u32 + 1;
 
-        println!("this is the max gsi: {}", ret.gsi_count);
-
         ret
     }
 

@@ -191,13 +191,9 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
             // bitmap
             #[allow(static_mut_refs)]
             for entry in mem_map {
-                match entry.entry_type {
-                    // XXX: Not sure about the BOOTLOADER_RECLAIMABLE
-                    memory_map::EntryType::USABLE => {
+                if entry.entry_type == memory_map::EntryType::USABLE {
                         set_for_mem_map_entry(entry.base as usize, entry.length as usize)
                             .for_each(|page_id| BUMP_ALLOCATOR.0.unset(page_id));
-                    }
-                    _ => (),
                 }
             }
 

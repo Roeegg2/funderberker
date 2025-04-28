@@ -1,17 +1,12 @@
 //! Everything IDT and interrupts
 
 use core::{
-    arch::{asm, global_asm, x86_64::__cpuid_count},
+    arch::asm,
     mem::{size_of, transmute},
     ptr::from_ref,
 };
 
 use modular_bitfield::prelude::*;
-
-use crate::{
-    arch::x86_64::apic::lapic::{self, LOCAL_APICS},
-    dev::clock::rtc,
-};
 
 use super::cpu::{cli, sti};
 
@@ -61,7 +56,7 @@ enum Present {
     Present = 1,
 }
 
-/// Represents an entry in the(smute(0_u128) }))))))))))))))))))))))))))));
+/// Represents an entry in the IDT
 impl GateDescriptor {
     const DEFAULT: Self = unsafe { transmute(0_u128) };
 
@@ -215,7 +210,6 @@ unsafe extern "C" {
     fn stub_vec_33();
     fn stub_vec_34();
     fn stub_vec_254();
-
 }
 
 pub type Irq = u8;
@@ -225,6 +219,7 @@ pub type InterruptVector = u8;
 pub const PIT_IRQ: u8 = 0x0;
 pub const RTC_IRQ: u8 = 0x8;
 
+/// Convert an IRQ to the matching interrupt vector
 pub const fn irq_to_vector(irq: Irq) -> InterruptVector {
     match irq {
         PIT_IRQ => 33,
@@ -233,6 +228,7 @@ pub const fn irq_to_vector(irq: Irq) -> InterruptVector {
     }
 }
 
+/// Check if the `CLI` flag is set
 pub fn check_interrupts_disabled() -> bool {
     let flags: u64;
     unsafe {

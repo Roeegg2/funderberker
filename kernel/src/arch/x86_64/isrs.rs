@@ -30,7 +30,7 @@ print_n_die!(handler_vec_10, 10);
 print_n_die!(handler_vec_11, 11);
 print_n_die!(handler_vec_12, 12);
 print_n_die!(handler_vec_13, 13);
-print_n_die!(handler_vec_14, 14);
+// print_n_die!(handler_vec_14, 14);
 print_n_die!(handler_vec_15, 15);
 print_n_die!(handler_vec_16, 16);
 print_n_die!(handler_vec_17, 17);
@@ -48,6 +48,14 @@ print_n_die!(handler_vec_28, 28);
 print_n_die!(handler_vec_29, 29);
 print_n_die!(handler_vec_30, 30);
 print_n_die!(handler_vec_31, 31);
+
+#[unsafe(no_mangle)]
+fn handler_vec_14() {
+    let page = read_cr!(cr3);
+
+    println!("Exception: {}", EXCEPTION_MESSAGES[14]);
+    println!("At physical address: {:#x}", page);
+}
 
 /// List of error messages for each exception
 static EXCEPTION_MESSAGES: &[&str] = &[
@@ -164,7 +172,7 @@ fn handler_vec_32() {
 
 #[unsafe(no_mangle)]
 fn handler_vec_33() {
-    println!("PIT/HPET TIMER INTERRUPT!!!!");
+    // println!("PIT/HPET TIMER INTERRUPT!!!!");
 }
 
 #[unsafe(no_mangle)]

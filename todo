@@ -1,2 +1,3 @@
 1. get rid of the ugly unwraps
 2. implement whatever you need from std by myself, so we can get rid of alloc crate
+3. setup a custom stack to be able to free limine reclaimable memory

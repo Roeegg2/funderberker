@@ -83,7 +83,7 @@ mod tests {
         let id2 = allocator.allocate().unwrap();
         assert_eq!(id2.0, 1);
 
-        allocator.free(id1).unwrap();
+        unsafe {allocator.free(id1).unwrap()};
 
         let id3 = allocator.allocate().unwrap();
         assert_eq!(id3.0, 0);

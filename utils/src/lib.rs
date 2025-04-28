@@ -9,6 +9,9 @@ pub mod id_allocator;
 #[cfg(not(test))]
 extern crate alloc;
 
+/// Returns the maximum of two values (potentially) at compile time.
+///
+/// NOTE: This requires the 2 operands to be able to be evaluated at compile time.
 #[macro_export]
 macro_rules! const_max {
     ($a:expr, $b:expr) => {
@@ -16,13 +19,24 @@ macro_rules! const_max {
     };
 }
 
-// TODO: Rework this
+/// Returns the minimum of two values (potentially) at compile time.
+///
+/// NOTE: This requires the 2 operands to be able to be evaluated at compile time.
 #[macro_export]
-macro_rules! sum_fields {
-    ($struct:ident { $($field:ident),* }) => {
-        impl $struct {
-            pub fn sum_fields(&self) -> usize {
-                0 $(+ self.$field as usize)*
+macro_rules! const_min {
+    ($a:expr, $b:expr) => {
+        if $a < $b { $a } else { $b }
+    };
+}
+
+/// Spins until the given condition evaluates to `true`.
+#[macro_export]
+macro_rules! spin_until {
+    ($condition:expr) => {
+        loop {
+            core::hint::spin_loop();
+            if $condition {
+                break;
             }
         }
     };

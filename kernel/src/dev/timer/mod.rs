@@ -32,15 +32,17 @@ pub enum TimerError {
 /// leaking", otherwise the timer couldn't be used in the future.
 pub trait Timer: Sized {
     type TimerMode: Copy + Clone;
-    /// Setup and start the timer
-    fn start(&mut self, time: Duration, timer_mode: Self::TimerMode) -> Result<(), TimerError>;
+    /// Configure and setup the timer, and return the amount of clock ticks that the timer will
+    /// tick
+    fn configure(&mut self, time: Duration, timer_mode: Self::TimerMode)
+    -> Result<u64, TimerError>;
 
     /// Disable/enable the timer
     fn set_disabled(&mut self, disable: bool);
 }
 
 /// Initializes either HPET or the PIT
-pub fn init_secondary_timer() {
+pub fn enable_secondary_timer() {
     unsafe {
         ioapic::set_disabled(interrupts::PIT_IRQ, false).expect("Failed to set PIT IRQ disabled");
     }

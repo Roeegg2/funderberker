@@ -67,7 +67,6 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
         Ok(addr)
     }
 
-    /// Checks if the passed `addr` is free and can be allocated
     fn is_page_free(
         &self,
         addr: PhysAddr,
@@ -91,7 +90,6 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
         Ok(false)
     }
 
-    /// Tries to free the passed `addr` physical address of the passed `page_count` size
     unsafe fn free(
         &mut self,
         addr: PhysAddr,
@@ -100,6 +98,7 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
         page_count = page_count
             .checked_next_power_of_two()
             .ok_or(PmmError::NoAvailableBlock)?;
+
         if self.is_page_free(addr, page_count)? {
             return Err(PmmError::FreeOfAlreadyFree);
         }
@@ -119,9 +118,7 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
             unsafe { BUDDY_ALLOCATOR.init_freelist(mem_map, total_page_count) };
 
         for entry in mem_map.iter() {
-            match entry.entry_type {
-                // Mark the USEABLE entries as free
-                EntryType::USABLE => {
+            if entry.entry_type == EntryType::USABLE {
                     let page_count = entry.length as usize / BASIC_PAGE_SIZE;
                     let addr = PhysAddr(entry.base as usize);
                     unsafe {
@@ -129,8 +126,6 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
                         BUDDY_ALLOCATOR
                             .break_into_buckets_n_free(addr, NonZero::new(page_count).unwrap());
                     };
-                }
-                _ => continue,
             }
         }
 

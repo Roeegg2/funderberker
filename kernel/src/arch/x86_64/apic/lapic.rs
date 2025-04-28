@@ -6,10 +6,9 @@ use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity,
 use crate::{
     arch::x86_64::{
         cpu::{Msr, rdmsr, wrmsr},
-        interrupts,
         paging::{Entry, PageSize, PageTable},
     },
-    dev::timer::apic::TimerMode,
+    dev::timer::apic::{TimerDivisor, TimerMode},
     mem::{
         PhysAddr,
         mmio::{MmioArea, Offsetable},
@@ -263,14 +262,24 @@ impl LocalApic {
         }
     }
 
-    /// Reads and calculates the divide value for the APIC timer frequency
-    pub fn get_timer_divide_config(&self) -> u8 {
+    /// Reads and calculates the frequency divider
+    pub fn get_timer_divide_config(&self) -> TimerDivisor {
         unsafe {
             let ret = self.area.read(ReadableRegs::TimerDivideConfig);
             // Bits 0,1 and 3
             let pow = ((ret & 0b1000) >> 1) | (ret & 0b11);
 
-            2_usize.pow(pow) as u8
+            // SAFETY: This is OK, we can't get a value over 0b111. All possible values are valid
+            transmute(pow as u8)
+        }
+    }
+
+    /// Set the timer's frequency divider
+    pub fn set_timer_divider_config(&self, divider: TimerDivisor) {
+        let val = (divider as u32) & 0b11 | ((divider as u32) << 1);
+
+        unsafe {
+            self.area.write(WriteableRegs::TimerDivideConfig, val);
         }
     }
 
@@ -298,6 +307,18 @@ impl LocalApic {
             lvtt.set_mask(disable.into());
             self.area.write(WriteableRegs::LvtTimer, lvtt.into());
         }
+    }
+
+    /// Read the timer's current count
+    #[inline]
+    pub fn read_current_timer_count(&self) -> u32 {
+        unsafe { self.area.read(ReadableRegs::TimerCurrentCount) }
+    }
+
+    /// Read the timer's initial count
+    #[inline]
+    pub fn read_initial_timer_count(&self) -> u32 {
+        unsafe { self.area.read(ReadableRegs::TimerInitialCount) }
     }
 
     /// Configure and send an inter-processor interrupt.
