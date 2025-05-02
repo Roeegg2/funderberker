@@ -3,9 +3,10 @@
 use super::{DeliveryMode, Destination};
 use crate::arch::x86_64::cpu::outb_8;
 use crate::arch::x86_64::interrupts;
-use crate::arch::x86_64::paging::{Entry, PageSize, PageTable};
+use crate::arch::x86_64::paging::{Entry, PageSize, PageTable, get_pml};
 use crate::mem::PhysAddr;
 use crate::mem::mmio::MmioCell;
+use crate::mem::vmm::map_page;
 use alloc::vec::Vec;
 use modular_bitfield::prelude::*;
 
@@ -180,23 +181,13 @@ impl RedirectionEntry {
 
 /// Adds an IO APIC to the global list of IO APICs
 pub unsafe fn add(phys_addr: PhysAddr, gsi_base: u32, apic_id: u8) {
-    // XXX: This might fuck things up very badly, since we're mapping without letting the
-    // allocator know
-    PageTable::map_page_specific(
-        phys_addr.add_hhdm_offset(),
-        phys_addr,
-        Entry::FLAG_P | Entry::FLAG_RW | Entry::FLAG_PCD,
-        PageSize::Size4KB,
-    )
-    .unwrap();
+    // SAFETY: This should be OK since we're mapping a physical address that is marked as
+    // reserved, so the kernel shouldn't be tracking it
+    let virt_addr = unsafe { map_page(phys_addr, Entry::FLAG_RW) };
 
     unsafe {
         #[allow(static_mut_refs)]
-        IO_APICS.push(IoApic::new(
-            phys_addr.add_hhdm_offset().into(),
-            gsi_base,
-            apic_id,
-        ))
+        IO_APICS.push(IoApic::new(virt_addr.into(), gsi_base, apic_id))
     };
 }
 

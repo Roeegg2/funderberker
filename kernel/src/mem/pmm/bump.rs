@@ -8,7 +8,6 @@ use limine::memory_map;
 use crate::arch::BASIC_PAGE_SIZE;
 use crate::boot::limine::get_page_count_from_mem_map;
 
-use super::super::{addr_to_page_id, page_id_to_addr};
 use super::{PhysAddr, PmmAllocator, PmmError};
 use utils::collections::static_bitmap::StaticBitmap;
 
@@ -43,7 +42,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
                 self.0.set(i + j);
             }
 
-            return Ok(PhysAddr(page_id_to_addr(i)));
+            return Ok(PhysAddr(i * BASIC_PAGE_SIZE));
         }
 
         Err(PmmError::NoAvailableBlock)
@@ -54,7 +53,11 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         addr: PhysAddr,
         page_count: NonZero<usize>,
     ) -> Result<(), super::PmmError> {
-        let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
+        let id = if addr.0 % BASIC_PAGE_SIZE != 0 {
+            return Err(PmmError::InvalidAlignment);
+        } else {
+            addr.0 / BASIC_PAGE_SIZE
+        };
 
         if (id + page_count.get() - 1) >= self.0.used_bits_count() {
             return Err(PmmError::OutOfBounds);
@@ -80,7 +83,11 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         addr: PhysAddr,
         page_count: NonZero<usize>,
     ) -> Result<(), super::PmmError> {
-        let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
+        let id = if addr.0 % BASIC_PAGE_SIZE != 0 {
+            return Err(PmmError::InvalidAlignment);
+        } else {
+            addr.0 / BASIC_PAGE_SIZE
+        };
 
         if (id + page_count.get() - 1) >= self.0.used_bits_count() {
             return Err(PmmError::OutOfBounds);
@@ -106,7 +113,11 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         addr: PhysAddr,
         page_count: NonZero<usize>,
     ) -> Result<bool, super::PmmError> {
-        let id = addr_to_page_id(addr.0).ok_or(PmmError::InvalidAddress)?;
+        let id = if addr.0 % BASIC_PAGE_SIZE != 0 {
+            return Err(PmmError::InvalidAlignment);
+        } else {
+            addr.0 / BASIC_PAGE_SIZE
+        };
 
         if id + page_count.get() >= self.0.used_bits_count() {
             return Err(PmmError::OutOfBounds);
@@ -128,7 +139,11 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         #[inline]
         unsafe fn set_for_mem_map_entry(base: usize, len: usize) -> core::ops::Range<usize> {
             {
-                let start_id = addr_to_page_id(base).unwrap();
+                let start_id = if base % BASIC_PAGE_SIZE != 0 {
+                    panic!("Base address is not page aligned");
+                } else {
+                    base / BASIC_PAGE_SIZE
+                };
                 // If the length is page aligned, set iterate over the next page as well.
                 // NOTE: This is OK, since this never happens with `USEABLE` or `BOOTLOADER_RECLAIMABLE`. And
                 // it's a must for allocating the page table, since it's almost always not page aligned
@@ -158,7 +173,9 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
             let bitmap = unsafe {
                 // Convert the block's physical address to VirtAddr using HHDM, then convert that
                 // to a valid pointer
+                // NOTE: Our own paging isn't setup yet, so we are just HHDM mapping
                 let bitmap_virt_addr = PhysAddr(bitmap_entry.base as usize).add_hhdm_offset();
+                // let bitmap_virt_addr = map_page(PhysAddr(bitmap_entry.base as usize), 1);
                 let ptr = bitmap_virt_addr.0 as *mut u8;
 
                 // Set all of memory to taken by default
@@ -192,8 +209,8 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
             #[allow(static_mut_refs)]
             for entry in mem_map {
                 if entry.entry_type == memory_map::EntryType::USABLE {
-                        set_for_mem_map_entry(entry.base as usize, entry.length as usize)
-                            .for_each(|page_id| BUMP_ALLOCATOR.0.unset(page_id));
+                    set_for_mem_map_entry(entry.base as usize, entry.length as usize)
+                        .for_each(|page_id| BUMP_ALLOCATOR.0.unset(page_id));
                 }
             }
 

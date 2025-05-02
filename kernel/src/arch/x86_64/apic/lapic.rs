@@ -6,12 +6,13 @@ use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity,
 use crate::{
     arch::x86_64::{
         cpu::{Msr, rdmsr, wrmsr},
-        paging::{Entry, PageSize, PageTable},
+        paging::{Entry, PageSize, PageTable, get_pml},
     },
     dev::timer::apic::{TimerDivisor, TimerMode},
     mem::{
         PhysAddr,
         mmio::{MmioArea, Offsetable},
+        vmm::map_page,
     },
 };
 use alloc::vec::Vec;
@@ -390,17 +391,9 @@ impl LocalApic {
 
 /// Adds a new Local APIC to the systems global list of Local APICs
 pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: ApicFlags) {
-    let virt_addr = base.add_hhdm_offset();
-    // XXX: This might fuck things up very badly, since we're mapping without letting the
-    // allocator know, but AFAIK the address the local APIC is mapped to never appears on the
-    // memory map
-    PageTable::map_page_specific(
-        virt_addr,
-        base,
-        Entry::FLAG_P | Entry::FLAG_RW | Entry::FLAG_PCD,
-        PageSize::Size4KB,
-    )
-    .unwrap();
+    // SAFETY: This should be OK since we're mapping a physical address that is marked as
+    // reserved, so the kernel shouldn't be tracking it
+    let virt_addr = unsafe { map_page(base, Entry::FLAG_RW) };
 
     unsafe {
         #[allow(static_mut_refs)]

@@ -24,7 +24,6 @@ macro_rules! create_slab_allocators {
             $(UnsafeCell::new( InternalSlabAllocator::new(Layout::new::<[u8; $size]>())),)*
         ]
     };
-
 }
 
 impl KernelHeapAllocator {

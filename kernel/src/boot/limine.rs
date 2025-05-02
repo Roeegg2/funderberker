@@ -1,13 +1,10 @@
 //! Everything needed to boot the kernel with Limine.
 
-use core::arch::asm;
 use core::num::NonZero;
 
-use alloc::vec::Vec;
-use limine::memory_map::Entry;
-use limine::memory_map::EntryType;
 use limine::BaseRevision;
 use limine::memory_map;
+use limine::memory_map::EntryType;
 use limine::paging;
 use limine::request::RsdpRequest;
 use limine::request::{
@@ -23,6 +20,7 @@ use crate::arch::{self, BASIC_PAGE_SIZE, x86_64};
 use crate::dev::framebuffer;
 use crate::dev::serial;
 use crate::mem::pmm::PmmAllocator;
+use crate::mem::vmm;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -117,10 +115,11 @@ unsafe extern "C" fn kmain() -> ! {
     let hhdm = HHDM_REQUEST
         .get_response()
         .expect("Can't get Limine framebuffer feature response");
-    #[allow(static_mut_refs)]
+
     unsafe {
-        crate::mem::HHDM_OFFSET = hhdm.offset() as usize;
-    };
+        #[allow(static_mut_refs)]
+        crate::mem::HHDM_OFFSET.set(hhdm.offset() as usize).unwrap();
+    }
 
     let mem_map = MEMORY_MAP_REQUEST
         .get_response()
@@ -147,6 +146,7 @@ unsafe extern "C" fn kmain() -> ! {
         _ => (),
     }
 
+    unsafe { vmm::init_from_limine(mem_map.entries()) };
     unsafe { pmm::init_from_limine(mem_map.entries()) };
     unsafe {
         x86_64::paging::init_from_limine(
@@ -154,28 +154,26 @@ unsafe extern "C" fn kmain() -> ! {
             VirtAddr(kernel_addr.virtual_base() as usize),
             PhysAddr(kernel_addr.physical_base() as usize),
         )
-        .unwrap()
     };
 
     unsafe { crate::acpi::init(rsdp.address()).expect("Failed to initialize ACPI") };
 
     // XXX: As I've stated in the comment in the function below, this is technically bad since
     // there is a period of time our stack is marked as free, but during that time period nothing
-    // gets allocated, so these pages will stay intact and so it shouldn't be a problem. 
-    unsafe { free_bootloader_reclaimable(mem_map.entries()) };
+    // gets allocated, so these pages will stay intact and so it shouldn't be a problem.
+    // unsafe { free_bootloader_reclaimable(mem_map.entries()) };
     
-    unsafe { arch::migrate_to_new_stack() };
+    // unsafe { arch::migrate_to_new_stack() };
 
     crate::funderberker_main();
 }
 
-
 /// Free all `BOOTLOADER_RECLAIMABLE`` memory regions
-/// 
+///
 /// NOTE: We need to make sure we call this only after we transitioned to our own paging AND setup
 /// the stack for the BSP. Otherwise, this will lead to us to freeing memory that we are still
 /// using.
-unsafe fn free_bootloader_reclaimable(mem_map: &[&memory_map::Entry]) {
+pub unsafe extern "cdecl" fn free_bootloader_reclaimable(mem_map: &[&memory_map::Entry]) {
     // XXX: I think doing it this way is OK since I doubt anything will get allocated while doing
     // this, but it's still a bit sketchy.
     let pmm = pmm::get();
@@ -188,10 +186,13 @@ unsafe fn free_bootloader_reclaimable(mem_map: &[&memory_map::Entry]) {
             // This code gets executed once during boot, so it's not worth optimizing
             for i in 0..page_count {
                 unsafe {
-                pmm.free(PhysAddr(entry.base as usize + (i * BASIC_PAGE_SIZE)), NonZero::new_unchecked(1)).unwrap();
+                    pmm.free(
+                        PhysAddr(entry.base as usize + (i * BASIC_PAGE_SIZE)),
+                        NonZero::new_unchecked(1),
+                    )
+                    .unwrap();
                 }
             }
         }
     }
 }
-

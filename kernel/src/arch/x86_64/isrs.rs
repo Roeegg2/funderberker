@@ -2,7 +2,11 @@
 
 use core::arch::{global_asm, x86_64::__cpuid_count};
 
-use crate::dev::cmos::{self, CmosIndex, NmiStatus};
+use crate::{
+    arch::x86_64::paging,
+    dev::cmos::{self, CmosIndex, NmiStatus},
+    mem::VirtAddr,
+};
 
 use super::apic::lapic::LOCAL_APICS;
 
@@ -49,12 +53,30 @@ print_n_die!(handler_vec_29, 29);
 print_n_die!(handler_vec_30, 30);
 print_n_die!(handler_vec_31, 31);
 
+static mut INSIDE_PAGE_FAULT: bool = false;
+
 #[unsafe(no_mangle)]
 fn handler_vec_14() {
-    let page = read_cr!(cr3);
+    // unsafe {
+    // if INSIDE_PAGE_FAULT {
+    //     panic!("Page fault while handling page fault");
+    // }
+    // INSIDE_PAGE_FAULT = true;
+    // }
 
-    println!("Exception: {}", EXCEPTION_MESSAGES[14]);
-    println!("At physical address: {:#x}", page);
+    let faulting_address = VirtAddr(read_cr!(cr2));
+
+    println!(
+        "Exception: {} at address {:?}",
+        EXCEPTION_MESSAGES[14], faulting_address
+    );
+    //
+    // let pml = paging::get_pml();
+    // pml.activate_mapping(VirtAddr(faulting_address.0 & !0xFFF));
+    //
+    // // unsafe {INSIDE_PAGE_FAULT = false};
+    // println!("Page fault handled, continuing execution");
+    panic!("Page fault handled, continuing execution");
 }
 
 /// List of error messages for each exception

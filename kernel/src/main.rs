@@ -14,6 +14,7 @@
 
 use core::arch::asm;
 
+use boot::limine::free_bootloader_reclaimable;
 use dev::timer::{
     self,
     apic::{self, ApicTimer},

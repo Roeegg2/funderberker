@@ -1,12 +1,15 @@
 use super::{AcpiError, AcpiTable, SdtHeader};
 
 use crate::{
-    arch::x86_64::apic::{
-        DeliveryMode,
-        ioapic::{self, IoApic, override_irq},
-        lapic,
+    arch::x86_64::{
+        apic::{
+            DeliveryMode,
+            ioapic::{self, IoApic, override_irq},
+            lapic,
+        },
+        paging::Entry,
     },
-    mem::PhysAddr,
+    mem::{PhysAddr, vmm::map_page},
 };
 
 /// A ZST struct for the possible entry types in the MADT
@@ -243,11 +246,12 @@ impl Madt {
                     let entry =
                         unsafe { entry.cast::<LocalApicAddrOverrideEntry>().as_ref().unwrap() };
                     unsafe {
-                        lapic::override_base(
-                            PhysAddr(entry.local_apic_phys_addr as usize)
-                                .add_hhdm_offset()
-                                .into(),
+                        let ptr: *mut u32 = map_page(
+                            PhysAddr(entry.local_apic_phys_addr as usize),
+                            Entry::FLAG_RW,
                         )
+                        .into();
+                        lapic::override_base(ptr)
                     };
                 }
                 EntryType::PROCESSOR_LOCAL_X2APIC => {

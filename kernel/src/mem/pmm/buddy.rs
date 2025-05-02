@@ -6,7 +6,14 @@ use alloc::boxed::Box;
 use limine::memory_map::EntryType;
 use utils::collections::stacklist::{Node, StackList};
 
-use crate::{arch::BASIC_PAGE_SIZE, boot::limine::get_page_count_from_mem_map, mem::PhysAddr};
+use crate::{
+    arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
+    boot::limine::get_page_count_from_mem_map,
+    mem::{
+        PhysAddr,
+        vmm::{allocate_pages, map_page},
+    },
+};
 
 use super::{PmmAllocator, PmmError};
 
@@ -119,13 +126,13 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
 
         for entry in mem_map.iter() {
             if entry.entry_type == EntryType::USABLE {
-                    let page_count = entry.length as usize / BASIC_PAGE_SIZE;
-                    let addr = PhysAddr(entry.base as usize);
-                    unsafe {
-                        #[allow(static_mut_refs)]
-                        BUDDY_ALLOCATOR
-                            .break_into_buckets_n_free(addr, NonZero::new(page_count).unwrap());
-                    };
+                let page_count = entry.length as usize / BASIC_PAGE_SIZE;
+                let addr = PhysAddr(entry.base as usize);
+                unsafe {
+                    #[allow(static_mut_refs)]
+                    BUDDY_ALLOCATOR
+                        .break_into_buckets_n_free(addr, NonZero::new(page_count).unwrap());
+                };
             }
         }
 
@@ -296,15 +303,10 @@ impl<'a> BuddyAllocator<'a> {
             let freelist_nodes_bucket_count =
                 freelist_nodes_bucket_size / core::mem::size_of::<Node<PhysAddr>>();
 
-            let buff_phys_addr = self.alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
-                NonZero::new_unchecked(freelist_nodes_bucket_size)
-            })?;
-            // let (buff_phys_addr, _) = self.find_bucket_any(
-            //     unsafe { NonZero::new_unchecked(1) },
-            //     self.freelist_refill_zone_index,
-            // )?;
-            let ptr =
-                NonNull::new(buff_phys_addr.add_hhdm_offset().0 as *mut Node<PhysAddr>).unwrap();
+            let ptr: NonNull<Node<PhysAddr>> =
+                allocate_pages(freelist_nodes_bucket_count, Entry::FLAG_RW)
+                    .try_into()
+                    .unwrap();
 
             for i in 0..freelist_nodes_bucket_count {
                 unsafe { self.freelist.push_node(ptr.add(i)) };
@@ -443,6 +445,7 @@ impl<'a> BuddyAllocator<'a> {
         let entry = mem_map.iter().find(|&entry| matches!(entry.entry_type, EntryType::USABLE if entry.length as usize >= initial_buffer_page_count * BASIC_PAGE_SIZE)).unwrap();
 
         // Create a pointer to it
+        // NOTE: Our own paging isn't setup yet, so we are just HHDM mapping
         let mut ptr = PhysAddr(entry.base as usize).add_hhdm_offset().0 as *mut StackList<PhysAddr>;
 
         // Initialize the zones array

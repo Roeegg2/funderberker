@@ -120,7 +120,7 @@ _run-qemu: _download-firmware
     qemu-system-x86_64 \
         -vga virtio \
         -nodefaults \
-        -monitor stdio \
+        -serial stdio \
         -no-reboot \
         -drive if=pflash,unit=0,format=raw,file={{ovmf-code}},readonly=on \
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \
@@ -136,7 +136,7 @@ _run-qemu-debug: _download-firmware
         -drive if=pflash,unit=0,format=raw,file={{ovmf-code}},readonly=on \
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \
         -cdrom {{iso-file}} \
-        -d in_asm,int -D qemu.log -S -s \
+        -d in_asm,int -D qemu.log \
 
 # Common ISO creation steps
 _create-iso-common: _setup-limine

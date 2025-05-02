@@ -1,4 +1,7 @@
-use crate::mem::PhysAddr;
+use crate::{
+    arch::x86_64::paging::Entry,
+    mem::{PhysAddr, VirtAddr, vmm::map_page},
+};
 
 use super::{AcpiError, SdtHeader, xsdt::Xsdt};
 
@@ -64,9 +67,10 @@ impl Rsdp2 {
     /// Get a pointer to the XSDT
     #[inline]
     pub(super) fn get_xsdt(&self) -> &Xsdt {
-        let addr = self.xsdt_address;
+        let ptr: *const SdtHeader = PhysAddr(self.xsdt_address as usize)
+            .add_hhdm_offset()
+            .into();
 
-        let ptr: *const SdtHeader = PhysAddr(addr as usize).add_hhdm_offset().into();
         utils::sanity_assert!(ptr.is_aligned_to(align_of::<Xsdt>()));
 
         unsafe { ptr.cast::<Xsdt>().as_ref().unwrap() }

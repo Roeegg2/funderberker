@@ -1,7 +1,7 @@
 use crate::{
-    arch::x86_64::paging::{Entry, PageSize, PageTable},
+    arch::x86_64::paging::Entry,
     dev::timer::hpet,
-    mem::PhysAddr,
+    mem::{PhysAddr, vmm::map_page},
 };
 
 use super::{AcpiError, AcpiTable, SdtHeader};
@@ -32,21 +32,13 @@ impl Hpet {
     pub fn setup_hpet(&self) -> Result<(), AcpiError> {
         unsafe { self.header.validate_checksum()? };
 
-        let phys_addr = PhysAddr(self.base_addr.addr as usize);
-        let virt_addr = phys_addr.add_hhdm_offset();
-
-        // XXX: This might fuck things up very badly, since we're mapping without letting the
-        // allocator know, but AFAIK the address the local APIC is mapped to never appears on the
-        // memory map
-        PageTable::map_page_specific(
-            virt_addr,
-            phys_addr,
-            Entry::FLAG_P | Entry::FLAG_RW | Entry::FLAG_PCD,
-            PageSize::Size4KB,
-        )
-        .unwrap();
-
+        // SAFETY: This should be OK since we're mapping a physical address that is marked as
+        // reserved, so the kernel shouldn't be tracking it
         unsafe {
+            let phys_addr = PhysAddr(self.base_addr.addr as usize);
+            let virt_addr = map_page(phys_addr, Entry::FLAG_RW);
+            // let virt_addr = phys_addr.add_hhdm_offset();
+
             hpet::Hpet::init(virt_addr.into(), self.minimum_tick);
         }
 

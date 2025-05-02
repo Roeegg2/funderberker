@@ -5,7 +5,11 @@ use core::{alloc::Layout, num::NonZero, ptr::NonNull, usize};
 
 use utils::collections::stacklist::{Node, StackList};
 
-use crate::arch::{BASIC_PAGE_SIZE, x86_64::paging::PagingError};
+use crate::arch::BASIC_PAGE_SIZE;
+use crate::arch::x86_64::paging::Entry;
+use crate::mem::vmm::{allocate_pages, free_pages};
+
+use super::pmm::{self, PmmAllocator};
 
 /// Errors that the slab allocator might encounter
 #[derive(Debug, Copy, Clone)]
@@ -19,8 +23,7 @@ pub enum SlabError {
     /// The slab is full and cannot allocate any more objects
     SlabFullInternalError,
     /// Error while trying to allocate more pages for the slab
-    #[allow(dead_code)]
-    PageAllocationError(PagingError),
+    PageAllocationError,
 }
 
 /// A slab allocator that allocates objects of a fixed Layout.
@@ -191,23 +194,21 @@ impl InternalSlabAllocator {
     // TODO: Maybe pass in the amount of memory needed instead of freeing everything?
     pub(super) fn reap(&mut self) {
         while let Some(slab) = self.free_slabs.pop() {
-            unsafe {
-                super::free_pages(
-                    slab.buff_ptr.cast::<()>(),
-                    NonZero::new_unchecked(self.pages_per_slab),
-                )
-            }
-            .unwrap();
+            unsafe { free_pages(slab.buff_ptr.into(), self.pages_per_slab) }
         }
     }
 
     /// Grows the cache by allocating a new slab and adding it to the free slabs list.
     pub(super) fn cache_grow(&mut self) -> Result<(), SlabError> {
-        let buff_ptr = super::alloc_pages_any(
-            NonZero::new(self.pages_per_slab).unwrap(),
-            NonZero::new(1).unwrap(),
-        )
-        .map_err(|e| SlabError::PageAllocationError(e))?;
+        let buff_ptr: NonNull<()> = allocate_pages(self.pages_per_slab, Entry::FLAG_RW)
+            .try_into()
+            .map_err(|_| SlabError::PageAllocationError)?;
+
+        // let phys_addr = pmm::get().alloc_any(NonZero::new(1).unwrap(), NonZero::new(self.pages_per_slab).unwrap()).unwrap();
+        // let buff_ptr: NonNull<()> = phys_addr
+        //     .add_hhdm_offset()
+        //     .try_into()
+        //     .map_err(|_| SlabError::PageAllocationError)?;
 
         unsafe {
             // SAFETY: Size is OK since we allocated the pages_per_slab amount of pages. Alignment
@@ -241,23 +242,15 @@ impl Drop for InternalSlabAllocator {
         // Free the partial slabs
         while let Some(slab) = self.partial_slabs.pop() {
             unsafe {
-                super::free_pages(
-                    slab.buff_ptr.cast::<()>(),
-                    NonZero::new_unchecked(self.pages_per_slab),
-                )
+                free_pages(slab.buff_ptr.into(), self.pages_per_slab);
             }
-            .unwrap();
         }
 
         // Free the full slabs
         while let Some(slab) = self.full_slabs.pop() {
             unsafe {
-                super::free_pages(
-                    slab.buff_ptr.cast::<()>(),
-                    NonZero::new_unchecked(self.pages_per_slab),
-                )
+                free_pages(slab.buff_ptr.into(), self.pages_per_slab);
             }
-            .unwrap();
         }
     }
 }

@@ -1,10 +1,10 @@
 //! Everything specific to x86_64 arch
 
-use interrupts::Idt;
-use crate::mem::vmm::alloc_pages_any;
 use super::{Architecture, CORE_STACK_PAGE_COUNT};
+use crate::mem::vmm::allocate_pages;
+use interrupts::Idt;
+use paging::Entry;
 
-use core::num::NonZero;
 use core::arch::asm;
 
 #[macro_use]
@@ -47,11 +47,11 @@ impl Architecture for X86_64 {
 
     #[inline(always)]
     unsafe fn migrate_to_new_stack() {
-        let new_stack = alloc_pages_any(unsafe { NonZero::new_unchecked(1) }, CORE_STACK_PAGE_COUNT).unwrap();
+        let new_stack: *const () = allocate_pages(CORE_STACK_PAGE_COUNT, Entry::FLAG_RW).into();
         unsafe {
             asm!(
                 "mov rsp, {0}",
-                in(reg) new_stack.addr().get(),
+                in(reg) new_stack.addr(),
                 options(nostack)
             );
         }

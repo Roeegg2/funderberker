@@ -1,31 +1,78 @@
 ///! Memory management and abstraction layer over arch specific details
-use core::ptr::NonNull;
+use core::{
+    cell::OnceCell,
+    ops::{Add, Sub},
+    ptr::NonNull,
+};
 
 use alloc::fmt;
 
-use crate::arch::BASIC_PAGE_SIZE;
+#[cfg(target_arch = "x86_64")]
+use crate::arch::x86_64::paging::PageSize;
 
+mod heap;
 pub mod mmio;
 pub mod pmm;
+pub mod slab;
 pub mod vmm;
 
 // TODO: Make this uninit instead of 0?
+// TODO: Make this a SetOnce
 /// The offset between the HHDM mapped virtual address and the physical address
-pub static mut HHDM_OFFSET: usize = 0;
+pub static mut HHDM_OFFSET: OnceCell<usize> = OnceCell::new();
 
-/// A virtual address **that is HHDM mapped**
+/// A physical address
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+pub struct PhysAddr(pub usize);
+
+/// A virtual address
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 pub struct VirtAddr(pub usize);
 
 impl VirtAddr {
     /// Get the physical address of a virtual address **that is HHDM mapped**
+    ///
+    /// NOTE: This function can't be const since we don't know the HHDM offset at compile time
     pub fn subtract_hhdm_offset(self) -> PhysAddr {
-        unsafe { PhysAddr(self.0 - HHDM_OFFSET) }
+        PhysAddr(
+            self.0
+                - unsafe {
+                    #[allow(static_mut_refs)]
+                    HHDM_OFFSET.get().unwrap()
+                },
+        )
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub const fn next_level_index(self, level: usize) -> usize {
+        assert!(level < 5);
+
+        (self.0 >> (PageSize::Size4KB.offset_size() + (level * 9))) & 0b1111_1111_1
+    }
+}
+
+impl PhysAddr {
+    /// Get the virtual address of a physical address. A Virtual address **that is HHDM mapped**
+    pub fn add_hhdm_offset(self) -> VirtAddr {
+        VirtAddr(
+            self.0
+                + unsafe {
+                    #[allow(static_mut_refs)]
+                    HHDM_OFFSET.get().unwrap()
+                },
+        )
     }
 }
 
 impl fmt::Debug for VirtAddr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:#x}", self.0) // Formats as hex with "0x" prefix
+    }
+}
+
+impl fmt::Debug for PhysAddr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:#x}", self.0) // Formats as hex with "0x" prefix
     }
@@ -48,6 +95,70 @@ impl<T> From<NonNull<T>> for VirtAddr {
     }
 }
 
+impl Add<usize> for VirtAddr {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Add<usize> for PhysAddr {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Add<VirtAddr> for VirtAddr {
+    type Output = usize;
+
+    fn add(self, rhs: VirtAddr) -> Self::Output {
+        self.0 + rhs.0
+    }
+}
+
+impl Add<PhysAddr> for PhysAddr {
+    type Output = usize;
+
+    fn add(self, rhs: PhysAddr) -> Self::Output {
+        self.0 + rhs.0
+    }
+}
+
+impl Sub<usize> for VirtAddr {
+    type Output = Self;
+
+    fn sub(self, rhs: usize) -> Self::Output {
+        Self(self.0 - rhs)
+    }
+}
+
+impl Sub<usize> for PhysAddr {
+    type Output = Self;
+
+    fn sub(self, rhs: usize) -> Self::Output {
+        Self(self.0 - rhs)
+    }
+}
+
+impl Sub<VirtAddr> for VirtAddr {
+    type Output = usize;
+
+    fn sub(self, rhs: VirtAddr) -> Self::Output {
+        self.0 - rhs.0
+    }
+}
+
+impl Sub<PhysAddr> for PhysAddr {
+    type Output = usize;
+
+    fn sub(self, rhs: PhysAddr) -> Self::Output {
+        self.0 - rhs.0
+    }
+}
+
 // NOTE: The following two implementations are safe, since this operation cannot generate UB.
 // BUT using the resulting pointers is obviously unsafe, so be careful!
 impl<T> From<VirtAddr> for *const T {
@@ -62,38 +173,10 @@ impl<T> From<VirtAddr> for *mut T {
     }
 }
 
-/// A physical address
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
-pub struct PhysAddr(pub usize);
+impl<T> TryFrom<VirtAddr> for NonNull<T> {
+    type Error = ();
 
-impl fmt::Debug for PhysAddr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:#x}", self.0) // Formats as hex with "0x" prefix
+    fn try_from(value: VirtAddr) -> Result<Self, Self::Error> {
+        NonNull::new(value.0 as *mut T).ok_or(())
     }
-}
-
-impl PhysAddr {
-    /// Get the virtual address of a physical address. A Virtual address **that is HHDM mapped**
-    pub const fn add_hhdm_offset(self) -> VirtAddr {
-        unsafe { VirtAddr(self.0 + HHDM_OFFSET) }
-    }
-}
-
-/// A page ID is a unique identifier for a page
-pub(self) type PageId = usize;
-
-/// Convert a page ID to a physical address
-pub(self) fn page_id_to_addr(page_id: PageId) -> usize {
-    page_id * BASIC_PAGE_SIZE
-}
-
-/// Convert a physical address to a page ID
-#[allow(dead_code)]
-pub(self) fn addr_to_page_id(addr: usize) -> Option<PageId> {
-    if addr % BASIC_PAGE_SIZE != 0 {
-        return None;
-    }
-
-    Some(addr / BASIC_PAGE_SIZE)
 }

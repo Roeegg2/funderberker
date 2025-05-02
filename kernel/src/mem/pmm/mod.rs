@@ -2,7 +2,7 @@
 
 use core::num::NonZero;
 
-use super::{PageId, PhysAddr};
+use super::PhysAddr;
 
 #[cfg(feature = "pmm_buddy")]
 use buddy::BuddyAllocator;
@@ -64,7 +64,7 @@ pub trait PmmAllocator {
     /// NOTE: `alignment should be passed as page granularity. (e.g. 1 for 4KB, 2 for 8KB, etc.)`
     fn alloc_any(
         &mut self,
-        alignment: NonZero<PageId>,
+        alignment: NonZero<usize>,
         page_count: NonZero<usize>,
     ) -> Result<PhysAddr, PmmError>;
 
