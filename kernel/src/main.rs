@@ -11,15 +11,11 @@
 #![test_runner(crate::test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![feature(stmt_expr_attributes)]
+#![feature(sync_unsafe_cell)]
+#![feature(naked_functions)]
 
 use core::arch::asm;
-
-use boot::limine::free_bootloader_reclaimable;
-use dev::timer::{
-    self,
-    apic::{self, ApicTimer},
-    hpet::HpetTimer,
-};
+use dev::timer::{self, apic::ApicTimer};
 
 mod boot;
 #[macro_use]
@@ -34,7 +30,6 @@ mod sync;
 #[cfg(test)]
 mod test;
 
-#[inline(always)]
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() -> ! {
     #[cfg(test)]
@@ -42,7 +37,7 @@ pub fn funderberker_main() -> ! {
 
     timer::enable_secondary_timer();
 
-    // let timer = ApicTimer::new();
+    let _timer = ApicTimer::new();
 
     unsafe {
         crate::arch::init_cores();

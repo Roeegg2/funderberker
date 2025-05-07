@@ -9,3 +9,5 @@ name = "utils"
 [profile.dev]
 debug = true
 
+[lints.clippy]
+pedantic = "warn"

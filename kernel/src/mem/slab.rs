@@ -1,15 +1,13 @@
 //! A simple slab allocator for the kernel heap & custom use
 
 use alloc::boxed::Box;
-use core::{alloc::Layout, num::NonZero, ptr::NonNull, usize};
+use core::{alloc::Layout, ptr::NonNull};
 
 use utils::collections::stacklist::{Node, StackList};
 
 use crate::arch::BASIC_PAGE_SIZE;
 use crate::arch::x86_64::paging::Entry;
 use crate::mem::vmm::{allocate_pages, free_pages};
-
-use super::pmm::{self, PmmAllocator};
 
 /// Errors that the slab allocator might encounter
 #[derive(Debug, Copy, Clone)]
@@ -202,7 +200,7 @@ impl InternalSlabAllocator {
     pub(super) fn cache_grow(&mut self) -> Result<(), SlabError> {
         let buff_ptr: NonNull<()> = allocate_pages(self.pages_per_slab, Entry::FLAG_RW)
             .try_into()
-            .map_err(|_| SlabError::PageAllocationError)?;
+            .map_err(|()| SlabError::PageAllocationError)?;
 
         // let phys_addr = pmm::get().alloc_any(NonZero::new(1).unwrap(), NonZero::new(self.pages_per_slab).unwrap()).unwrap();
         // let buff_ptr: NonNull<()> = phys_addr
@@ -223,7 +221,7 @@ impl InternalSlabAllocator {
 
             NonNull::write(
                 slab_ptr,
-                Node::<Slab>::new(Slab::new(buff_ptr, self.obj_count, self.obj_layout).unwrap()),
+                Node::<Slab>::new(Slab::new(buff_ptr, self.obj_count, self.obj_layout)),
             );
 
             self.free_slabs.push_node(slab_ptr);
@@ -282,11 +280,7 @@ impl Slab {
     /// SAFETY: This is unsafe because `buff_ptr` must be a valid pointer to a slab of memory
     /// that is at least `obj_count` objects in size
     #[inline]
-    unsafe fn new(
-        buff_ptr: NonNull<()>,
-        obj_count: usize,
-        obj_layout: Layout,
-    ) -> Result<Self, SlabError> {
+    unsafe fn new(buff_ptr: NonNull<()>, obj_count: usize, obj_layout: Layout) -> Self {
         let mut free_objs = StackList::new();
 
         let buff_ptr = buff_ptr.cast::<ObjectNode>();
@@ -300,10 +294,10 @@ impl Slab {
             };
         }
 
-        Ok(Slab {
+        Slab {
             buff_ptr,
             free_objs,
-        })
+        }
     }
 
     /// Allocates an object from the slab
@@ -322,8 +316,7 @@ impl Slab {
         if self
             .free_objs
             .iter_node()
-            .find(|&node| NonNull::from_ref(node).cast::<ObjectNode>() == obj_ptr)
-            .is_some()
+            .any(|node| NonNull::from_ref(node).cast::<ObjectNode>() == obj_ptr)
         {
             return Err(SlabError::DoubleFree);
         }

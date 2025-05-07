@@ -42,6 +42,8 @@ mp = []
 hpet = [] # use HPET
 legacy = [] # use PIT + RTC
 
+[lints.clippy]
+pedantic = "warn"
 
 [profile.dev]
 debug = true

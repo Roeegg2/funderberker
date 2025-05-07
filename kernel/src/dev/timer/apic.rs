@@ -2,9 +2,9 @@
 //!
 //! Each core on the system has it's own timer, so no syncronization is needed
 
-use core::{arch::x86_64::__cpuid_count, hint, mem::transmute, time::Duration, u32};
+use core::{arch::x86_64::__cpuid_count, hint, time::Duration};
 
-use crate::arch::x86_64::apic::lapic::{LOCAL_APICS, LocalApic};
+use crate::arch::x86_64::apic::lapic::LocalApic;
 
 use super::{
     Timer, TimerError,
@@ -49,7 +49,7 @@ pub enum TimerMode {
 // TODO: Remove having a APIC field, we should just have a global static
 
 /// The local APIC timer instance
-pub struct ApicTimer<'a> {
+pub struct ApicTimer {
     /// The **base** frequency of the timer **in MHz**.
     /// To get the actual frequency, divide this by the divisor (which doesn't really matter
     /// since we set it to 1 when creating the timer instance)
@@ -57,25 +57,17 @@ pub struct ApicTimer<'a> {
     /// Caching of whether TSC deadline mode is supported
     tsc_deadline_supported: bool,
     /// The local APIC this timer belongs to
-    apic: &'a mut LocalApic,
+    apic_id: u32,
 }
 
-impl<'a> ApicTimer<'a> {
+impl ApicTimer {
     /// Create a new APIC timer instance
     pub fn new() -> Self {
         // TODO: Check and save info about P-state and C-state transitions
 
-        // TODO: Remove this shit
-        let apic = unsafe {
-            let this_apic_id = (__cpuid_count(1, 0).ebx >> 24) & 0xff as u32;
-            #[allow(static_mut_refs)]
-            LOCAL_APICS
-                .iter_mut()
-                .find(|lapic| lapic.apic_id() == this_apic_id)
-                .unwrap()
-        };
+        let apic_id = LocalApic::get_this_apic_id();
 
-        let base_frequency = Self::find_base_frequency(apic);
+        let base_frequency = Self::find_base_frequency(apic_id);
 
         log_info!("APIC timer frequency: {} Mhz", base_frequency);
 
@@ -88,12 +80,12 @@ impl<'a> ApicTimer<'a> {
         Self {
             base_frequency,
             tsc_deadline_supported,
-            apic,
+            apic_id,
         }
     }
 
     /// Finds the raw frequency (ie frequency before dividing by the dividor) of the timer
-    fn find_base_frequency(apic: &mut LocalApic) -> u32 {
+    fn find_base_frequency(apic_id: u32) -> u32 {
         let res = unsafe { __cpuid_count(0x15, 0x0) };
 
         // If these 2 aren't 0, then we can use CPUID to read the frequency
@@ -101,7 +93,6 @@ impl<'a> ApicTimer<'a> {
             res.ecx
         } else {
             // If we can't read it from the CPUID, we need to calculate it using HPET:
-
             let mut hpet_timer = HpetTimer::new().unwrap();
 
             // Translate the 100ms to ticks
@@ -110,12 +101,14 @@ impl<'a> ApicTimer<'a> {
                 hpet.time_to_cycles(Duration::from_millis(1000))
             };
 
+            let apic = LocalApic::get_apic(apic_id);
+
             // Set the divisor to 1, we want the timer to tick as fast as possible
             apic.set_timer_divider_config(TimerDivisor::Div1);
             // Configure the 2 timers to tick for a period longer than 100ms
             apic.configure_timer(u32::MAX, TimerMode::OneShot);
             hpet_timer
-                .configure(Duration::from_secs(5000), hpet::TimerMode::OneShot)
+                .configure(Duration::from_secs(5000), hpet::TimerMode::OneShot, ())
                 .unwrap();
 
             // Enable both timers
@@ -142,46 +135,21 @@ impl<'a> ApicTimer<'a> {
         }
     }
 
+    /// Convert a `Duration` into APIC timer clock ticks
     const fn time_to_ticks(&self, time: Duration) -> u32 {
         (self.base_frequency * 1_000_000) / time.as_micros() as u32
     }
 }
 
-impl TimerDivisor {
-    pub const fn from_bits(self) -> u8 {
-        2_u8.pow(((self as u32) + 1) & 0b111)
-    }
-
-    pub const fn into_bits(val: u8) -> Option<Self> {
-        // if !val.is_power_of_two() || val > 128 {
-        //     return None;
-        // }
-        // this isa  test write
-
-        match val {
-            1 => Some(TimerDivisor::Div1),
-            2 => Some(TimerDivisor::Div2),
-            4 => Some(TimerDivisor::Div4),
-            8 => Some(TimerDivisor::Div8),
-            16 => Some(TimerDivisor::Div16),
-            32 => Some(TimerDivisor::Div32),
-            64 => Some(TimerDivisor::Div64),
-            128 => Some(TimerDivisor::Div128),
-            _ => None,
-        }
-
-        // let val = (val.ilog2().wrapping_sub(1) & 0b111) as u8;
-        // Some(unsafe { transmute(val) })
-    }
-}
-
-impl<'a> Timer for ApicTimer<'a> {
+impl Timer for ApicTimer {
     type TimerMode = TimerMode;
+    type AdditionalConfig = ();
 
     fn configure(
         &mut self,
         time: Duration,
         timer_mode: Self::TimerMode,
+        _additional_config: Self::AdditionalConfig,
     ) -> Result<u64, TimerError> {
         // If the mode is reserved, or TSC but TSC isn't enabled then error out
         if timer_mode == TimerMode::_Reserved
@@ -192,13 +160,17 @@ impl<'a> Timer for ApicTimer<'a> {
 
         // Config and initialize the timer
         let ticks = self.time_to_ticks(time);
-        self.apic.configure_timer(ticks, timer_mode);
-        self.apic.set_timer_disabled(false);
+
+        let apic = LocalApic::get_apic(self.apic_id);
+        apic.configure_timer(ticks, timer_mode);
+        apic.set_timer_disabled(false);
 
         Ok(ticks as u64)
     }
 
     fn set_disabled(&mut self, disable: bool) {
-        self.apic.set_timer_disabled(disable);
+        let apic = LocalApic::get_apic(self.apic_id);
+
+        apic.set_timer_disabled(disable);
     }
 }

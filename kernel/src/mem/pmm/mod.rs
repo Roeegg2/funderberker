@@ -15,6 +15,7 @@ mod buddy;
 mod bump;
 
 /// Errors that the PMM might encounter
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PmmError {
     /// The requested block is out of bounds
@@ -52,7 +53,7 @@ pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
     };
     #[cfg(feature = "pmm_buddy")]
     unsafe {
-        BuddyAllocator::init_from_limine(mem_map)
+        BuddyAllocator::init_from_limine(mem_map);
     };
 }
 

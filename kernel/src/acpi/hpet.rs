@@ -10,11 +10,11 @@ use super::{AcpiError, AcpiTable, SdtHeader};
 #[repr(C, packed)]
 #[derive(Debug)]
 struct Addr {
-    addr_space_id: u8,
+    space_id: u8,
     register_bit_width: u8,
     register_bit_offset: u8,
     _reserved: u8,
-    addr: u64,
+    actual_addr: u64,
 }
 
 /// The HPET table structure
@@ -35,7 +35,7 @@ impl Hpet {
         // SAFETY: This should be OK since we're mapping a physical address that is marked as
         // reserved, so the kernel shouldn't be tracking it
         unsafe {
-            let phys_addr = PhysAddr(self.base_addr.addr as usize);
+            let phys_addr = PhysAddr(self.base_addr.actual_addr as usize);
             let virt_addr = map_page(phys_addr, Entry::FLAG_RW);
             // let virt_addr = phys_addr.add_hhdm_offset();
 

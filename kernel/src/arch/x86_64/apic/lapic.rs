@@ -1,12 +1,12 @@
 //! Local APIC driver and interface
 
-use core::mem::transmute;
+use core::{arch::x86_64::__cpuid_count, cell::SyncUnsafeCell, mem::transmute};
 
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use crate::{
     arch::x86_64::{
         cpu::{Msr, rdmsr, wrmsr},
-        paging::{Entry, PageSize, PageTable, get_pml},
+        paging::Entry,
     },
     dev::timer::apic::{TimerDivisor, TimerMode},
     mem::{
@@ -14,11 +14,10 @@ use crate::{
         mmio::{MmioArea, Offsetable},
         vmm::map_page,
     },
+    sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard},
 };
 use alloc::vec::Vec;
 use modular_bitfield::prelude::*;
-
-pub static mut LOCAL_APICS: Vec<LocalApic> = Vec::new();
 
 /// The local APICs' MMIO registers that can be written to
 #[allow(dead_code)]
@@ -112,16 +111,16 @@ pub enum DeliveryStatus {
     SendPending = 0b1,
 }
 
+/// Represents the LVT register
 #[bitfield]
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
-/// Represents the LVT register
 pub struct LvtReg {
     /// The vector to be used for this interrupt
     vector: B8,
     /// The delivery mode of the interrupt
     delivery_mode: B3,
-    _reserved: B1,
+    reserved: B1,
     /// The delivery status of the interrupt
     delivery_status: B1,
     /// The pin polarity of the interrupt
@@ -132,29 +131,26 @@ pub struct LvtReg {
     trigger_mode: B1,
     /// The mask of the interrupt
     mask: B1,
-    _reserved2: B15,
+    reserved2: B15,
 }
+
+pub static LOCAL_APICS: SyncUnsafeCell<Vec<SpinLock<LocalApic>>> = SyncUnsafeCell::new(Vec::new());
 
 /// Represents a Local APIC on the system, and contains all the info needed to manage it
 #[derive(Debug)]
 pub struct LocalApic {
     /// Pointer to the base address of the MMIO of the APIC
     area: MmioArea<ReadableRegs, WriteableRegs, u32>,
-    // NOTE: This is a 32-bit value, since on x2APIC systems the ID is 32 bit instead of 8 bit
-    /// The APIC ID assigned to the processor
-    apic_id: u32,
-    // NOTE: This is a 32-bit value, since on x2APIC systems the ID is 32 bit instead of 8 bit
-    /// The ACPI processor ID assigned to the processor
+    /// The ACPI ID assigned to this core (to which the APIC belongs to)
     acpi_processor_id: u32,
-    /// The flags this local APIC is configured with
-    flags: ApicFlags,
-    // TODO: Maybe also store ACPI ID?
+    /// The APIC ID assigned to this APIC
+    apic_id: u32,
 }
 
 impl LocalApic {
     /// Verifies that the CPU actually supports APIC
     #[inline]
-    pub fn validate_apic_support() {
+    fn validate_apic_support() {
         const CPUID_APIC_BIT: u32 = 0x1 << 9;
 
         let cpuid = unsafe { core::arch::x86_64::__cpuid(1) };
@@ -167,10 +163,10 @@ impl LocalApic {
 
     /// Enables the local APIC in the IA32_APIC_BASE MSR, in case firmware didn't do it already
     #[inline]
-    unsafe fn hardware_enable(&self) {
-        Self::validate_apic_support();
-
+    fn hardware_enable() {
         const APIC_ENABLE: u32 = 1 << 11;
+
+        Self::validate_apic_support();
 
         let mut value = unsafe { rdmsr(Msr::Ia32ApicBase) };
         value.0 |= APIC_ENABLE;
@@ -180,18 +176,17 @@ impl LocalApic {
 
     /// Creates a new Local APIC instance
     #[inline]
-    unsafe fn new(base: *mut u32, acpi_processor_id: u32, apic_id: u32, flags: ApicFlags) -> Self {
+    fn new(base: *mut u32, acpi_processor_id: u32, apic_id: u32) -> Self {
         let apic = Self {
             area: MmioArea::new(base),
             acpi_processor_id,
             apic_id,
-            flags: ApicFlags::from(flags),
         };
 
         // Initialize the local APIC
         unsafe {
             // Make sure the APIC enable bit on the IA32_APIC_BASE MSR is set
-            apic.hardware_enable();
+            Self::hardware_enable();
 
             // Configure the SIV and software enable the APIC
             apic.area
@@ -202,9 +197,10 @@ impl LocalApic {
         apic
     }
 
-    /// Sets the LVT register for the passed LINT as an NMI
+    /// Sets the `LVT` register for the passed `LINT` as an `NMI` and the other as an `ExtInt`, and enabled
+    /// the error `LVT`
     #[inline]
-    unsafe fn config_lints(
+    unsafe fn setup_lvts(
         &self,
         nmi_lint: u8,
         nmi_lint_pin_polarity: PinPolarity,
@@ -236,11 +232,8 @@ impl LocalApic {
         // ext_int_lint_entry.set_pin_polarity(PinPolarity::ActiveHigh as u8);
         ext_int_lint_entry.set_mask(false.into());
 
-        // Enable the other LVT regs
+        // Enable the error LVT
         let mut error: LvtReg = unsafe { self.area.read(ReadableRegs::LvtError).into() };
-        // let mut timer: LvtReg = unsafe { self.area.read(ReadableRegs::LvtTimer).into() };
-
-        // timer.set_mask(false.into());
         error.set_mask(false.into());
 
         // Write the results back
@@ -287,11 +280,9 @@ impl LocalApic {
     /// Configure the timer
     pub fn configure_timer(&self, cycle_count: u32, timer_mode: TimerMode) {
         // Set the timer to be periodic
-        // XXX: Shouldn't I set more fields?
         let mut lvtt: LvtReg = unsafe { self.area.read(ReadableRegs::LvtTimer).into() };
-        // TODO: Maybe use a union for this?
         // This field is reserved on all LVT registers except for the timer
-        lvtt.set__reserved2(timer_mode as u16);
+        lvtt.set_reserved2(timer_mode as u16);
 
         unsafe {
             self.area.write(WriteableRegs::LvtTimer, lvtt.into());
@@ -345,8 +336,8 @@ impl LocalApic {
             self.area.write(
                 WriteableRegs::InterruptCommand1,
                 (destination.1 as u32) << 24,
-            )
-        }
+            );
+        };
 
         let lower_part_data = (vector as u32)
             | ((delivery_mode as u32) << 8)
@@ -357,11 +348,14 @@ impl LocalApic {
 
         unsafe {
             self.area
-                .write(WriteableRegs::InterruptCommand0, lower_part_data)
-        }
+                .write(WriteableRegs::InterruptCommand0, lower_part_data);
+        };
     }
 
     /// Checks the status of the IPI sent
+    ///
+    /// NOTE: This function is marked as inline since it's usually used with spinning
+    #[inline]
     pub fn ipi_status(&self) -> DeliveryStatus {
         let status = unsafe { self.area.read(ReadableRegs::InterruptCommand0) };
         if status & (1 << 12) == 0 {
@@ -378,32 +372,48 @@ impl LocalApic {
         unsafe { self.area.write(WriteableRegs::EndOfInterrupt, 0) };
     }
 
-    /// Get the APIC ID of this local APIC
-    pub fn apic_id(&self) -> u32 {
-        self.apic_id
+    /// Get the APIC ID of this core's local APIC
+    pub fn get_this_apic_id() -> u32 {
+        unsafe { (__cpuid_count(1, 0).ebx >> 24) & 0xff_u32 }
     }
 
-    /// Get the ACPI processor ID of this local APIC
-    pub fn flags(&self) -> ApicFlags {
-        self.flags
+    /// Spin and lock the local APIC matching the given APIC ID
+    pub fn get_apic(apic_id: u32) -> SpinLockGuard<'static, LocalApic> {
+        let lapics = unsafe { LOCAL_APICS.get().as_ref().unwrap() };
+        // TODO: Change this
+        lapics
+            .iter()
+            .map(|lapic| lapic.lock())
+            .find(|lapic| lapic.apic_id == apic_id)
+            .expect("No APIC matching this APIC ID")
     }
 }
 
+fn get_lapics() -> &'static Vec<SpinLock<LocalApic>> {
+    unsafe { LOCAL_APICS.get().as_ref().unwrap() }
+}
+
 /// Adds a new Local APIC to the systems global list of Local APICs
-pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: ApicFlags) {
+pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: u32) {
+    if flags & 0x1 != 1 && flags & 0x2 != 0x2 {
+        log_warn!(
+            "LOCAL APIC with ID {:#x} is not enabled or online capable",
+            apic_id
+        );
+        return;
+    }
+
     // SAFETY: This should be OK since we're mapping a physical address that is marked as
     // reserved, so the kernel shouldn't be tracking it
     let virt_addr = unsafe { map_page(base, Entry::FLAG_RW) };
 
-    unsafe {
-        #[allow(static_mut_refs)]
-        LOCAL_APICS.push(LocalApic::new(
-            virt_addr.into(),
-            acpi_processor_id,
-            apic_id,
-            flags,
-        ));
-    }
+    let lapics = unsafe { LOCAL_APICS.get().as_mut().unwrap() };
+
+    lapics.push(SpinLock::new(LocalApic::new(
+        virt_addr.into(),
+        acpi_processor_id,
+        apic_id,
+    )));
 }
 
 /// Marks the matching processor's LINT as NMI with the passed flags, making the other ExtInt
@@ -412,41 +422,43 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: A
 pub unsafe fn config_lints(acpi_processor_id: u32, lint: u8, flags: u16) {
     const ALL_PROCESSORS_ID: u32 = 0xff;
 
-    unsafe {
-        // If the acpi_processor_id is 0xff, we set all processors
-        if acpi_processor_id == ALL_PROCESSORS_ID {
-            #[allow(static_mut_refs)]
-            LOCAL_APICS.iter().for_each(|apic| {
-                apic.config_lints(
+    let lapics = get_lapics();
+    // If the acpi_processor_id is 0xff, we set all processors
+    if acpi_processor_id == ALL_PROCESSORS_ID {
+        for apic in lapics {
+            let apic = apic.lock();
+            unsafe {
+                apic.setup_lvts(
                     lint,
                     (flags & 0b11).try_into().unwrap(),
                     ((flags >> 2) & 0b11).try_into().unwrap(),
                 );
-            });
-        } else {
-            #[allow(static_mut_refs)]
-            LOCAL_APICS
-                .iter()
-                .find(|&apic| apic.acpi_processor_id == acpi_processor_id)
-                .map(|apic| {
-                    apic.config_lints(
+            }
+        }
+    } else {
+        for apic in lapics {
+            let apic = apic.lock();
+            if apic.acpi_processor_id == acpi_processor_id {
+                unsafe {
+                    apic.setup_lvts(
                         lint,
                         (flags & 0b11).try_into().unwrap(),
                         ((flags >> 2) & 0b11).try_into().unwrap(),
                     );
-                });
+                }
+            }
         }
     }
 }
 
 /// Overrides the base address of the local APICs MMIO registers
 pub unsafe fn override_base(base: *mut u32) {
-    unsafe {
-        #[allow(static_mut_refs)]
-        LOCAL_APICS.iter_mut().for_each(|apic| {
-            apic.area.override_base(base);
-        });
-    }
+    let lapics = get_lapics();
+
+    lapics.iter().for_each(|apic| unsafe {
+        let mut apic = apic.lock();
+        apic.area.change_base(base);
+    });
 }
 
 impl TryFrom<u32> for ApicFlags {
@@ -472,3 +484,15 @@ impl Offsetable for WriteableRegs {
         self as usize
     }
 }
+
+impl Default for LvtReg {
+    fn default() -> Self {
+        LvtReg::new()
+    }
+}
+
+// XXX: This is safe only when the address for each local APIC is the same
+unsafe impl Send for LocalApic {}
+unsafe impl Sync for LocalApic {}
+
+impl SpinLockDropable for LocalApic {}

@@ -1,16 +1,15 @@
 //! A simple bitmap implementation, with the option to grow/shrink the bitmap
 
-#[cfg(test)]
-use std::vec;
-#[cfg(test)]
-use std::vec::Vec;
 #[cfg(not(test))]
 use alloc::vec;
 #[cfg(not(test))]
 use alloc::vec::Vec;
+#[cfg(test)]
+use std::vec;
+#[cfg(test)]
+use std::vec::Vec;
 
-
-/// The bitmap 
+/// The bitmap
 pub struct Bitmap {
     entries: Vec<u8>,
     used_bits_count: usize,
@@ -56,4 +55,3 @@ impl Bitmap {
         self.used_bits_count
     }
 }
-

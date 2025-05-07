@@ -60,7 +60,6 @@ impl Entry {
     /// Page-level cache disable bit (`4`):
     /// - If `1` the page is not cacheable
     /// - If `0` the page is cacheable
-    /// Page-level cache disable - 0 => cacheable. 1 => non cacheable.
     pub const FLAG_PCD: usize = 1 << 4;
     /// Accessed bit (`5`):
     /// - If `1` the page has been accessed (read from or written to)
@@ -122,7 +121,7 @@ impl Entry {
     /// Sets the entry's address to the given physical address
     const fn set_addr(&mut self, addr: PhysAddr) {
         // Mask the address to make sure it's aligned
-        assert!(addr.0 & 0xFFF == 0, "Address is not aligned");
+        assert!(addr.0.trailing_zeros() >= 12, "Address is not aligned");
 
         self.0 |= addr.0;
     }
@@ -133,8 +132,9 @@ impl Entry {
         PhysAddr(self.0 & !0xFFF)
     }
 
-    fn next_level_table(&self) -> &mut PageTable {
+    fn next_level_table(&mut self) -> &mut PageTable {
         let ptr: *mut PageTable = self.get_addr().add_hhdm_offset().into();
+
         unsafe {
             ptr.cast::<PageTable>()
                 .as_mut()
@@ -394,7 +394,7 @@ impl PageSize {
 
 /// Get the top level paging table PML4/PML5 (depending on the paging level)
 pub fn get_pml() -> &'static mut PageTable {
-    let phys_addr = PhysAddr(read_cr!(cr3));
+    let phys_addr = PhysAddr(read_cr!(3));
 
     let ptr: *mut PageTable = phys_addr.add_hhdm_offset().into();
 
@@ -409,8 +409,6 @@ pub unsafe fn init_from_limine(
 ) {
     // TODO: CPUID check as well
 
-    use crate::mem::HHDM_OFFSET;
-
     #[cfg(feature = "paging_5")]
     if read_cr!(cr4) & (1 << 12) != 0 {
         panic!("5 level paging requested, but not supported");
@@ -419,12 +417,17 @@ pub unsafe fn init_from_limine(
     let (new_pml, new_pml_addr) = PageTable::new();
 
     // Helper function to avoid code duplication
-    fn map_with_hhdm_offset(base_virt_addr: VirtAddr, base_phys_addr: PhysAddr, len: usize, new_pml: &mut PageTable) {
+    fn map_with_hhdm_offset(
+        base_virt_addr: VirtAddr,
+        base_phys_addr: PhysAddr,
+        len: usize,
+        new_pml: &mut PageTable,
+    ) {
         for i in 0..len {
             let virt_addr = base_virt_addr + (i * BASIC_PAGE_SIZE);
             let phys_addr = base_phys_addr + (i * BASIC_PAGE_SIZE);
 
-            unsafe {new_pml.map(virt_addr, phys_addr, PageSize::Size4KB, Entry::FLAG_RW)};
+            unsafe { new_pml.map(virt_addr, phys_addr, PageSize::Size4KB, Entry::FLAG_RW) };
         }
     }
 
@@ -434,30 +437,32 @@ pub unsafe fn init_from_limine(
     // NOTE: We are doing the `KERNEL_AND_MODULES` mapping independently of the other sections,
     // since the kernel's view of this section is different than HHDM (even though this memory is
     // also HHDM mapped IIRC)
-    for entry in mem_map.iter() {
+    for entry in mem_map {
         let len = entry.length as usize / BASIC_PAGE_SIZE;
         match entry.entry_type {
-            EntryType::KERNEL_AND_MODULES => map_with_hhdm_offset(kernel_virt, kernel_phys, len, new_pml),
-            EntryType::ACPI_RECLAIMABLE
-            | EntryType::BOOTLOADER_RECLAIMABLE => map_with_hhdm_offset(
-                PhysAddr(entry.base as usize).add_hhdm_offset(),
-                PhysAddr(entry.base as usize),
-                len,
-                new_pml,
-            ),
+            EntryType::KERNEL_AND_MODULES => {
+                map_with_hhdm_offset(kernel_virt, kernel_phys, len, new_pml)
+            }
+            EntryType::ACPI_RECLAIMABLE | EntryType::BOOTLOADER_RECLAIMABLE => {
+                map_with_hhdm_offset(
+                    PhysAddr(entry.base as usize).add_hhdm_offset(),
+                    PhysAddr(entry.base as usize),
+                    len,
+                    new_pml,
+                )
+            }
             EntryType::USABLE => map_with_hhdm_offset(
                 PhysAddr(entry.base as usize).add_hhdm_offset(),
                 PhysAddr(entry.base as usize),
                 len,
                 new_pml,
             ),
-            EntryType::FRAMEBUFFER
-                if cfg!(feature = "framebuffer") => map_with_hhdm_offset(
-                    PhysAddr(entry.base as usize).add_hhdm_offset(),
-                    PhysAddr(entry.base as usize),
-                    len,
-                    new_pml,
-                ),
+            EntryType::FRAMEBUFFER if cfg!(feature = "framebuffer") => map_with_hhdm_offset(
+                PhysAddr(entry.base as usize).add_hhdm_offset(),
+                PhysAddr(entry.base as usize),
+                len,
+                new_pml,
+            ),
             _ => (),
         }
     }
@@ -470,7 +475,7 @@ pub unsafe fn init_from_limine(
 /// Finalize the initialization of the paging system by moving over to the newly setup page table
 unsafe fn finalize_init(pml_phys_addr: PhysAddr) {
     // TODO: Make sure CRs flags are OK
-    write_cr!(cr3, pml_phys_addr.0);
+    write_cr!(3, pml_phys_addr.0);
 }
 
 impl Deref for PageTable {

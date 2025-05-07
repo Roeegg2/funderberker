@@ -51,6 +51,7 @@ impl SdtHeader {
         }
         .iter()
         .fold(0, |acc, &x| acc + x as usize);
+
         if sum % 0x100 != 0 {
             return Err(AcpiError::InvalidChecksum);
         }

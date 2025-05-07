@@ -7,7 +7,7 @@ use crate::{
         BASIC_PAGE_SIZE,
         x86_64::paging::{self, PageSize},
     },
-    mem::HHDM_OFFSET,
+    mem::get_hhdm_offset,
     sync::spinlock::{SpinLock, SpinLockDropable},
 };
 
@@ -29,13 +29,8 @@ impl VirtualAddressAllocator {
     fn bump(&mut self, count: usize) -> VirtAddr {
         let ret = self.next;
         self.next = self.next + (count * BASIC_PAGE_SIZE);
-        sanity_assert!(
-            self.next.0
-                < unsafe {
-                    #[allow(static_mut_refs)]
-                    *(HHDM_OFFSET.get().unwrap())
-                }
-        );
+
+        sanity_assert!(self.next.0 < get_hhdm_offset());
 
         ret
     }
@@ -44,50 +39,27 @@ impl VirtualAddressAllocator {
 // XXX: This is a bit hacky, but it works
 #[cfg(feature = "limine")]
 pub fn init_from_limine(mem_map: &[&memory_map::Entry]) {
-    const MIN_MEM_SPAN: usize = 8 * 0x1000 * 0x1000 * 0x1000 * 0x1000; // 8TB
-    let last_entry = mem_map.last().unwrap();
+    use crate::mem::get_hhdm_offset;
 
-    let addr = VirtAddr(last_entry.base as usize + last_entry.length as usize + BASIC_PAGE_SIZE);
-    assert!((unsafe {#[allow(static_mut_refs)]
-        HHDM_OFFSET.get().unwrap()} - addr.0) >= MIN_MEM_SPAN, 
-        "Cannot find enough virtual memory space");
+    const MIN_MEM_SPAN: usize = 8 * 0x1000 * 0x1000 * 0x1000 * 0x1000; // 8TB
+
+    // Get the last entry in the memory map
+    let last_entry = mem_map.last().unwrap();
+    let addr = VirtAddr(last_entry.base as usize + last_entry.length as usize);
+
+    // Make sure we have enough virtual memory space
+    assert!(
+        get_hhdm_offset() - addr.0 >= MIN_MEM_SPAN,
+        "Cannot find enough virtual memory space"
+    );
 
     let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
-
     vaa.next = addr;
 
     log_info!(
-        "Page ID allocator initialized with start bump address of {:?}", vaa.next);
-
-    // for entry in mem_map {
-    //     println!(
-    //         "Memory map entry: {:#x} - {:#x} ({:?})",
-    //         entry.base,
-    //         entry.base + entry.length,
-    //         match entry.entry_type {
-    //             memory_map::EntryType::USABLE => "Usable",
-    //             memory_map::EntryType::RESERVED => "Reserved",
-    //             memory_map::EntryType::ACPI_RECLAIMABLE => "ACPI Reclaimable",
-    //             memory_map::EntryType::ACPI_NVS => "ACPI NVS",
-    //             memory_map::EntryType::BAD_MEMORY => "Bad Memory",
-    //             memory_map::EntryType::BOOTLOADER_RECLAIMABLE => {
-    //                 "Bootloader Reclaimable"
-    //             }
-    //             memory_map::EntryType::KERNEL_AND_MODULES => "Kernel and Modules",
-    //             _ => "Unknown",
-    //         }
-    //     );
-    // }
-    // // let entry = mem_map.iter().find()
-    // let mut bump = PAGE_ID_ALLOCATOR.lock();
-    // // let last_entry = get_page_count_from_mem_map(mem_map);
-    //
-    // bump.next = 0x900000 as usize;
-    //
-    // println!(
-    //     "Page ID allocator initialized with {:#x} pages",
-    //     bump.next
-    // );
+        "Page ID allocator initialized with start bump address of {:?}",
+        vaa.next
+    );
 }
 
 /// Map the given physical address to some virtual address
@@ -107,7 +79,7 @@ pub unsafe fn map_page(phys_addr: PhysAddr, flags: usize) -> VirtAddr {
         pml.map(virt_addr, phys_addr, PageSize::Size4KB, flags);
     }
 
-   virt_addr 
+    virt_addr
 }
 
 /// Allocate `count` virtually contiguous block of 4KB pages
@@ -131,15 +103,6 @@ pub fn allocate_pages(count: usize, flags: usize) -> VirtAddr {
     }
 
     base_virt_addr
-
-    // perform calculation, maybe it's better to allocate a 2MB or 1GB page
-    // allocate enough virtual addresses
-    //
-    // map_alloc x 1GB pages
-    // map_alloc y 2MB pages
-    // map_alloc z 4KB pages
-    //
-    // return virtaddr
 }
 
 /// Free a virtually contiguous block of 4KB pages

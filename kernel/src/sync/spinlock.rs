@@ -3,7 +3,6 @@
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
-
 use utils::spin_until;
 
 /// A trait for types that can be used with the spinlock
@@ -17,6 +16,7 @@ pub trait SpinLockDropable: Send + Sync {
     fn custom_unlock(&mut self) {}
 }
 
+// TODO: Break this into `mut`Gand non `mut` versions
 /// A simple spinlock implementation
 #[derive(Debug)]
 pub struct SpinLock<T>
@@ -79,7 +79,7 @@ where
             self.data.custom_unlock();
 
             // Now unlock the spinlock
-            self.lock.unlock()
+            self.lock.unlock();
         };
     }
 }
@@ -103,6 +103,6 @@ where
     }
 }
 
-// ---- IMPLEMENTING SpinLockDropable for some primitive types ----
+// ---- IMPLEMENTING SpinLockDropable for some shared types ----
 
 impl SpinLockDropable for () {}

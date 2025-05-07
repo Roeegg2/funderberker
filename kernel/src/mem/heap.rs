@@ -37,7 +37,7 @@ impl KernelHeapAllocator {
         // TODO: Use a const array::from_fn here!
         // TODO: Benchmark and possibly change the slab allocator sizes
         Self(create_slab_allocators!(
-            2_usize.pow(Self::MIN_POW as u32 + 0),
+            2_usize.pow(Self::MIN_POW as u32),
             2_usize.pow(Self::MIN_POW as u32 + 1),
             2_usize.pow(Self::MIN_POW as u32 + 2),
             2_usize.pow(Self::MIN_POW as u32 + 3),
@@ -53,7 +53,7 @@ impl KernelHeapAllocator {
 
     /// Get the index of the allocator that is closest to the total size layout requires
     #[inline]
-    const fn get_matching_allocator_index(&self, layout: Layout) -> usize {
+    const fn get_matching_allocator_index(layout: Layout) -> usize {
         let pow = layout.pad_to_align().size().next_power_of_two().ilog2() as usize;
         assert!(pow <= Self::MAX_POW);
         if pow <= Self::MIN_POW {
@@ -70,7 +70,7 @@ unsafe impl Sync for KernelHeapAllocator {}
 unsafe impl GlobalAlloc for KernelHeapAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Use the allocator that is closest to the total size layout requires
-        let index = self.get_matching_allocator_index(layout);
+        let index = KernelHeapAllocator::get_matching_allocator_index(layout);
 
         // Try accessing allocators, and then also try to allocate
         if let Some(allocator) = unsafe { self.0[index].get().as_mut() }

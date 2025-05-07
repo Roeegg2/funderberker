@@ -1,23 +1,37 @@
 //! Interface and driver for the IO APIC
 
+use core::cell::SyncUnsafeCell;
+
 use super::{DeliveryMode, Destination};
 use crate::arch::x86_64::cpu::outb_8;
 use crate::arch::x86_64::interrupts;
-use crate::arch::x86_64::paging::{Entry, PageSize, PageTable, get_pml};
+use crate::arch::x86_64::paging::Entry;
 use crate::mem::PhysAddr;
 use crate::mem::mmio::MmioCell;
 use crate::mem::vmm::map_page;
+use crate::sync::spinlock::{SpinLock, SpinLockDropable};
 use alloc::vec::Vec;
 use modular_bitfield::prelude::*;
 
+/// Errors the IO APIC might encounter
 #[derive(Debug, Copy, Clone)]
 pub enum IoApicError {
+    /// The GSI passed in is invalid
     InvalidGsi,
 }
 
-static mut IRQ_OVERRIDES: Vec<(u8, u32)> = Vec::new();
+/// An IRQ override mapping
+#[derive(Debug, Clone, Copy)]
+struct IrqOverride {
+    /// The IRQ source
+    irq_source: u8,
+    /// The GSI that the IRQ is mapped to
+    gsi: u32,
+}
 
-pub static mut IO_APICS: Vec<IoApic> = Vec::new();
+static IRQ_OVERRIDES: SyncUnsafeCell<Vec<IrqOverride>> = SyncUnsafeCell::new(Vec::new());
+
+pub static IO_APICS: SyncUnsafeCell<Vec<SpinLock<IoApic>>> = SyncUnsafeCell::new(Vec::new());
 
 /// Struct representing the IO APIC, containing everything needed to interact with it
 #[derive(Debug)]
@@ -59,11 +73,12 @@ struct RedirectionEntry {
     trigger_mode: B1,
     /// The mask of the interrupt
     mask: B1,
-    _reserved: B39,
+    reserved: B39,
     /// The destination of the interrupt
     destination: B8,
 }
 
+#[allow(unused)]
 impl IoApicReg {
     /// The index of the ID register
     const APIC_ID: u32 = 0x0;
@@ -77,7 +92,7 @@ impl IoApicReg {
     /// Convert a GSI to the corresponding redirection table index
     #[inline]
     const fn red_tbl_to_index(irq_index: u32) -> u32 {
-        (irq_index * 2) as u32 + Self::APIC_REDIRACTION_TABLE_BASE as u32
+        (irq_index * 2) + Self::APIC_REDIRACTION_TABLE_BASE
     }
 }
 
@@ -96,7 +111,7 @@ impl IoApic {
     }
 
     /// Creates a new IO APIC
-    unsafe fn new(base: *mut u32, gsi_base: u32, apic_id: u8) -> Self {
+    fn new(base: *mut u32, gsi_base: u32, apic_id: u8) -> Self {
         let io_sel = MmioCell::new(base);
         let io_win = MmioCell::new(unsafe { base.byte_add(Self::OFFSET_FROM_SEL_TO_WIN) });
         let mut ret = IoApic {
@@ -113,9 +128,10 @@ impl IoApic {
             let version = ret.io_win.read();
             (version >> 16) & 0xff
         };
+
         utils::sanity_assert!(0 < max_gsi && max_gsi < 256);
 
-        ret.gsi_count = max_gsi as u32 + 1;
+        ret.gsi_count = max_gsi + 1;
 
         ret
     }
@@ -179,16 +195,22 @@ impl RedirectionEntry {
     }
 }
 
+fn get_ioapics() -> &'static Vec<SpinLock<IoApic>> {
+    unsafe { IO_APICS.get().as_ref().unwrap() }
+}
+
 /// Adds an IO APIC to the global list of IO APICs
 pub unsafe fn add(phys_addr: PhysAddr, gsi_base: u32, apic_id: u8) {
     // SAFETY: This should be OK since we're mapping a physical address that is marked as
     // reserved, so the kernel shouldn't be tracking it
     let virt_addr = unsafe { map_page(phys_addr, Entry::FLAG_RW) };
 
-    unsafe {
-        #[allow(static_mut_refs)]
-        IO_APICS.push(IoApic::new(virt_addr.into(), gsi_base, apic_id))
-    };
+    let ioapics = unsafe { IO_APICS.get().as_mut().unwrap() };
+    ioapics.push(SpinLock::new(IoApic::new(
+        virt_addr.into(),
+        gsi_base,
+        apic_id,
+    )));
 }
 
 /// Overrides the identity mapping of a specific IRQ in the system
@@ -201,64 +223,63 @@ pub unsafe fn override_irq(
 ) -> Result<(), IoApicError> {
     let vector = interrupts::irq_to_vector(irq_source);
 
-    unsafe {
-        #[allow(static_mut_refs)]
-        IO_APICS
-            .iter()
-            .find(|&ioapic| ioapic.gsi_base <= gsi && gsi < (ioapic.gsi_base + ioapic.gsi_count))
-            .map(|io_apic| {
-                let offset = IoApicReg::red_tbl_to_index(gsi - io_apic.gsi_base);
+    let ioapics = get_ioapics();
+    ioapics
+        .iter()
+        .map(|ioapic| ioapic.lock())
+        .find(|ioapic| ioapic.gsi_base <= gsi && gsi < (ioapic.gsi_base + ioapic.gsi_count))
+        .map(|io_apic| {
+            let offset = IoApicReg::red_tbl_to_index(gsi - io_apic.gsi_base);
 
-                let mut entry: RedirectionEntry = io_apic.read_redirection_entry(offset);
+            let mut entry: RedirectionEntry = unsafe { io_apic.read_redirection_entry(offset) };
 
-                entry.set_vector(vector as u8);
-                entry.set_pin_polarity(((flags & 2) >> 1) as u8);
-                entry.set_trigger_mode(((flags & 8) >> 3) as u8);
-                // XXX: I think I should change the delivery mode?
-                if let Some(delivery_mode) = delivery_mode {
-                    entry.set_delivery_mode(delivery_mode as u8)
-                }
-                // XXX: Are the following 2 correct?
-                entry.set_destination_mode(Destination::PHYSICAL_MODE);
-                entry.set_destination(io_apic.apic_id);
-                entry.set_mask(true.into());
+            entry.set_vector(vector as u8);
+            entry.set_pin_polarity(((flags & 2) >> 1) as u8);
+            entry.set_trigger_mode(((flags & 8) >> 3) as u8);
+            // XXX: I think I should change the delivery mode?
+            if let Some(delivery_mode) = delivery_mode {
+                entry.set_delivery_mode(delivery_mode as u8);
+            }
+            // XXX: Are the following 2 correct?
+            entry.set_destination_mode(Destination::PHYSICAL_MODE);
+            entry.set_destination(io_apic.apic_id);
+            entry.set_mask(true.into());
 
+            unsafe {
                 io_apic.write_redirection_entry(offset, entry);
+            };
 
-                IRQ_OVERRIDES.push((irq_source, gsi));
-            })
-            .ok_or(IoApicError::InvalidGsi)
-    }
+            let irq_overrides = unsafe { IRQ_OVERRIDES.get().as_mut().unwrap() };
+            irq_overrides.push(IrqOverride { irq_source, gsi });
+        })
+        .ok_or(IoApicError::InvalidGsi)
 }
 
 pub fn irq_to_gsi(irq: u8) -> u32 {
     // Try finding a matching, and return the matching GSI. If no match is found that means that
     // the IRQ is identity mapped, so just return it back
-    unsafe {
-        #[allow(static_mut_refs)]
-        IRQ_OVERRIDES
-            .iter()
-            .find(|(irq_source, _)| *irq_source == irq)
-            .map(|(_, gsi)| *gsi)
-            .unwrap_or(irq as u32)
-    }
+    let irq_overrides = unsafe { IRQ_OVERRIDES.get().as_mut().unwrap() };
+
+    irq_overrides
+        .iter()
+        .find(|&irq_override| irq_override.irq_source == irq)
+        .map_or(irq as u32, |&irq_override| irq_override.gsi)
 }
 
 /// Disable a certain IRQ that belongs to this IO APIC by masking it.
 ///
 /// SAFETY: This function is unsafe because any fiddling with interrupts can cause UB
 pub unsafe fn set_disabled(irq: u8, status: bool) -> Result<(), IoApicError> {
-    let gsi = irq_to_gsi(irq as u8);
+    let gsi = irq_to_gsi(irq);
 
     // TODO: Perhaps remove this check? It can be checked beforehand during initialization or
     // something
-    let ioapic = unsafe {
-        #[allow(static_mut_refs)]
-        IO_APICS
-            .iter()
-            .find(|&ioapic| ioapic.gsi_base <= gsi && gsi < (ioapic.gsi_base + ioapic.gsi_count))
-            .ok_or(IoApicError::InvalidGsi)?
-    };
+    let ioapics = get_ioapics();
+    let ioapic = ioapics
+        .iter()
+        .map(|ioapic| ioapic.lock())
+        .find(|ioapic| ioapic.gsi_base <= gsi && gsi < (ioapic.gsi_base + ioapic.gsi_count))
+        .ok_or(IoApicError::InvalidGsi)?;
 
     let offset = IoApicReg::red_tbl_to_index(gsi - ioapic.gsi_base);
 
@@ -268,3 +289,8 @@ pub unsafe fn set_disabled(irq: u8, status: bool) -> Result<(), IoApicError> {
 
     Ok(())
 }
+
+unsafe impl Send for IoApic {}
+unsafe impl Sync for IoApic {}
+
+impl SpinLockDropable for IoApic {}

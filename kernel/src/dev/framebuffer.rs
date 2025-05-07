@@ -270,7 +270,7 @@ static BITMAP_FONT_8X16: [[u8; 16]; 256] = [
     [0x00, 0x00, 0x36, 0x36, 0x00, 0x63, 0x63, 0x36, 0x36, 0x1c, 0x1c, 0x0c, 0x0c, 0x06, 0x03, 0x00,], 
 ];
 
-/// The raw framebuffer. Used only by FramebufferWriter.
+/// The raw framebuffer. Used only by `FramebufferWriter`.
 struct RawFramebuffer {
     ptr: *mut u32,
     width: u64,
@@ -279,7 +279,7 @@ struct RawFramebuffer {
     bpp: u16,
 }
 
-/// The FramebufferWriter struct is used to write to the framebuffer.
+/// The `FramebufferWriter` struct is used to write to the framebuffer.
 pub struct FramebufferWriter {
     framebuffer: RawFramebuffer,
     curr_y: u64,
@@ -305,8 +305,8 @@ impl FramebufferWriter {
     /// structure.
     #[cfg(feature = "limine")]
     #[inline]
-    pub fn init_from_limine(&mut self, fb: Framebuffer<'static>) {
-        self.framebuffer.ptr = fb.addr() as *mut u32;
+    pub fn init_from_limine(&mut self, fb: &Framebuffer<'static>) {
+        self.framebuffer.ptr = fb.addr().cast::<u32>();
         self.framebuffer.width = fb.width();
         self.framebuffer.height = fb.height();
         self.framebuffer.pitch = fb.pitch();
@@ -323,7 +323,7 @@ impl FramebufferWriter {
 
     /// Increments the current y cursor one character line down (16 pixels).
     fn scroll_y(&mut self) {
-        self.curr_y = self.curr_y + 16;
+        self.curr_y += 16;
 
         if self.curr_y >= self.framebuffer.height {
             self.disabled = true;
@@ -357,7 +357,7 @@ impl FramebufferWriter {
             let char_bit = BITMAP_FONT_8X16[index][y];
             for x in 0..8 {
                 if (char_bit >> x) & 0x1 != 0 {
-                    self.draw_pixel(x + self.curr_x, y as u64 + self.curr_y, 0xffffff);
+                    self.draw_pixel(x + self.curr_x, y as u64 + self.curr_y, 0x00ff_ffff);
                 }
             }
         }

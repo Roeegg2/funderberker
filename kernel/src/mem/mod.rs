@@ -1,6 +1,5 @@
-///! Memory management and abstraction layer over arch specific details
+//! Memory management and abstraction layer over arch specific details
 use core::{
-    cell::OnceCell,
     ops::{Add, Sub},
     ptr::NonNull,
 };
@@ -19,7 +18,9 @@ pub mod vmm;
 // TODO: Make this uninit instead of 0?
 // TODO: Make this a SetOnce
 /// The offset between the HHDM mapped virtual address and the physical address
-pub static mut HHDM_OFFSET: OnceCell<usize> = OnceCell::new();
+const INVALID_HHDM_OFFSET: usize = 0xFFFF_FFFF_FFFF_FFFF;
+
+static mut HHDM_OFFSET: usize = INVALID_HHDM_OFFSET;
 
 /// A physical address
 #[repr(transparent)]
@@ -36,33 +37,47 @@ impl VirtAddr {
     ///
     /// NOTE: This function can't be const since we don't know the HHDM offset at compile time
     pub fn subtract_hhdm_offset(self) -> PhysAddr {
-        PhysAddr(
-            self.0
-                - unsafe {
-                    #[allow(static_mut_refs)]
-                    HHDM_OFFSET.get().unwrap()
-                },
-        )
+        PhysAddr(self.0 - get_hhdm_offset())
     }
 
     #[cfg(target_arch = "x86_64")]
     pub const fn next_level_index(self, level: usize) -> usize {
         assert!(level < 5);
 
-        (self.0 >> (PageSize::Size4KB.offset_size() + (level * 9))) & 0b1111_1111_1
+        (self.0 >> (PageSize::Size4KB.offset_size() + (level * 9))) & 0b1_1111_1111
     }
 }
 
 impl PhysAddr {
     /// Get the virtual address of a physical address. A Virtual address **that is HHDM mapped**
     pub fn add_hhdm_offset(self) -> VirtAddr {
-        VirtAddr(
-            self.0
-                + unsafe {
-                    #[allow(static_mut_refs)]
-                    HHDM_OFFSET.get().unwrap()
-                },
-        )
+        VirtAddr(self.0 + get_hhdm_offset())
+    }
+}
+
+/// Get the HHDM offset
+#[inline]
+pub fn get_hhdm_offset() -> usize {
+    unsafe {
+        assert!(
+            HHDM_OFFSET != INVALID_HHDM_OFFSET,
+            "HHDM offset not set. Did you forget to call `set_hhdm_offset`?",
+        );
+
+        HHDM_OFFSET
+    }
+}
+
+/// Set the HHDM offset
+#[inline]
+pub fn set_hhdm_offset(offset: usize) {
+    unsafe {
+        assert!(
+            HHDM_OFFSET == INVALID_HHDM_OFFSET,
+            "HHDM offset already set. Did you forget to call `set_hhdm_offset`?",
+        );
+
+        HHDM_OFFSET = offset;
     }
 }
 

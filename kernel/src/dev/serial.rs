@@ -43,13 +43,13 @@ impl SerialPort {
         unsafe {
             cpu::outb_8(self as u16 + 1, 0x00); // Disable all interrupts
             cpu::outb_8(self as u16 + 3, 0x80); // Enable DLAB (set baud rate divisor)
-            cpu::outb_8(self as u16 + 0, 0x03); // Set divisor to 3 (lo byte) 38400 baud
+            cpu::outb_8(self as u16, 0x03); // Set divisor to 3 (lo byte) 38400 baud
             cpu::outb_8(self as u16 + 1, 0x00); //                  (hi byte)
             cpu::outb_8(self as u16 + 3, 0x03); // 8 bits, no parity, one stop bit
             cpu::outb_8(self as u16 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
             cpu::outb_8(self as u16 + 4, 0x0B); // IRQs enabled, RTS/DSR set
             cpu::outb_8(self as u16 + 4, 0x1E); // Set in loopback mode, test the serial chip
-            cpu::outb_8(self as u16 + 0, 0xAE); // Test serial chip (send byte 0xAE and check if serial returns same byte)
+            cpu::outb_8(self as u16, 0xAE); // Test serial chip (send byte 0xAE and check if serial returns same byte)
         }
 
         if unsafe { cpu::inb_8(self as u16) } != 0xae {
@@ -79,7 +79,7 @@ pub struct SerialWriter {
 impl SerialWriter {
     /// Initilize each of the enabled serial ports. If an error occured, mark them as unwriteable
     #[inline]
-    pub fn init(&mut self) -> Result<(), SerialError> {
+    pub fn init(&mut self) {
         for ref mut port_wrapper in self.ports {
             if let Some(port) = port_wrapper
                 && unsafe { port.init().is_err() }
@@ -87,16 +87,12 @@ impl SerialWriter {
                 *port_wrapper = None;
             }
         }
-
-        Ok(())
     }
 
     /// Write a byte to all available serial ports
     pub fn write_byte_all(&self, byte: u8) {
-        for port in self.ports {
-            if let Some(val) = port {
-                val.write_byte(byte);
-            }
-        }
+        self.ports.iter().filter_map(|port| *port).for_each(|port| {
+            port.write_byte(byte);
+        });
     }
 }

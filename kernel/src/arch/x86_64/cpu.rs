@@ -1,17 +1,16 @@
 //! Assembly instruction wrappers & other low level CPU operations
 //!
-//! `NOTE:` 'core::arch::x86_64' already implements `__cpuid`, `rdtsc` and many others, so use them when needed
+//! `NOTE:` `core::arch::x86_64` already implements `__cpuid`, `rdtsc` and many others, so use them when needed
 
 use core::arch::asm;
 
 #[repr(u32)]
 pub enum Msr {
-    /// Address of the IA32_APIC_BASE MSR
+    /// Address of the `IA32_APIC_BASE` MSR
     Ia32ApicBase = 0x1b,
-    /// Address of the IA32_TSC_DEADLINE MSR
-    Ia32TscDeadline = 0x6e0,
 }
 
+#[allow(unused)]
 /// Wrapper for the 'outb' instruction, accessing a `u32` port
 #[inline]
 pub unsafe fn outb_32(port: u16, value: u32) {
@@ -21,7 +20,7 @@ pub unsafe fn outb_32(port: u16, value: u32) {
             in("dx") port,
             in("eax") value,
             options(nomem, nostack),
-        )
+        );
     };
 }
 
@@ -34,10 +33,11 @@ pub unsafe fn outb_8(port: u16, value: u8) {
             in("dx") port,
             in("al") value,
             options(nomem, nostack),
-        )
+        );
     };
 }
 
+#[allow(unused)]
 /// Wrapper for the 'in' instruction, accessing a `u32` port
 #[inline]
 pub unsafe fn inb_32(port: u16) -> u32 {
@@ -48,7 +48,7 @@ pub unsafe fn inb_32(port: u16) -> u32 {
             out("eax") res,
             in("dx") port,
             options(nomem, nostack),
-        )
+        );
     };
 
     res
@@ -64,7 +64,7 @@ pub unsafe fn inb_8(port: u16) -> u8 {
             out("al") res,
             in("dx") port,
             options(nomem, nostack),
-        )
+        );
     };
 
     res
@@ -73,13 +73,17 @@ pub unsafe fn inb_8(port: u16) -> u8 {
 /// Clear `RFLAGS` interrupt flag to mask all maskable external interrupts
 #[inline]
 pub fn cli() {
-    unsafe { asm!("cli", options(nostack, nomem)) };
+    unsafe {
+        asm!("cli", options(nostack, nomem));
+    };
 }
 
 /// Set `RFLAGS` interrupt flag to enable handling of external interrupts
 #[inline]
 pub fn sti() {
-    unsafe { asm!("sti", options(nostack, nomem)) };
+    unsafe {
+        asm!("sti", options(nostack, nomem));
+    };
 }
 
 /// Read the value of a model specific register (MSR)
@@ -94,7 +98,7 @@ pub unsafe fn rdmsr(msr: Msr) -> (u32, u32) {
             out("edx") high,
             in("ecx") msr as u32,
             options(nostack, nomem),
-        )
+        );
     };
     (low, high)
 }
@@ -109,22 +113,46 @@ pub unsafe fn wrmsr(msr: Msr, low: u32, high: u32) {
             in("edx") high,
             in("ecx") msr as u32,
             options(nostack, nomem),
-        )
+        );
     };
+}
+
+/// Read the value of the current CS register
+#[inline]
+pub fn get_cs() -> u16 {
+    let cs: u16;
+    unsafe {
+        asm! (
+            "mov {:x}, cs",
+            out(reg) cs,
+        );
+    };
+    cs
 }
 
 // TODO: Maybe implement these as functions with enums for the fields you can write to make it
 // safer?
 
+/// Macro to check whether a CR register number is valid during compile time
+#[macro_export]
+macro_rules! validate_cr {
+    ($cr:literal) => {
+        const _: () = assert!(
+            matches!($cr, 2 | 3 | 4 | 8),
+            "Invalid control register number. Must be 2, 3, 4, or 8.",
+        );
+    };
+}
+
 /// Wrapper to read the value of a control register
 #[macro_export]
 macro_rules! read_cr {
-    ($cr:ident) => {{
-        #[allow(unused_unsafe)]
+    ($cr:literal) => {{
+        $crate::validate_cr!($cr);
         unsafe {
             let value: usize;
             core::arch::asm!(
-                concat!("mov {}, ", stringify!($cr)),
+                concat!("mov {}, cr", $cr),
                 out(reg) value,
                 options(nostack, nomem)
             );
@@ -136,14 +164,16 @@ macro_rules! read_cr {
 /// Wrapper to write a value to a control register
 #[macro_export]
 macro_rules! write_cr {
-    ($cr:ident, $val:expr) => {{
-        #[allow(unused_unsafe)]
+    ($cr:literal, $val:expr) => {
+        $crate::validate_cr!($cr);
+
+        #[allow(clippy::macro_metavars_in_unsafe)]
         unsafe {
             core::arch::asm!(
-                concat!("mov ", stringify!($cr), ", {}"),
+                concat!("mov cr", $cr, ", {}"),
                 in(reg) $val,
                 options(nostack, nomem)
             );
         }
-    }};
+    };
 }

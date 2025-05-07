@@ -1,4 +1,4 @@
 //! This module contains implementations of drivers for various hardware clocks.
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "legacy"))]
 pub mod rtc;

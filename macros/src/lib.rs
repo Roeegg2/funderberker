@@ -1,7 +1,10 @@
+#![feature(naked_functions)]
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{ItemFn, parse_macro_input};
 
+/// A macro to make a function a unit testing function
 #[proc_macro_attribute]
 pub fn test_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse the input function
@@ -43,4 +46,44 @@ pub fn test_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     output.into()
+}
+
+/// Make a function an ISR. This macro creates a stub (called ``__isr_stub_isr` where `isr` is the name of
+/// the function) that calls the macro tagged with that attribute
+#[cfg(target_arch = "x86_64")]
+#[proc_macro_attribute]
+pub fn isr(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // Parse the input function
+    let input_fn = parse_macro_input!(item as ItemFn);
+    let fn_name = &input_fn.sig.ident;
+    let fn_vis = &input_fn.vis;
+    let fn_args = &input_fn.sig.inputs;
+    let fn_body = &input_fn.block;
+
+    // Generate the wrapper function name
+    let wrapper_name = syn::Ident::new(&format!("__isr_stub_{}", fn_name), fn_name.span());
+
+    // Generate the macro output
+    let expanded = quote! {
+        // The original ISR function (renamed internally)
+        #[inline]
+        #fn_vis fn #fn_name(#fn_args) {
+            #fn_body
+        }
+
+        // The naked wrapper function with ISR assembly
+        #[naked]
+        #[unsafe(no_mangle)]
+        #fn_vis unsafe extern "C" fn #wrapper_name() {
+            core::arch::naked_asm!(
+                // Call the actual ISR
+                "call {}",
+                // Return from interrupt
+                "iretq",
+                sym #fn_name,
+            );
+        }
+    };
+
+    TokenStream::from(expanded)
 }

@@ -1,4 +1,5 @@
 pub mod clock;
+#[cfg(feature = "legacy")]
 pub mod cmos;
 #[cfg(feature = "framebuffer")]
 pub mod framebuffer;

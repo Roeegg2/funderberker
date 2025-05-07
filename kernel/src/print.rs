@@ -5,7 +5,7 @@ use crate::dev::framebuffer;
 #[cfg(feature = "serial")]
 use crate::dev::serial;
 
-/// Empty struct to implement 'core::fmt::Write' on
+/// Empty struct to implement 'Write' on
 pub struct Writer;
 
 /// A macro to print to the serial port or framebuffer
@@ -28,7 +28,7 @@ macro_rules! println {
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
-        println!("-> INFO: {}", format_args!($($arg)*))
+        println!("-> INFO: {}", format_args!($($arg)*));
     }
 }
 
@@ -36,7 +36,7 @@ macro_rules! log_info {
 #[macro_export]
 macro_rules! log_err {
     ($($arg:tt)*) => {
-        println!("-> ERROR: {}", format_args!($($arg)*))
+        println!("-> ERROR: {}", format_args!($($arg)*));
     }
 }
 
@@ -44,7 +44,7 @@ macro_rules! log_err {
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        println!("-> WARNING: {}", format_args!($($arg)*))
+        println!("-> WARNING: {}", format_args!($($arg)*));
     }
 }
 
@@ -54,14 +54,14 @@ impl core::fmt::Write for Writer {
         for byte in s.bytes() {
             #[allow(static_mut_refs)]
             unsafe {
-                serial::SERIAL_WRITER.write_byte_all(byte)
+                serial::SERIAL_WRITER.write_byte_all(byte);
             };
         }
         #[cfg(feature = "framebuffer")]
         for byte in s.as_bytes() {
             #[allow(static_mut_refs)]
             unsafe {
-                framebuffer::FRAMEBUFFER_WRITER.draw_char(*byte).unwrap()
+                framebuffer::FRAMEBUFFER_WRITER.draw_char(*byte).unwrap();
             };
         }
 

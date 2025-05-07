@@ -4,7 +4,7 @@ use crate::{
     arch::x86_64::{
         apic::{
             DeliveryMode,
-            ioapic::{self, IoApic, override_irq},
+            ioapic::{self, IoApic},
             lapic,
         },
         paging::Entry,
@@ -86,7 +86,7 @@ struct IoApicIsoEntry {
     irq_source: u8,
     /// The GSI to configure
     gsi: u32,
-    /// PinPolarity and TriggerMode flags
+    /// `PinPolarity` and `TriggerMode` flags
     flags: u16,
 }
 
@@ -100,7 +100,7 @@ struct IoApicNmiIsoEntry {
     nmi_source: u8,
     /// Reserved
     _reserved: u8,
-    /// PinPolarity and TriggerMode flags
+    /// `PinPolarity` and `TriggerMode` flags
     flags: u16,
     /// The GSI to configure
     gsi: u32,
@@ -114,7 +114,7 @@ struct LocalApicNmiEntry {
     header: EntryHeader,
     /// The ACPI processor ID
     acpi_processor_id: u8,
-    /// PinPolarity and TriggerMode flags
+    /// `PinPolarity` and `TriggerMode` flags
     flags: u16,
     /// The LINT pin to configure
     lint: u8,
@@ -197,8 +197,8 @@ impl Madt {
                             PhysAddr(self.local_apic_addr as usize),
                             entry.acpi_processor_id as u32,
                             entry.apic_id as u32,
-                            entry.flags.try_into().unwrap(),
-                        )
+                            entry.flags,
+                        );
                     };
                 }
                 EntryType::IO_APIC => {
@@ -208,7 +208,7 @@ impl Madt {
                             PhysAddr(entry.io_apic_addr as usize),
                             entry.gsi_base,
                             entry.io_apic_id,
-                        )
+                        );
                     };
                 }
                 EntryType::IO_APIC_ISO => {
@@ -236,7 +236,7 @@ impl Madt {
                         lapic::config_lints(
                             entry.acpi_processor_id as u32,
                             entry.lint,
-                            entry.flags.try_into().unwrap(),
+                            entry.flags,
                         );
                     };
                 }
@@ -251,7 +251,7 @@ impl Madt {
                             Entry::FLAG_RW,
                         )
                         .into();
-                        lapic::override_base(ptr)
+                        lapic::override_base(ptr);
                     };
                 }
                 EntryType::PROCESSOR_LOCAL_X2APIC => {
@@ -262,12 +262,12 @@ impl Madt {
                             PhysAddr(self.local_apic_addr as usize),
                             entry.processor_acpi_id,
                             entry.x2apic_id,
-                            entry.flags.try_into().unwrap(),
-                        )
+                            entry.flags,
+                        );
                     };
                 }
                 _ => {
-                    log_warn!("APIC: Unknown entry type: {}", entry_type)
+                    log_warn!("APIC: Unknown entry type: {}", entry_type);
                 }
             }
         }

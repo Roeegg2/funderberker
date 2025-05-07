@@ -1,7 +1,6 @@
-use crate::{
-    arch::x86_64::paging::Entry,
-    mem::{PhysAddr, VirtAddr, vmm::map_page},
-};
+use core::ptr;
+
+use crate::mem::PhysAddr;
 
 use super::{AcpiError, SdtHeader, xsdt::Xsdt};
 
@@ -40,25 +39,27 @@ impl Rsdp2 {
     /// Validate the checksum of the RSDP2
     pub(super) fn validate_checksum(&self) -> Result<(), AcpiError> {
         // RSDP2 checksum is calculated for the original fields, and the extended fields separately
-        let sum1 = unsafe {
-            core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), size_of::<Rsdp>())
-        }
-        .iter()
-        .fold(0, |acc, &x| acc + x as usize);
-        let sum2 = unsafe {
-            core::slice::from_raw_parts(
-                core::ptr::from_ref(self)
-                    .cast::<u8>()
-                    .byte_add(size_of::<Rsdp>()),
-                size_of::<Rsdp2>() - size_of::<Rsdp>(),
-            )
-        }
-        .iter()
-        .fold(0, |acc, &x| acc + x as usize);
+        {
+            let mut sum: usize = 0;
+            let ptr = ptr::from_ref(self).cast::<u8>();
+            for i in 0..size_of::<Rsdp>() {
+                sum += unsafe { *(ptr.add(i)) } as usize;
+            }
 
-        // Make sure the sum casted to a u8 is 0
-        if sum1 % 0x100 != 0 || sum2 % 0x100 != 0 {
-            return Err(AcpiError::InvalidChecksum);
+            if sum & 0xff != 0 {
+                return Err(AcpiError::InvalidChecksum);
+            }
+        }
+        {
+            let mut sum: usize = 0;
+            let ptr = unsafe { ptr::from_ref(self).cast::<u8>().byte_add(size_of::<Rsdp>()) };
+            for i in 0..(size_of::<Rsdp2>() - size_of::<Rsdp>()) {
+                sum += unsafe { *(ptr.add(i)) } as usize;
+            }
+
+            if sum & 0xff != 0 {
+                return Err(AcpiError::InvalidChecksum);
+            }
         }
 
         Ok(())

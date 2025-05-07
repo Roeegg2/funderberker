@@ -4,11 +4,11 @@ use core::time::Duration;
 
 use crate::arch::x86_64::{apic::ioapic, interrupts};
 
-#[cfg(all(target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 pub mod apic;
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 pub mod hpet;
-#[cfg(all(target_arch = "x86_64", feature = "pit"))]
+#[cfg(all(target_arch = "x86_64", feature = "legacy"))]
 pub mod pit;
 
 /// Possible errors that a timer might encounter
@@ -20,6 +20,8 @@ pub enum TimerError {
     NoTimerAvailable,
     /// Timer mode isn't supported by the hardaware
     UnsupportedTimerMode,
+    /// Invalid timer flags passed
+    InvalidTimerFlags,
 }
 
 /// A trait that represents a timer. This trait is implemented by all timers in the system.
@@ -32,10 +34,15 @@ pub enum TimerError {
 /// leaking", otherwise the timer couldn't be used in the future.
 pub trait Timer: Sized {
     type TimerMode: Copy + Clone;
+    type AdditionalConfig;
     /// Configure and setup the timer, and return the amount of clock ticks that the timer will
     /// tick
-    fn configure(&mut self, time: Duration, timer_mode: Self::TimerMode)
-    -> Result<u64, TimerError>;
+    fn configure(
+        &mut self,
+        time: Duration,
+        timer_mode: Self::TimerMode,
+        additional_config: Self::AdditionalConfig,
+    ) -> Result<u64, TimerError>;
 
     /// Disable/enable the timer
     fn set_disabled(&mut self, disable: bool);

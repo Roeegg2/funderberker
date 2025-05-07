@@ -4,7 +4,6 @@ use core::num::NonZero;
 
 use limine::BaseRevision;
 use limine::memory_map;
-use limine::memory_map::EntryType;
 use limine::paging;
 use limine::request::RsdpRequest;
 use limine::request::{
@@ -19,7 +18,7 @@ use crate::arch::{self, BASIC_PAGE_SIZE, x86_64};
 #[cfg(feature = "framebuffer")]
 use crate::dev::framebuffer;
 use crate::dev::serial;
-use crate::mem::pmm::PmmAllocator;
+use crate::mem;
 use crate::mem::vmm;
 use crate::mem::{PhysAddr, VirtAddr, pmm};
 
@@ -75,12 +74,14 @@ pub fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> NonZero<us
     let last_descr = mem_map
         .iter()
         .rev()
-        .find(|&entry| match entry.entry_type {
-            limine::memory_map::EntryType::USABLE
-            | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
-            | limine::memory_map::EntryType::ACPI_RECLAIMABLE
-            | limine::memory_map::EntryType::KERNEL_AND_MODULES => true,
-            _ => false,
+        .find(|&entry| {
+            matches!(
+                entry.entry_type,
+                limine::memory_map::EntryType::USABLE
+                    | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+                    | limine::memory_map::EntryType::ACPI_RECLAIMABLE
+                    | limine::memory_map::EntryType::KERNEL_AND_MODULES
+            )
         })
         .unwrap();
 
@@ -96,7 +97,7 @@ unsafe extern "C" fn kmain() -> ! {
     #[cfg(feature = "serial")]
     #[allow(static_mut_refs)]
     unsafe {
-        serial::SERIAL_WRITER.init().unwrap()
+        serial::SERIAL_WRITER.init();
     };
     #[cfg(feature = "framebuffer")]
     {
@@ -106,20 +107,19 @@ unsafe extern "C" fn kmain() -> ! {
         #[allow(static_mut_refs)]
         unsafe {
             framebuffer::FRAMEBUFFER_WRITER
-                .init_from_limine(framebuffer_reponse.framebuffers().next().unwrap())
+                .init_from_limine(&framebuffer_reponse.framebuffers().next().unwrap());
         };
     }
 
-    unsafe { arch::init() };
+    unsafe {
+        arch::init();
+    };
 
     let hhdm = HHDM_REQUEST
         .get_response()
         .expect("Can't get Limine framebuffer feature response");
 
-    unsafe {
-        #[allow(static_mut_refs)]
-        crate::mem::HHDM_OFFSET.set(hhdm.offset() as usize).unwrap();
-    }
+    mem::set_hhdm_offset(hhdm.offset() as usize);
 
     let mem_map = MEMORY_MAP_REQUEST
         .get_response()
@@ -146,14 +146,14 @@ unsafe extern "C" fn kmain() -> ! {
         _ => (),
     }
 
-    unsafe { vmm::init_from_limine(mem_map.entries()) };
+    vmm::init_from_limine(mem_map.entries());
     unsafe { pmm::init_from_limine(mem_map.entries()) };
     unsafe {
         x86_64::paging::init_from_limine(
             mem_map.entries(),
             VirtAddr(kernel_addr.virtual_base() as usize),
             PhysAddr(kernel_addr.physical_base() as usize),
-        )
+        );
     };
 
     unsafe { crate::acpi::init(rsdp.address()).expect("Failed to initialize ACPI") };
@@ -162,37 +162,8 @@ unsafe extern "C" fn kmain() -> ! {
     // there is a period of time our stack is marked as free, but during that time period nothing
     // gets allocated, so these pages will stay intact and so it shouldn't be a problem.
     // unsafe { free_bootloader_reclaimable(mem_map.entries()) };
-    
+
     // unsafe { arch::migrate_to_new_stack() };
 
     crate::funderberker_main();
-}
-
-/// Free all `BOOTLOADER_RECLAIMABLE`` memory regions
-///
-/// NOTE: We need to make sure we call this only after we transitioned to our own paging AND setup
-/// the stack for the BSP. Otherwise, this will lead to us to freeing memory that we are still
-/// using.
-pub unsafe extern "cdecl" fn free_bootloader_reclaimable(mem_map: &[&memory_map::Entry]) {
-    // XXX: I think doing it this way is OK since I doubt anything will get allocated while doing
-    // this, but it's still a bit sketchy.
-    let pmm = pmm::get();
-    for entry in mem_map {
-        if entry.entry_type == EntryType::BOOTLOADER_RECLAIMABLE {
-            let page_count = entry.length as usize / BASIC_PAGE_SIZE;
-
-            // NOTE: We are doing this in a loop, since the buddy allocator only frees pages in blocks,
-            // and this might not be aligned.
-            // This code gets executed once during boot, so it's not worth optimizing
-            for i in 0..page_count {
-                unsafe {
-                    pmm.free(
-                        PhysAddr(entry.base as usize + (i * BASIC_PAGE_SIZE)),
-                        NonZero::new_unchecked(1),
-                    )
-                    .unwrap();
-                }
-            }
-        }
-    }
 }

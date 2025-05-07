@@ -1,3 +1,3 @@
 pub mod bitmap;
-pub mod static_bitmap;
 pub mod stacklist;
+pub mod static_bitmap;

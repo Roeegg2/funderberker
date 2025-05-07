@@ -9,10 +9,7 @@ use utils::collections::stacklist::{Node, StackList};
 use crate::{
     arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
     boot::limine::get_page_count_from_mem_map,
-    mem::{
-        PhysAddr,
-        vmm::{allocate_pages, map_page},
-    },
+    mem::{PhysAddr, vmm::allocate_pages},
 };
 
 use super::{PmmAllocator, PmmError};
@@ -35,7 +32,7 @@ pub(super) struct BuddyAllocator<'a> {
     freelist_refill_zone_index: usize,
 }
 
-impl<'a> PmmAllocator for BuddyAllocator<'a> {
+impl PmmAllocator for BuddyAllocator<'_> {
     fn alloc_at(&mut self, addr: PhysAddr, mut page_count: NonZero<usize>) -> Result<(), PmmError> {
         // Round up `page_count` if needed
         page_count = page_count
@@ -124,7 +121,7 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
         let (freelist_entry_addr, entries_page_count) =
             unsafe { BUDDY_ALLOCATOR.init_freelist(mem_map, total_page_count) };
 
-        for entry in mem_map.iter() {
+        for entry in mem_map {
             if entry.entry_type == EntryType::USABLE {
                 let page_count = entry.length as usize / BASIC_PAGE_SIZE;
                 let addr = PhysAddr(entry.base as usize);
@@ -151,7 +148,7 @@ impl<'a> PmmAllocator for BuddyAllocator<'a> {
     }
 }
 
-impl<'a> BuddyAllocator<'a> {
+impl BuddyAllocator<'_> {
     /// The lowest possible zone level (the zone level of `BASIC_PAGE_SIZE`)
     const MIN_ZONE_LEVEL: usize = BASIC_PAGE_SIZE.ilog2() as usize;
 
@@ -216,7 +213,7 @@ impl<'a> BuddyAllocator<'a> {
         // minimum zone index (the zone index of the amount of pages we're trying to allocate)
         for i in start_index..bucket_index {
             let buddy_addr = Self::get_buddy_addr(addr, i);
-            self.push_to_zone(buddy_addr, i).unwrap();
+            self.push_to_zone(buddy_addr, i);
             addr = Self::determine_next_zone_bucket_addr(addr, buddy_addr);
         }
     }
@@ -252,7 +249,7 @@ impl<'a> BuddyAllocator<'a> {
             i += 1;
         }
 
-        self.push_to_zone(addr, i).unwrap();
+        self.push_to_zone(addr, i);
     }
 
     /// Returns the buddy address of the passed `addr` in the passed `zone_index`
@@ -289,7 +286,7 @@ impl<'a> BuddyAllocator<'a> {
     }
 
     /// Pushes the passed `buddy_addr` to the zone at the passed `zone_index`
-    fn push_to_zone(&mut self, buddy_addr: PhysAddr, zone_index: usize) -> Result<(), PmmError> {
+    fn push_to_zone(&mut self, buddy_addr: PhysAddr, zone_index: usize) {
         utils::sanity_assert!(self.freelist.len() >= self.zones.len());
         // If we need to perform emergency allocation (i.e. the amount of nodes are exactly the
         // amount of zones. This is the minimum amount of nodes we need to have spare in order to
@@ -318,9 +315,7 @@ impl<'a> BuddyAllocator<'a> {
         buddy.data = buddy_addr;
         unsafe {
             self.zones[zone_index].push_node(Box::into_non_null(buddy));
-        }
-
-        Ok(())
+        };
     }
 
     /// Checks if the passed `addr` is aligned to the passed `zone_index` (i.e. checks if the
@@ -384,7 +379,7 @@ impl<'a> BuddyAllocator<'a> {
                         PhysAddr(low_ptr),
                         NonZero::new(bucket_size / BASIC_PAGE_SIZE).unwrap(),
                     )
-                    .unwrap()
+                    .unwrap();
                 };
                 low_ptr += bucket_size;
                 page_count -= bucket_size / BASIC_PAGE_SIZE;
@@ -399,7 +394,7 @@ impl<'a> BuddyAllocator<'a> {
                         PhysAddr(high_ptr),
                         NonZero::new(bucket_size / BASIC_PAGE_SIZE).unwrap(),
                     )
-                    .unwrap()
+                    .unwrap();
                 };
                 page_count -= bucket_size / BASIC_PAGE_SIZE;
             }
@@ -420,12 +415,12 @@ impl<'a> BuddyAllocator<'a> {
 
         // size of zones + size of minimum initial nodes for the freelist + padding to align the
         // zones to the size of `Node<PhysAddr>` + padding to align everything to a page
+
         (zones_size
             + min_init_nodes_size
             + (Self::index_to_bucket_size(max_zone_level - 1)
-                % core::mem::align_of::<Node<PhysAddr>>())
-            + (BASIC_PAGE_SIZE - 1))
-            / BASIC_PAGE_SIZE
+                % core::mem::align_of::<Node<PhysAddr>>()))
+        .div_ceil(BASIC_PAGE_SIZE)
     }
 
     /// Initializes the freelist and zones array

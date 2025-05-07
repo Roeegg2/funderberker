@@ -73,10 +73,10 @@ pub enum DestinationShorthand {
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum SharedFlags {
-    ActiveHighEdgeTriggered = 0,
-    ActiveHighLevelTriggered = 2,
-    ActiveLowEdgeTriggered = 8,
-    ActiveLowLevelTriggered = 2 | 8,
+    HighEdge = 0,
+    HighLevel = 2,
+    LowEdge = 8,
+    LowLevel = 2 | 8,
 }
 
 impl Destination {
@@ -87,7 +87,7 @@ impl Destination {
     #[inline]
     pub const fn new(dest: u8, is_logical: bool) -> Result<Self, ()> {
         if is_logical {
-            if dest | 0x0f != 0 {
+            if dest & 0x0f != 0 {
                 // TODO: Add error message here.
                 // In this mode, the destination is a 4-bit logical destination ID.
                 return Err(());
@@ -100,10 +100,10 @@ impl Destination {
 
     /// Break the struct down into the destination mode and ID
     #[inline]
-    pub const fn get(&self) -> (u8, u8) {
+    pub const fn get(self) -> (u8, u8) {
         match self {
-            Destination::Physical(dest) => (Self::PHYSICAL_MODE, *dest),
-            Destination::Logical(dest) => (Self::LOGICAL_MODE, *dest),
+            Destination::Physical(dest) => (Self::PHYSICAL_MODE, dest),
+            Destination::Logical(dest) => (Self::LOGICAL_MODE, dest),
         }
     }
 }
@@ -114,8 +114,7 @@ impl TryFrom<u16> for TriggerMode {
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
             // 0 is the bus default: on ISA, this is edge triggered
-            0b0 => Ok(TriggerMode::EdgeTriggered),
-            0b1 => Ok(TriggerMode::EdgeTriggered),
+            0b1 | 0b0 => Ok(TriggerMode::EdgeTriggered),
             0b11 => Ok(TriggerMode::LevelTriggered),
             _ => Err(()),
         }
@@ -128,9 +127,8 @@ impl TryFrom<u16> for PinPolarity {
         match value {
             // 0 is the bus default: on EISA, this is active low
             // XXX: Is this the default only for Level or for Edge as well?
-            0b0 => Ok(PinPolarity::ActiveLow),
             0b1 => Ok(PinPolarity::ActiveHigh),
-            0b11 => Ok(PinPolarity::ActiveLow),
+            0b11 | 0b0 => Ok(PinPolarity::ActiveLow),
             _ => Err(()),
         }
     }
@@ -141,10 +139,10 @@ impl TryFrom<u16> for SharedFlags {
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         const FOO: u16 = 8 | 2;
         match value {
-            0 => Ok(SharedFlags::ActiveHighEdgeTriggered),
-            2 => Ok(SharedFlags::ActiveHighLevelTriggered),
-            8 => Ok(SharedFlags::ActiveLowEdgeTriggered),
-            FOO => Ok(SharedFlags::ActiveLowLevelTriggered),
+            0 => Ok(SharedFlags::HighEdge),
+            2 => Ok(SharedFlags::HighLevel),
+            8 => Ok(SharedFlags::LowEdge),
+            FOO => Ok(SharedFlags::LowLevel),
             _ => Err(()),
         }
     }

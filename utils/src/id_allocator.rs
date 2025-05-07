@@ -1,18 +1,29 @@
 use core::ops::Range;
 
-use crate::{collections::bitmap::Bitmap, sanity_assert};
+use crate::collections::bitmap::Bitmap;
 
+/// Possible errors the ID allocator might encounter
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum IdAllocatorError {
+    /// The allocator is out of IDs
     OutOfIds,
+    /// The ID that was trying to be freed is already freed
     IdAlreadyFree,
+    /// ID Out of bounds
+    InvalidId,
+    /// The ID that was trying to be allocated is already taken
+    IdAlreadyTaken,
 }
 
+/// A handle for the handed ID
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Id(pub usize);
 
+/// The ID allocator
 pub struct IdAllocator {
+    /// Bitmap for keeping track of IDs
     bitmap: Bitmap,
+    /// The range of the ID pool
     range: Range<Id>,
 }
 
@@ -50,12 +61,29 @@ impl IdAllocator {
         Err(IdAllocatorError::OutOfIds)
     }
 
+    pub fn allocate_at(&mut self, id: Id) -> Result<(), IdAllocatorError> {
+        if id.0 >= self.bitmap.used_bits_count() {
+            return Err(IdAllocatorError::InvalidId);
+        } else if self.bitmap.is_set(id.0) {
+            return Err(IdAllocatorError::IdAlreadyTaken);
+        }
+
+        self.bitmap.set(id.0);
+
+        Ok(())
+    }
+
     // TODO: Give a handle or something to prevent bad freeing?
     /// Tries to free the given id
     pub unsafe fn free(&mut self, id: Id) -> Result<(), IdAllocatorError> {
-        sanity_assert!(id.0 >= self.range.start.0 && id.0 <= self.range.end.0);
+        // Make sure the ID is in the given range
+        if self.range.end.0 < id.0 || id.0 < self.range.start.0 {
+            return Err(IdAllocatorError::OutOfIds);
+        }
 
         let index = id.0 - self.range.start.0;
+
+        // Free only if the ID is indeed already taken
         if self.bitmap.is_set(index) {
             self.bitmap.unset(index);
 
@@ -83,7 +111,7 @@ mod tests {
         let id2 = allocator.allocate().unwrap();
         assert_eq!(id2.0, 1);
 
-        unsafe {allocator.free(id1).unwrap()};
+        unsafe { allocator.free(id1).unwrap() };
 
         let id3 = allocator.allocate().unwrap();
         assert_eq!(id3.0, 0);

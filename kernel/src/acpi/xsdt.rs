@@ -1,14 +1,12 @@
-#[cfg(all(target_arch = "x86_64", feature = "hpet"))]
-use crate::acpi::hpet::Hpet;
-
-use crate::{
-    arch::x86_64::paging::Entry,
-    mem::{PhysAddr, vmm::map_page},
-};
+use core::ptr::from_ref;
 
 use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};
+#[cfg(all(target_arch = "x86_64", feature = "hpet"))]
+use crate::acpi::hpet::Hpet;
+use crate::mem::PhysAddr;
 
 /// The XSDT
+#[derive(Debug)]
 #[repr(C)]
 pub(super) struct Xsdt {
     /// The SDT header
@@ -20,7 +18,7 @@ impl Xsdt {
     #[inline]
     fn iter(&self) -> Iter {
         let count = self.header.entry_count::<PhysAddr>();
-        let ptr: *const PhysAddr = unsafe { core::ptr::from_ref(self).add(1).cast::<PhysAddr>() };
+        let ptr: *const PhysAddr = unsafe { from_ref(self).add(1).cast::<PhysAddr>() };
 
         Iter { ptr, count }
     }
