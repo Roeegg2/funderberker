@@ -150,7 +150,7 @@ pub struct LocalApic {
 impl LocalApic {
     /// Verifies that the CPU actually supports APIC
     #[inline]
-    fn validate_apic_support() {
+    fn check_support() {
         const CPUID_APIC_BIT: u32 = 0x1 << 9;
 
         let cpuid = unsafe { core::arch::x86_64::__cpuid(1) };
@@ -166,7 +166,7 @@ impl LocalApic {
     fn hardware_enable() {
         const APIC_ENABLE: u32 = 1 << 11;
 
-        Self::validate_apic_support();
+        Self::check_support();
 
         let mut value = unsafe { rdmsr(Msr::Ia32ApicBase) };
         value.0 |= APIC_ENABLE;

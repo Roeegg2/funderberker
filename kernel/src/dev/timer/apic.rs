@@ -88,7 +88,7 @@ impl ApicTimer {
     fn find_base_frequency(apic_id: u32) -> u32 {
         let res = unsafe { __cpuid_count(0x15, 0x0) };
 
-        // If these 2 aren't 0, then we can use CPUID to read the frequency
+        // If these 2 aren't 0, then we can use CPUID result to read the frequency
         if res.ecx != 0 && res.ebx != 0 {
             res.ecx
         } else {

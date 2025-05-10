@@ -17,9 +17,10 @@ pub mod vmm;
 
 // TODO: Make this uninit instead of 0?
 // TODO: Make this a SetOnce
-/// The offset between the HHDM mapped virtual address and the physical address
+/// An temporary invalid HHDM offset that will be changed once the HHDM offset is set
 const INVALID_HHDM_OFFSET: usize = 0xFFFF_FFFF_FFFF_FFFF;
 
+/// The offset between the HHDM mapped virtual address and the physical address
 static mut HHDM_OFFSET: usize = INVALID_HHDM_OFFSET;
 
 /// A physical address
@@ -55,6 +56,8 @@ impl PhysAddr {
     }
 }
 
+// TODO: Possibly remove these asserts, these could possibly slow things down
+
 /// Get the HHDM offset
 #[inline]
 pub fn get_hhdm_offset() -> usize {
@@ -74,7 +77,7 @@ pub fn set_hhdm_offset(offset: usize) {
     unsafe {
         assert!(
             HHDM_OFFSET == INVALID_HHDM_OFFSET,
-            "HHDM offset already set. Did you forget to call `set_hhdm_offset`?",
+            "HHDM offset already set. Did you forget you called `set_hhdm_offset`?",
         );
 
         HHDM_OFFSET = offset;

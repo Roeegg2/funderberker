@@ -13,11 +13,7 @@ utils = { path = "../utils" }
 macros = { path = "../macros" }
 
 [features]
-default = ["limine", "amd", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "hpet"]
-
-# x86_64 CPU vendors. Pick the one you intend to use.
-intel = []
-amd = []
+default = ["limine", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "hpet"]
 
 # Booting method
 limine = ["dep:limine"]
@@ -34,7 +30,7 @@ paging_5 = [] # UNTESTED
 pmm_bump = []
 pmm_buddy = []
 
-# Disable on the weird case you wouldn't want to use multiple cores on the system
+# Multiprocessing feature
 mp = []
 
 # HPET support.

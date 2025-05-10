@@ -1,16 +1,31 @@
 //! Everything specific to the `x86_64` architecture
 
+use core::arch::x86_64::__cpuid_count;
+
 use super::Architecture;
 use interrupts::Idt;
 
+pub mod hav;
 #[macro_use]
 pub mod cpu;
 pub mod apic;
 pub mod event;
 pub mod interrupts;
-// #[cfg(feature = "mp")]
-// mod mp;
 pub mod paging;
+
+/// A static variable to store the CPU vendor we are running on
+static mut CPU_VENDOR: CpuVendor = CpuVendor::Invalid;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+/// The x86_64 CPU vendors Funderberker supports
+pub enum CpuVendor {
+    /// We're running on an AMD CPU
+    Amd,
+    /// We're running on an AMD CPU
+    Intel,
+    /// Invalid vendor. This is the default start value
+    Invalid,
+}
 
 /// a ZST to implement the Arch trait on
 pub(super) struct X86_64;
@@ -25,31 +40,64 @@ pub(super) struct DescriptorTablePtr {
 
 impl Architecture for X86_64 {
     unsafe fn init() {
-        unsafe {
-            // Make sure no pesky interrupt interrupt us
-            Idt::init();
+        // Make sure no pesky interrupt interrupt us
+        Idt::init();
+
+        find_cpu_vendor();
+    }
+}
+
+// TODO: Possibly remove these asserts here? Could slow things down
+
+#[inline]
+fn find_cpu_vendor() {
+    type CpuidVendorString = (u32, u32, u32);
+
+    // Making sure we're not executing this for nothing
+    unsafe {
+        assert!(
+            CPU_VENDOR == CpuVendor::Invalid,
+            "CPU vendor is already set. Did you forget you called `find_cpu_vendor`?",
+        );
+    }
+
+    // The strings (broken down into parts) we should compare to to find out the vendor.
+    //
+    // The order is EBX:EDX:ECX
+    const INTEL_STRING: CpuidVendorString = (
+        u32::from_le_bytes(*b"Genu"),
+        u32::from_le_bytes(*b"ineI"),
+        u32::from_le_bytes(*b"ntel"),
+    );
+    const AMD_STRING: CpuidVendorString = (
+        u32::from_le_bytes(*b"Auth"),
+        u32::from_le_bytes(*b"enti"),
+        u32::from_le_bytes(*b"cAMD"),
+    );
+
+    let string = unsafe {
+        let res = __cpuid_count(0, 0);
+        (res.ebx, res.edx, res.ecx)
+    };
+
+    unsafe {
+        CPU_VENDOR = match string {
+            INTEL_STRING => CpuVendor::Intel,
+            AMD_STRING => CpuVendor::Amd,
+            _ => panic!("Invalid CPU vendor found"),
         };
-    }
+    };
 
-    #[cfg(feature = "mp")]
-    #[inline]
-    unsafe fn init_cores() {
-        // mp::init_cores();
-        // make sure we are on an MP system, otherwise return
-        //
-    }
+    log_info!("CPU Vendor found: `{:?}`", get_cpu_vendor());
+}
 
-    // #[inline(always)]
-    // unsafe fn migrate_to_new_stack() {
-    //     let new_stack: *const () = allocate_pages(CORE_STACK_PAGE_COUNT, Entry::FLAG_RW).into();
-    //     unsafe {
-    //         asm!(
-    //             "mov rsp, {0}",
-    //             in(reg) new_stack.addr(),
-    //             options(nostack)
-    //         );
-    //     }
-    //     // allocate pages of `STACK_SIZE` bytes
-    //     // reload RSP with the new stack
-    // }
+#[inline]
+fn get_cpu_vendor() -> CpuVendor {
+    unsafe {
+        assert!(
+            CPU_VENDOR != CpuVendor::Invalid,
+            "CPU vendor is not set. Did you forget to call `find_cpu_vendor`?",
+        );
+        CPU_VENDOR
+    }
 }

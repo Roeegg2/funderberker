@@ -75,8 +75,10 @@ trait AcpiTable {
 pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
     utils::sanity_assert!(rsdp_addr.0 % align_of::<Rsdp2>() == 0);
 
-    let rsdp = unsafe { let ptr: *const Rsdp2 = rsdp_addr.add_hhdm_offset().into();
-        ptr.as_ref().unwrap() };
+    let rsdp = unsafe {
+        let ptr: *const Rsdp2 = rsdp_addr.add_hhdm_offset().into();
+        ptr.as_ref().unwrap()
+    };
     rsdp.validate_checksum()?;
     let xsdt = rsdp.get_xsdt();
     xsdt.parse_tables()?;

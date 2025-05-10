@@ -7,7 +7,15 @@ use core::arch::asm;
 #[repr(u32)]
 pub enum Msr {
     /// Address of the `IA32_APIC_BASE` MSR
-    Ia32ApicBase = 0x1b,
+    Ia32ApicBase = 0x1B,
+    /// Address of the `IA32_FEATURE_CONTROL` MSR
+    Ia32FeatureControl = 0x3A,
+    /// FOR AMD CPUs!
+    ///
+    /// Extended feature enable
+    Efer = 0xC000_0080,
+    /// Control and status bits for HAV
+    VmCr = 0xC001_0114,
 }
 
 #[allow(unused)]
