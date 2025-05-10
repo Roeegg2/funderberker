@@ -48,8 +48,11 @@ pub fn test_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     output.into()
 }
 
-/// Make a function an ISR. This macro creates a stub (called ``__isr_stub_isr` where `isr` is the name of
+/// Make a function an ISR. This macro creates a stub (called `__isr_stub_isr` where `isr` is the name of
 /// the function) that calls the macro tagged with that attribute
+///
+/// NOTE: When registering the ISR within the IDT use `__isr_stub_isr` and NOT `isr`. The ISR stub
+/// will call the actual ISR.
 #[cfg(target_arch = "x86_64")]
 #[proc_macro_attribute]
 pub fn isr(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -66,7 +69,6 @@ pub fn isr(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Generate the macro output
     let expanded = quote! {
         // The original ISR function (renamed internally)
-        #[inline]
         #fn_vis fn #fn_name(#fn_args) {
             #fn_body
         }

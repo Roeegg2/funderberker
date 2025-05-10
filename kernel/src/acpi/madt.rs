@@ -1,10 +1,13 @@
-use super::{AcpiError, AcpiTable, SdtHeader};
+//! Parser for the MADT table
 
+use utils::id_allocator::IdAllocator;
+
+use super::{AcpiError, AcpiTable, SdtHeader};
 use crate::{
     arch::x86_64::{
         apic::{
             DeliveryMode,
-            ioapic::{self, IoApic},
+            ioapic::{self, IoApic, init_irq_allocator},
             lapic,
         },
         paging::Entry,
@@ -214,8 +217,7 @@ impl Madt {
                 EntryType::IO_APIC_ISO => {
                     let entry = unsafe { entry.cast::<IoApicIsoEntry>().as_ref().unwrap() };
                     unsafe {
-                        ioapic::override_irq(entry.irq_source, entry.gsi, entry.flags, None)
-                            .expect("Failed to override IOAPIC IRQ");
+                        ioapic::override_irq(entry.irq_source, entry.gsi, entry.flags, None);
                     };
                 }
                 EntryType::IO_APIC_NMI_ISO => {
@@ -226,8 +228,7 @@ impl Madt {
                             entry.gsi,
                             entry.flags,
                             Some(DeliveryMode::Nmi),
-                        )
-                        .expect("Failed to override IOAPIC NMI IRQ");
+                        );
                     };
                 }
                 EntryType::LOCAL_APIC_NMI => {
@@ -271,6 +272,8 @@ impl Madt {
                 }
             }
         }
+
+        init_irq_allocator();
 
         Ok(())
     }

@@ -1,4 +1,4 @@
-//! Serial port driver for logging stuff
+//! Simple serial driver for logging purposes
 
 use crate::arch::x86_64::cpu;
 

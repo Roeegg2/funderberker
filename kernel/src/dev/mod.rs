@@ -1,3 +1,5 @@
+//! Various drivers and driver interfaces
+
 pub mod clock;
 #[cfg(feature = "legacy")]
 pub mod cmos;

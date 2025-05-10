@@ -265,7 +265,9 @@ impl PageTable {
         unreachable!()
     }
 
-    /// Applies a certain function to each of the entries in the given range in parent page table
+    /// Gets the parent page table of the given `base_addr`.
+    ///
+    /// If one of the page tables are missing during translation, a new page table is created.
     fn get_range_table(&mut self, base_addr: VirtAddr, page_size: PageSize) -> &mut PageTable {
         {
             let start = base_addr.next_level_index(page_size.bottom_paging_level());
@@ -401,6 +403,7 @@ pub fn get_pml() -> &'static mut PageTable {
     unsafe { ptr.cast::<PageTable>().as_mut().expect("Failed to get PML") }
 }
 
+/// Initialize the paging subsystem when booting from Limine
 #[cfg(feature = "limine")]
 pub unsafe fn init_from_limine(
     mem_map: &[&memory_map::Entry],
@@ -457,7 +460,8 @@ pub unsafe fn init_from_limine(
                 len,
                 new_pml,
             ),
-            EntryType::FRAMEBUFFER if cfg!(feature = "framebuffer") => map_with_hhdm_offset(
+            #[cfg(feature = "framebuffer")]
+            EntryType::FRAMEBUFFER => map_with_hhdm_offset(
                 PhysAddr(entry.base as usize).add_hhdm_offset(),
                 PhysAddr(entry.base as usize),
                 len,

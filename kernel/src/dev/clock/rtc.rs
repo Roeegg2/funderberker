@@ -1,3 +1,5 @@
+//! RTC driver implementation
+
 use utils::sanity_assert;
 
 use crate::{

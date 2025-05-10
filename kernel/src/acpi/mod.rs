@@ -1,3 +1,5 @@
+//! ACPI table parser
+
 use rsdp::Rsdp2;
 
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]

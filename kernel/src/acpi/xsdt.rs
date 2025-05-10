@@ -1,3 +1,5 @@
+//! Parser for the XSDT table
+
 use core::ptr::from_ref;
 
 use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};

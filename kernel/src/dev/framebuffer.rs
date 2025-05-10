@@ -1,4 +1,4 @@
-//! Basic framebuffer driver for printing stuff to screen
+//! Simple framebuffer driver for logging purposes
 
 use limine::framebuffer::Framebuffer;
 

@@ -2,6 +2,10 @@
 
 use macros::isr;
 
+use crate::arch::x86_64::apic::lapic::LocalApic;
+
+pub const GENERIC_ISR_VECTOR: u8 = 255;
+
 /// List of error messages for each exception
 static EXCEPTION_MESSAGES: &[&str] = &[
     "Divide-by-zero Error",
@@ -38,6 +42,41 @@ static EXCEPTION_MESSAGES: &[&str] = &[
     "Unknown",
 ];
 
+// static EXCEPTION_MESSAGES: &[&str] = &[
+//     "Divide-by-zero Error",
+//     "Debug",
+//     "Non-maskable Interrupt",
+//     "Breakpoint",
+//     "Overflow",
+//     "Bound Range Exceeded",
+//     "Invalid Opcode",
+//     "Device Not Available",
+//     "Double Fault",
+//     "Coprocessor Segment Overrun",
+//     "Invalid TSS",
+//     "Segment Not Present",
+//     "Stack-Segment Fault",
+//     "General Protection Fault",
+//     "Page Fault",
+//     "Unknown",
+//     "x87 Floating-Point Exception",
+//     "Alignment Check",
+//     "Machine Check",
+//     "SIMD Floating-Point Exception",
+//     "Virtualization Exception",
+//     "Unknown",
+//     "Unknown",
+//     "Unknown",
+//     "Unknown",
+//     "Unknown",
+//     "Unknown",
+//     "Unknown",
+//     "Unknown",
+//     "Unknown",
+//     "Security Exception",
+//     "Unknown",
+// ];
+
 /// Utility macro to define an exception ISR that just prints the error to the screen.
 macro_rules! generic_exception_isr {
     ($isr_name:ident, $vec:expr) => {
@@ -62,7 +101,7 @@ generic_exception_isr!(exception_10, 10);
 generic_exception_isr!(exception_11, 11);
 generic_exception_isr!(exception_12, 12);
 generic_exception_isr!(exception_13, 13);
-generic_exception_isr!(exception_14, 13);
+generic_exception_isr!(exception_14, 14);
 generic_exception_isr!(exception_15, 15);
 generic_exception_isr!(exception_16, 16);
 generic_exception_isr!(exception_17, 17);
@@ -80,3 +119,12 @@ generic_exception_isr!(exception_28, 28);
 generic_exception_isr!(exception_29, 29);
 generic_exception_isr!(exception_30, 30);
 generic_exception_isr!(exception_31, 31);
+
+#[isr]
+pub extern "C" fn generic_irq_isr() {
+    println!("GENERIC IRQ ISR CALLED!");
+    // TODO: Possibly rewrite this
+    let this_lapic_id = LocalApic::get_this_apic_id();
+    let lapic = LocalApic::get_apic(this_lapic_id);
+    lapic.signal_eoi();
+}

@@ -103,6 +103,18 @@ where
     }
 }
 
-// ---- IMPLEMENTING SpinLockDropable for some shared types ----
+// ---- IMPLEMENTING SpinLockDropable for some common primitive types ----
 
 impl SpinLockDropable for () {}
+impl SpinLockDropable for i8 {}
+impl SpinLockDropable for i16 {}
+impl SpinLockDropable for i32 {}
+impl SpinLockDropable for i64 {}
+impl SpinLockDropable for i128 {}
+impl SpinLockDropable for u8 {}
+impl SpinLockDropable for u16 {}
+impl SpinLockDropable for u32 {}
+impl SpinLockDropable for u64 {}
+impl SpinLockDropable for u128 {}
+impl SpinLockDropable for isize {}
+impl SpinLockDropable for usize {}

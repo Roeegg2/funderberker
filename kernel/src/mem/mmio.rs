@@ -1,3 +1,5 @@
+//! Wrappers for safer and easier handling of MMIO
+
 use core::marker;
 
 /// A trait for types that can be used as MMIO register offsets

@@ -1,4 +1,4 @@
-//! A PIT driver
+//! PIT driver implementation
 
 use core::time::Duration;
 

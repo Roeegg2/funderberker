@@ -1,14 +1,14 @@
-//! Driver for the local APIC timer
+//! Local APIC timer driver implementation
 //!
 //! Each core on the system has it's own timer, so no syncronization is needed
 
 use core::{arch::x86_64::__cpuid_count, hint, time::Duration};
 
-use crate::arch::x86_64::apic::lapic::LocalApic;
+use crate::arch::x86_64::{apic::lapic::LocalApic, event::__isr_stub_generic_irq_isr};
 
 use super::{
     Timer, TimerError,
-    hpet::{self, HPET, HpetTimer},
+    hpet::{self, AdditionalConfig, DeliveryMode, HPET, HpetTimer, TriggerMode},
 };
 
 /// The possible divider values for the APIC timer
@@ -107,8 +107,26 @@ impl ApicTimer {
             apic.set_timer_divider_config(TimerDivisor::Div1);
             // Configure the 2 timers to tick for a period longer than 100ms
             apic.configure_timer(u32::MAX, TimerMode::OneShot);
+
+            // We configure the HPET timer.
+            //
+            // We make sure we don't recieve the interrupts since we want to just poll, and so we
+            // use `EdgeTriggered` as well
+            //
+            // We configure it to run for 5000 just to make sure it doesn't interfere with out
+            // measurement
             hpet_timer
-                .configure(Duration::from_secs(5000), hpet::TimerMode::OneShot, ())
+                .configure(
+                    Duration::from_secs(5000),
+                    hpet::TimerMode::OneShot,
+                    AdditionalConfig {
+                        recieve_interrupts: false,
+                        delivery_mode: DeliveryMode::Interrupt(
+                            __isr_stub_generic_irq_isr,
+                            TriggerMode::EdgeTriggered,
+                        ),
+                    },
+                )
                 .unwrap();
 
             // Enable both timers

@@ -6,7 +6,7 @@ use interrupts::Idt;
 #[macro_use]
 pub mod cpu;
 pub mod apic;
-mod event;
+pub mod event;
 pub mod interrupts;
 // #[cfg(feature = "mp")]
 // mod mp;

@@ -15,7 +15,7 @@
 #![feature(naked_functions)]
 
 use core::arch::asm;
-use dev::timer::{self, apic::ApicTimer};
+use dev::timer::apic::ApicTimer;
 
 mod boot;
 #[macro_use]
@@ -34,8 +34,6 @@ mod test;
 pub fn funderberker_main() -> ! {
     #[cfg(test)]
     test_main();
-
-    timer::enable_secondary_timer();
 
     let _timer = ApicTimer::new();
 

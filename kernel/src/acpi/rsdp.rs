@@ -1,8 +1,8 @@
-use core::ptr;
-
-use crate::mem::PhysAddr;
+//! Parser for the RSDP table
 
 use super::{AcpiError, SdtHeader, xsdt::Xsdt};
+use crate::mem::PhysAddr;
+use core::ptr;
 
 /// The RSDP (a pointer to the XSDT)
 #[repr(C, packed)]

@@ -111,15 +111,15 @@ unsafe extern "C" fn kmain() -> ! {
         };
     }
 
-    unsafe {
-        arch::init();
-    };
-
     let hhdm = HHDM_REQUEST
         .get_response()
         .expect("Can't get Limine framebuffer feature response");
 
     mem::set_hhdm_offset(hhdm.offset() as usize);
+
+    unsafe {
+        arch::init();
+    };
 
     let mem_map = MEMORY_MAP_REQUEST
         .get_response()
