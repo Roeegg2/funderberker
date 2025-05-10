@@ -37,9 +37,7 @@ pub fn funderberker_main() -> ! {
 
     let _timer = ApicTimer::new();
 
-    unsafe {
-        crate::arch::init_cores();
-    }
+    arch::x86_64::hav::enable();
 
     log_info!("Starting Funderberker main operation!");
 

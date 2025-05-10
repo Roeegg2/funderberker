@@ -2,13 +2,11 @@
 
 use core::num::NonZero;
 
-use limine::BaseRevision;
-use limine::memory_map;
-use limine::paging;
 use limine::request::{
-    HhdmRequest, ExecutableAddressRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
+    ExecutableAddressRequest, HhdmRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
     RequestsStartMarker, RsdpRequest,
 };
+use limine::{BaseRevision, memory_map, paging};
 
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;

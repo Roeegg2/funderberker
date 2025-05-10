@@ -34,7 +34,11 @@ pub(super) struct BuddyAllocator<'a> {
 }
 
 impl PmmAllocator for BuddyAllocator<'_> {
-    fn allocate_at(&mut self, addr: PhysAddr, mut page_count: NonZero<usize>) -> Result<(), PmmError> {
+    fn allocate_at(
+        &mut self,
+        addr: PhysAddr,
+        mut page_count: NonZero<usize>,
+    ) -> Result<(), PmmError> {
         // Round up `page_count` if needed
         page_count = page_count
             .checked_next_power_of_two()

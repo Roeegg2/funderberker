@@ -15,20 +15,6 @@ trait Architecture {
     ///
     /// SHOULD ONLY BE CALLED ONCE DURING BOOT!
     unsafe fn init();
-
-    /// Initialize the other cores on the system
-    ///
-    /// SHOULD ONLY BE CALLED ONCE DURING BOOT!
-    #[cfg(feature = "mp")]
-    unsafe fn init_cores();
-
-    // /// Sets up a new stack for the current running core (BSP)
-    // ///
-    // /// NOTE: Make sure to mark this function as `#[inline(always)]` so we don't get any pops in
-    // /// the code, which will try to access the old stack (which we aren't referencing anymore)
-    // ///
-    // /// SHOULD ONLY BE CALLED ONCE DURING BOOT!
-    // unsafe fn migrate_to_new_stack();
 }
 
 /// Wrapper to call the arch specific `init` function
@@ -39,21 +25,3 @@ pub unsafe fn init() {
         x86_64::X86_64::init();
     }
 }
-
-/// Wrapper to call the arch specific `init_cores` function
-#[inline]
-pub unsafe fn init_cores() {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        x86_64::X86_64::init_cores();
-    }
-}
-
-// /// Wrapper to call the arch specific `migrate_to_new_stack` function
-// #[inline(always)]
-// pub unsafe fn migrate_to_new_stack() {
-//     #[cfg(target_arch = "x86_64")]
-//     unsafe {
-//         x86_64::X86_64::migrate_to_new_stack();
-//     }
-// }
