@@ -213,74 +213,6 @@ pub unsafe fn install_isr(
     Ok(entry.0 as u8)
 }
 
-/// Install an ISR entry at the given `index` if it's free. Otherwise return
-///
-/// NOTE: Make sure to call with the *ISR stub* and *not the actual handler!!* (ie. `__isr_stub_..`)
-pub unsafe fn install_isr_at(
-    isr_stub: IsrStub,
-    segment_selector: u16,
-    ist: u8,
-    gate_type: GateType,
-    dpl: Dpl,
-    present: Present,
-    index: u8,
-) -> Result<(), ()> {
-    let mut idt = IDT.lock();
-
-    let entry = &mut idt.0[index as usize];
-    if entry.present() == Present::Present as u8 {
-        return Err(());
-    }
-
-    entry.register(
-        isr_stub as usize as u64,
-        segment_selector,
-        ist,
-        gate_type,
-        dpl,
-        present,
-    );
-
-    Ok(())
-}
-
-// /// Tries to uninstall the ISR at the given `index`, and disables it. An error is returned if the ISR isn't already
-// /// allocated
-// pub unsafe fn uninstall_isr(index: Id) -> Result<(), ()> {
-//     assert!(index.0 < 256);
-//
-//     let mut idt = IDT.lock();
-//
-//     unsafe {
-//         // Release the IDT entry
-//         idt.entry_tracker.free(index).map_err(|_| ())?;
-//
-//         // Mark the entry as not present
-//         idt.entries[index.0].set_present(Present::NotPresent as u8);
-//     }
-//
-//     Ok(())
-// }
-
-// /// Mark the entry at the given `index` with the given `Present` value.
-// /// If the index is out of bounds or the entry isn't allocated, an error is returned.
-// pub unsafe fn set_entry_present(index: Id, present: Present) -> Result<(), ()> {
-//     assert!(index.0 < 256);
-//
-//     let mut idt = IDT.lock();
-//
-//     // Make sure the entry is indeed allocated
-//     if idt.entry_tracker.allocate_at(index).is_ok() {
-//         return Err(());
-//     }
-//
-//     idt.entries[index.0].set_present(present as u8);
-//
-//     Ok(())
-// }
-
-impl SpinLockDropable for Idt {}
-
 unsafe extern "C" {
     fn __isr_stub_exception_0();
     fn __isr_stub_exception_1();
@@ -317,3 +249,5 @@ unsafe extern "C" {
 
     fn __isr_stub_generic_irq_isr();
 }
+
+impl SpinLockDropable for Idt {}

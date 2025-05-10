@@ -5,21 +5,23 @@ use core::slice::from_raw_parts_mut;
 
 use limine::memory_map;
 
-use crate::arch::BASIC_PAGE_SIZE;
 use crate::boot::limine::get_page_count_from_mem_map;
+use crate::sync::spinlock::SpinLockDropable;
+use crate::{arch::BASIC_PAGE_SIZE, sync::spinlock::SpinLock};
 
 use super::{PhysAddr, PmmAllocator, PmmError};
 use utils::collections::static_bitmap::StaticBitmap;
 
 // TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// Singleton instance of the bump allocator
-pub(super) static mut BUMP_ALLOCATOR: BumpAllocator = BumpAllocator(StaticBitmap::uninit());
+pub(super) static BUMP_ALLOCATOR: SpinLock<BumpAllocator> =
+    SpinLock::new(BumpAllocator(StaticBitmap::uninit()));
 
 /// Singleton bump allocator implemented using bitmap
 pub(super) struct BumpAllocator<'a>(StaticBitmap<'a>);
 
-impl<'a> PmmAllocator for BumpAllocator<'a> {
-    fn alloc_any(
+impl PmmAllocator for BumpAllocator<'_> {
+    fn allocate(
         &mut self,
         alignment: NonZero<usize>,
         page_count: NonZero<usize>,
@@ -48,7 +50,7 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
         Err(PmmError::NoAvailableBlock)
     }
 
-    fn alloc_at(
+    fn allocate_at(
         &mut self,
         addr: PhysAddr,
         page_count: NonZero<usize>,
@@ -187,39 +189,46 @@ impl<'a> PmmAllocator for BumpAllocator<'a> {
             (bitmap, bitmap_entry)
         }
 
+        let mut allocator = BUMP_ALLOCATOR.lock();
+
         // Get the last allocatable memory descriptor - that'll decide the bitmap size (yes, we'll
         // still have some "holes" (ie. reserved & shit memory) but it's negligible. Not worth the
         // hasstle of maintaining multiple bitmaps etc)
         let page_count = get_page_count_from_mem_map(mem_map);
 
-        unsafe {
-            // Get the size we need to allocate to the bitmap (that's `what we use` + `rounding up` to byte alignment)
-            #[allow(static_mut_refs)]
-            let bitmap_alloc_size = (page_count.get() + 7) / 8;
+        // Get the size we need to allocate to the bitmap (that's `what we use` + `rounding up` to byte alignment)
+        let bitmap_alloc_size = (page_count.get() + 7) / 8;
 
-            // Find a suitable bitmap & initilize it with 1's
-            let (bitmap, bitmap_entry) = new_bitmap_from_limine(mem_map, bitmap_alloc_size as u64);
+        // Find a suitable bitmap & initilize it with 1's
+        let (bitmap, bitmap_entry) =
+            unsafe { new_bitmap_from_limine(mem_map, bitmap_alloc_size as u64) };
 
-            // Set the actual bitmap size to the page count, since these are the pages we can
-            // actually use
-            BUMP_ALLOCATOR.0 = StaticBitmap::new(bitmap, page_count.get());
+        // Set the actual bitmap size to the page count, since these are the pages we can
+        // actually use
+        allocator.0 = StaticBitmap::new(bitmap, page_count.get());
 
-            // Update the bitmaps contents to the current memory map + entry allocated for the
-            // bitmap
-            #[allow(static_mut_refs)]
-            for entry in mem_map {
-                if entry.entry_type == memory_map::EntryType::USABLE {
+        // Update the bitmaps contents to the current memory map + entry allocated for the
+        // bitmap
+        for entry in mem_map {
+            if entry.entry_type == memory_map::EntryType::USABLE {
+                unsafe {
                     set_for_mem_map_entry(entry.base as usize, entry.length as usize)
-                        .for_each(|page_id| BUMP_ALLOCATOR.0.unset(page_id));
-                }
+                        .for_each(|page_id| allocator.0.unset(page_id));
+                };
             }
-
-            #[allow(static_mut_refs)]
-            set_for_mem_map_entry(bitmap_entry.base as usize, bitmap_alloc_size)
-                .for_each(|page_id| BUMP_ALLOCATOR.0.set(page_id));
         }
+
+        unsafe {
+            set_for_mem_map_entry(bitmap_entry.base as usize, bitmap_alloc_size)
+                .for_each(|page_id| allocator.0.set(page_id))
+        };
     }
 }
+
+unsafe impl Send for BumpAllocator<'_> {}
+unsafe impl Sync for BumpAllocator<'_> {}
+
+impl SpinLockDropable for BumpAllocator<'_> {}
 
 #[cfg(test)]
 mod tests {
@@ -229,25 +238,22 @@ mod tests {
 
     #[test_fn]
     fn test_bump_alloc() {
-        let allocator = unsafe {
-            #[allow(static_mut_refs)]
-            &mut BUMP_ALLOCATOR
-        };
+        let mut allocator = BUMP_ALLOCATOR.lock();
 
         let addr0 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(1)
             })
             .unwrap();
         let addr1 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(2) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(2) }, unsafe {
                 NonZero::new_unchecked(10)
             })
             .unwrap();
         assert!(addr1.0 % 0x2000 == 0);
 
         let addr2 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(2)
             })
             .unwrap();
@@ -255,7 +261,7 @@ mod tests {
 
         for _ in 0..10 {
             let addr = allocator
-                .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+                .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                     NonZero::new_unchecked(3)
                 })
                 .unwrap();
@@ -268,19 +274,16 @@ mod tests {
 
     #[test_fn]
     fn test_bump_error() {
-        let allocator = unsafe {
-            #[allow(static_mut_refs)]
-            &mut BUMP_ALLOCATOR
-        };
+        let mut allocator = BUMP_ALLOCATOR.lock();
 
         let addr = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(2) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(2) }, unsafe {
                 NonZero::new_unchecked(10)
             })
             .unwrap();
 
         assert_eq!(
-            allocator.alloc_at(addr, unsafe { NonZero::new_unchecked(10) }),
+            allocator.allocate_at(addr, unsafe { NonZero::new_unchecked(10) }),
             Err(PmmError::NoAvailableBlock)
         );
 
@@ -303,5 +306,5 @@ mod tests {
         };
     }
 
-    // TODO: Need to test alloc_at
+    // TODO: Need to test allocate_at
 }

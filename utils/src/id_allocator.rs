@@ -25,7 +25,7 @@ pub struct IdAllocator {
     /// Bitmap for keeping track of IDs
     bitmap: Bitmap,
     /// The range of the ID pool
-    range: Range<Id>,
+    pool_range: Range<Id>,
 }
 
 // TODO: Use a ring ptr here?
@@ -35,19 +35,19 @@ impl IdAllocator {
     pub const fn uninit() -> Self {
         Self {
             bitmap: Bitmap::uninit(),
-            range: Id(0)..Id(0),
+            pool_range: Id(0)..Id(0),
         }
     }
 
     /// Construct a new `IdAllocator`
-    pub fn new(range: Range<Id>) -> Self {
+    pub fn new(pool_range: Range<Id>) -> Self {
         Self {
-            bitmap: Bitmap::new(range.end.0 - range.start.0 + 1),
-            range,
+            bitmap: Bitmap::new(pool_range.end.0 - pool_range.start.0 + 1),
+            pool_range,
         }
     }
 
-    /// Try to find a free id in the range and allocate it
+    /// Try to find a free id in the pool_range and allocate it
     #[must_use = "Not freeing the ID will cause leaking"]
     pub fn allocate(&mut self) -> Result<Id, IdAllocatorError> {
         let max_id = self.bitmap.used_bits_count();
@@ -55,7 +55,7 @@ impl IdAllocator {
         for i in 0..max_id {
             if !self.bitmap.is_set(i) {
                 self.bitmap.set(i);
-                return Ok(Id(i + self.range.start.0));
+                return Ok(Id(i + self.pool_range.start.0));
             }
         }
 
@@ -77,12 +77,12 @@ impl IdAllocator {
     // TODO: Give a handle or something to prevent bad freeing?
     /// Tries to free the given id
     pub unsafe fn free(&mut self, id: Id) -> Result<(), IdAllocatorError> {
-        // Make sure the ID is in the given range
-        if self.range.end.0 < id.0 || id.0 < self.range.start.0 {
+        // Make sure the ID is in the given pool_range
+        if self.pool_range.end.0 < id.0 || id.0 < self.pool_range.start.0 {
             return Err(IdAllocatorError::OutOfIds);
         }
 
-        let index = id.0 - self.range.start.0;
+        let index = id.0 - self.pool_range.start.0;
 
         // Free only if the ID is indeed already taken
         if self.bitmap.is_set(index) {
@@ -92,6 +92,10 @@ impl IdAllocator {
         }
 
         Err(IdAllocatorError::IdAlreadyFree)
+    }
+
+    pub fn pool_range(&self) -> Range<Id> {
+        self.pool_range.clone()
     }
 
     // pub fn grow_pool();

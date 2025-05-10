@@ -27,7 +27,7 @@ impl Xsdt {
 
     /// Parse the ACPI tables in the XSDT
     pub(super) fn parse_tables(&self) -> Result<(), AcpiError> {
-        unsafe { self.header.validate_checksum()? };
+        self.header.validate_checksum()?;
 
         for entry in self.iter() {
             let signature = &unsafe { (*entry).signature };

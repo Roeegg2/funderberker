@@ -130,7 +130,6 @@ impl ApicTimer {
                 .unwrap();
 
             // Enable both timers
-            hpet_timer.set_disabled(false);
             apic.set_timer_disabled(false);
 
             // Poll until we reached 100ms mark, then disable the timers

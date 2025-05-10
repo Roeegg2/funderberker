@@ -185,7 +185,7 @@ impl Madt {
 
     /// Parse the entries of the MADT
     pub(super) fn parse(&self) -> Result<(), AcpiError> {
-        unsafe { self.header.validate_checksum()? };
+        self.header.validate_checksum()?;
 
         // Mask off all of the old PIC interrupts
         unsafe { IoApic::mask_off_pic() };
@@ -193,80 +193,60 @@ impl Madt {
         for entry in self.iter() {
             let entry_type = unsafe { entry.read().entry_type };
             match entry_type {
-                EntryType::LOCAL_APIC => {
-                    let entry = unsafe { entry.cast::<LocalApicEntry>().as_ref().unwrap() };
-                    unsafe {
-                        lapic::add(
-                            PhysAddr(self.local_apic_addr as usize),
-                            entry.acpi_processor_id as u32,
-                            entry.apic_id as u32,
-                            entry.flags,
-                        );
-                    };
-                }
-                EntryType::IO_APIC => {
-                    let entry = unsafe { entry.cast::<IoApicEntry>().as_ref().unwrap() };
-                    unsafe {
-                        ioapic::add(
-                            PhysAddr(entry.io_apic_addr as usize),
-                            entry.gsi_base,
-                            entry.io_apic_id,
-                        );
-                    };
-                }
-                EntryType::IO_APIC_ISO => {
-                    let entry = unsafe { entry.cast::<IoApicIsoEntry>().as_ref().unwrap() };
-                    unsafe {
-                        ioapic::override_irq(entry.irq_source, entry.gsi, entry.flags, None);
-                    };
-                }
-                EntryType::IO_APIC_NMI_ISO => {
-                    let entry = unsafe { entry.cast::<IoApicNmiIsoEntry>().as_ref().unwrap() };
-                    unsafe {
-                        ioapic::override_irq(
-                            entry.nmi_source,
-                            entry.gsi,
-                            entry.flags,
-                            Some(DeliveryMode::Nmi),
-                        );
-                    };
-                }
-                EntryType::LOCAL_APIC_NMI => {
-                    let entry = unsafe { entry.cast::<LocalApicNmiEntry>().as_ref().unwrap() };
-                    unsafe {
-                        lapic::config_lints(
-                            entry.acpi_processor_id as u32,
-                            entry.lint,
-                            entry.flags,
-                        );
-                    };
-                }
-                EntryType::LOCAL_APIC_ADDR_OVERRIDE => {
+                EntryType::LOCAL_APIC => unsafe {
+                    let entry = entry.cast::<LocalApicEntry>().as_ref().unwrap();
+                    lapic::add(
+                        PhysAddr(self.local_apic_addr as usize),
+                        entry.acpi_processor_id as u32,
+                        entry.apic_id as u32,
+                        entry.flags,
+                    );
+                },
+                EntryType::IO_APIC => unsafe {
+                    let entry = entry.cast::<IoApicEntry>().as_ref().unwrap();
+                    ioapic::add(
+                        PhysAddr(entry.io_apic_addr as usize),
+                        entry.gsi_base,
+                        entry.io_apic_id,
+                    );
+                },
+                EntryType::IO_APIC_ISO => unsafe {
+                    let entry = entry.cast::<IoApicIsoEntry>().as_ref().unwrap();
+                    ioapic::override_irq(entry.irq_source, entry.gsi, entry.flags, None);
+                },
+                EntryType::IO_APIC_NMI_ISO => unsafe {
+                    let entry = entry.cast::<IoApicNmiIsoEntry>().as_ref().unwrap();
+                    ioapic::override_irq(
+                        entry.nmi_source,
+                        entry.gsi,
+                        entry.flags,
+                        Some(DeliveryMode::Nmi),
+                    );
+                },
+                EntryType::LOCAL_APIC_NMI => unsafe {
+                    let entry = entry.cast::<LocalApicNmiEntry>().as_ref().unwrap();
+                    lapic::config_lints(entry.acpi_processor_id as u32, entry.lint, entry.flags);
+                },
+                EntryType::LOCAL_APIC_ADDR_OVERRIDE => unsafe {
                     // XXX: I think this entry should always come before the local apic and all the
                     // override entries but that might be wrong. But eh womp womp if that's the case I guess
-                    let entry =
-                        unsafe { entry.cast::<LocalApicAddrOverrideEntry>().as_ref().unwrap() };
-                    unsafe {
-                        let ptr: *mut u32 = map_page(
-                            PhysAddr(entry.local_apic_phys_addr as usize),
-                            Entry::FLAG_RW,
-                        )
-                        .into();
-                        lapic::override_base(ptr);
-                    };
-                }
-                EntryType::PROCESSOR_LOCAL_X2APIC => {
-                    let entry =
-                        unsafe { entry.cast::<ProcessorLocalx2ApicEntry>().as_ref().unwrap() };
-                    unsafe {
-                        lapic::add(
-                            PhysAddr(self.local_apic_addr as usize),
-                            entry.processor_acpi_id,
-                            entry.x2apic_id,
-                            entry.flags,
-                        );
-                    };
-                }
+                    let entry = entry.cast::<LocalApicAddrOverrideEntry>().as_ref().unwrap();
+                    let ptr: *mut u32 = map_page(
+                        PhysAddr(entry.local_apic_phys_addr as usize),
+                        Entry::FLAG_RW,
+                    )
+                    .into();
+                    lapic::override_base(ptr);
+                },
+                EntryType::PROCESSOR_LOCAL_X2APIC => unsafe {
+                    let entry = entry.cast::<ProcessorLocalx2ApicEntry>().as_ref().unwrap();
+                    lapic::add(
+                        PhysAddr(self.local_apic_addr as usize),
+                        entry.processor_acpi_id,
+                        entry.x2apic_id,
+                        entry.flags,
+                    );
+                },
                 _ => {
                     log_warn!("APIC: Unknown entry type: {}", entry_type);
                 }

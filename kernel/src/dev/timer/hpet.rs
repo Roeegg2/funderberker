@@ -3,13 +3,10 @@
 use super::{PIT_IRQ, RTC_IRQ, Timer, TimerError};
 use crate::{
     arch::x86_64::{
-        apic::{
-            self,
-            ioapic::{self, allocate_irq_at, gsi_to_irq, irq_to_gsi, map_irq_to_vector},
-        },
-        cpu::get_cs,
-        interrupts::{self, Dpl, GateType, IsrStub, Present},
+        apic::ioapic::{self, allocate_irq_at, gsi_to_irq},
+        interrupts::IsrStub,
     },
+    dev::register_irq,
     mem::mmio::MmioArea,
     sync::spinlock::{SpinLock, SpinLockDropable},
 };
@@ -390,34 +387,8 @@ impl HpetTimer {
                     }
                 };
 
-                println!("this is the irq {irq}");
-
-                unsafe {
-                    // Make sure the interrupt is masked off before we do any fiddiling with the
-                    // IO APIC and IDT
-                    ioapic::set_disabled(irq, true).unwrap();
-
-                    // Install the new ISR
-                    let vector = interrupts::install_isr(
-                        isr_stub,
-                        get_cs(),
-                        0,
-                        GateType::Interrupt,
-                        Dpl::Kernel,
-                        Present::Present,
-                    )
-                    .map_err(|_| TimerError::IdtError)?;
-
-                    // Tell the IO APIC to map `irq` to the given `vector`
-                    // XXX: Change the flags here!
-                    map_irq_to_vector(vector, irq).unwrap();
-
-                    // Now we can unmask the IRQ in the IO APIC
-                    //
-                    // NOTE: No interrupt should be triggered yet, since the timer is still
-                    // disabled internally.
-                    ioapic::set_disabled(irq, false).unwrap();
-                };
+                // Register the IRQ
+                unsafe { register_irq(irq, isr_stub) };
 
                 // IMPORTANT! Having FSB enabled overrides interrupts
                 config.set_fsb_int_enable(false.into());
@@ -440,10 +411,6 @@ impl HpetTimer {
 
         // We don't need HPET anymore, so release the lock
         drop(hpet);
-
-        // TODO: Remove this limitation someday by allocating IRQ lines on IOAPIC so we could
-        // allocate other timers than just 0
-        assert!(id.0 == 0, "HPET: Only timer 0 is supported currently");
 
         Ok(Self {
             area: MmioArea::new(base),
@@ -528,10 +495,10 @@ impl Timer for HpetTimer {
             return Err(TimerError::UnsupportedTimerMode);
         }
 
-        let cycles_delta = hpet.time_to_cycles(time);
+        let cycles_delta: TimerComparator = hpet.time_to_cycles(time);
         // We want to tick for `time`. So we add the current main counter's value and write this
         // to the comparator
-        let target_cycles =
+        let target_cycles: TimerComparator =
             unsafe { hpet.area.read(ReadableRegs::MAIN_COUNTER_VALUE) + cycles_delta };
 
         // We don't need the HPET instance anymore
@@ -568,10 +535,11 @@ impl Timer for HpetTimer {
             }
         }
 
-        Ok(target_cycles)
+        Ok(cycles_delta)
     }
 
-    /// Disable this specific timer (it just masks off the interrupts, so it's effectively disabled)
+    /// Disable this specific timer's **interrupts**. This DOES NOT prevent it from running! It will
+    /// still generate status bits even when disabled this way.
     ///
     /// NOTE: In order for this timer to generate interrupts and work, you also need to make sure:
     ///     1. The HPET isn't disabled
@@ -593,6 +561,10 @@ impl Timer for HpetTimer {
 impl SpinLockDropable for HpetTimer {
     fn custom_unlock(&mut self) {
         self.set_disabled(true);
+        unsafe {
+            let mut hpet = HPET.lock();
+            hpet.timer_ids.free(self.id).unwrap();
+        }
     }
 }
 

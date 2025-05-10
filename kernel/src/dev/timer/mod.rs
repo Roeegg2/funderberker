@@ -6,7 +6,7 @@ use core::time::Duration;
 pub mod apic;
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 pub mod hpet;
-#[cfg(all(target_arch = "x86_64", feature = "legacy"))]
+#[cfg(all(target_arch = "x86_64", feature = "legacy_timers"))]
 pub mod pit;
 
 const PIT_IRQ: u8 = 0;

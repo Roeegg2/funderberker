@@ -121,7 +121,8 @@ generic_exception_isr!(exception_30, 30);
 generic_exception_isr!(exception_31, 31);
 
 #[isr]
-pub extern "C" fn generic_irq_isr() {
+
+pub fn generic_irq_isr() {
     println!("GENERIC IRQ ISR CALLED!");
     // TODO: Possibly rewrite this
     let this_lapic_id = LocalApic::get_this_apic_id();

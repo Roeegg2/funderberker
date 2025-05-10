@@ -5,10 +5,9 @@ use core::num::NonZero;
 use limine::BaseRevision;
 use limine::memory_map;
 use limine::paging;
-use limine::request::RsdpRequest;
 use limine::request::{
-    HhdmRequest, KernelAddressRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
-    RequestsStartMarker,
+    HhdmRequest, ExecutableAddressRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
+    RequestsStartMarker, RsdpRequest,
 };
 
 #[cfg(feature = "framebuffer")]
@@ -31,7 +30,7 @@ use crate::mem::{PhysAddr, VirtAddr, pmm};
 static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
-static KERNEL_ADDRESS_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
+static KERNEL_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
@@ -80,7 +79,7 @@ pub fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> NonZero<us
                 limine::memory_map::EntryType::USABLE
                     | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
                     | limine::memory_map::EntryType::ACPI_RECLAIMABLE
-                    | limine::memory_map::EntryType::KERNEL_AND_MODULES
+                    | limine::memory_map::EntryType::EXECUTABLE_AND_MODULES
             )
         })
         .unwrap();
@@ -156,7 +155,7 @@ unsafe extern "C" fn kmain() -> ! {
         );
     };
 
-    unsafe { crate::acpi::init(rsdp.address()).expect("Failed to initialize ACPI") };
+    unsafe { crate::acpi::init(PhysAddr(rsdp.address())).expect("Failed to initialize ACPI") };
 
     // XXX: As I've stated in the comment in the function below, this is technically bad since
     // there is a period of time our stack is marked as free, but during that time period nothing

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-limine = { version = "0.3.1", optional = true }
+limine = { version = "0.4.0", optional = true }
 
 alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc"}
 
@@ -37,10 +37,12 @@ pmm_buddy = []
 # Disable on the weird case you wouldn't want to use multiple cores on the system
 mp = []
 
-# Choose which general timer to use.
-# HPET is prefered over PIT + RTC, but some systems may not support it
-hpet = [] # use HPET
-legacy = [] # use PIT + RTC
+# HPET support.
+hpet = []
+# Enable this if you want support for PIT and RTC.
+# Most (if not all) modern systems have a HPET built in them with legacy support, so this is usually not needed 
+# (more so, there's a trend in newer CPUs to exclude support for PIT and RTC, so you might have to keep this disabled)
+legacy_timers = [] # UNSUPPORTED
 
 [lints.clippy]
 pedantic = "warn"

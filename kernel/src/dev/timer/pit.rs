@@ -2,14 +2,20 @@
 
 use core::time::Duration;
 
+use macros::isr;
 use modular_bitfield::prelude::*;
 
 use crate::{
-    arch::x86_64::{apic::ioapic, cpu::outb_8, interrupts},
-    sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard},
+    arch::x86_64::{
+        apic::{ioapic, lapic::LocalApic},
+        cpu::outb_8,
+        interrupts,
+    },
+    dev::register_irq,
+    sync::spinlock::{SpinLock, SpinLockDropable},
 };
 
-use super::{Timer, TimerError};
+use super::{PIT_IRQ, Timer, TimerError};
 
 #[derive(Clone, Copy)]
 #[bitfield]
@@ -21,13 +27,16 @@ struct Command {
     bcd: B1,
 }
 
-/// The PIT has three channels (0, 1, and 2) and a command register.
+/// The port of each channel
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 enum ChannelPort {
     Channel0 = 0x40,
+    /// Unused channel. Historically this was used for DRAM, but it's not needed nowdays
     _Channel1 = 0x41,
+    /// Unused channel. Used for the PC speaker
     _Channel2 = 0x42,
+    /// Used to program the PIT
     Command = 0x43,
 }
 
@@ -90,63 +99,65 @@ pub struct Pit(u8);
 
 impl Timer for Pit {
     type TimerMode = OperatingMode;
+    type AdditionalConfig = ();
 
     fn configure(
         &mut self,
         period: Duration,
         operating_mode: Self::TimerMode,
-    ) -> Result<(), TimerError> {
-        interrupts::do_inside_interrupts_disabled_window(|| -> Result<(), TimerError> {
-            let command = Command::new()
-                .with_channel(Channel::Channel0 as u8)
-                .with_access_mode(AccessMode::LowAndHighByte as u8)
-                .with_operating_mode(operating_mode as u8)
-                .with_bcd(false.into());
+        _additional_config: Self::AdditionalConfig,
+    ) -> Result<u64, TimerError> {
+        // Register the PITs IRQ
+        unsafe {
+            register_irq(PIT_IRQ, __isr_stub_pit_isr);
+        };
 
-            let divisor = Pit::time_to_cycles(period, operating_mode)?;
+        // Setup the command to write
+        let command = Command::new()
+            .with_channel(Channel::Channel0 as u8)
+            .with_access_mode(AccessMode::LowAndHighByte as u8)
+            .with_operating_mode(operating_mode as u8)
+            .with_bcd(false.into());
 
-            unsafe {
-                self.write(command, divisor);
-            }
+        // Find out which divisor we need to use
+        let cycles = Pit::time_to_cycles(period, operating_mode)?;
 
-            Ok(())
-        })
+        unsafe {
+            self.write(command, cycles);
+        };
+
+        println!("here!");
+        Ok(cycles as u64)
     }
 
     #[inline]
     fn set_disabled(&mut self, status: bool) {
         unsafe {
-            ioapic::set_disabled(interrupts::PIT_IRQ, status)
-                .expect("Failed to set PIT IRQ disabled");
+            ioapic::set_disabled(PIT_IRQ, status).expect("Failed to set PIT IRQ disabled");
         }
     }
 }
 
 impl Pit {
-    fn time_to_cycles(period: Duration, operating_mode: OperatingMode) -> Result<u16, TimerError> {
+    const fn time_to_cycles(
+        period: Duration,
+        operating_mode: OperatingMode,
+    ) -> Result<u16, TimerError> {
         const BASE_FREQUENCY: u32 = 1193182; // Hz
 
         match operating_mode {
             OperatingMode::RateGenerator
             | OperatingMode::SquareWaveGenerator
             | OperatingMode::_RateGenerator2
-            | OperatingMode::_SquareWaveGenerator2 => {
-                if period.as_micros() == 0 {
-                    return Err(TimerError::InvalidTimePeriod);
-                }
+            | OperatingMode::_SquareWaveGenerator2
+                if period.as_micros() == 0 =>
+            {
+                return Err(TimerError::InvalidTimePeriod);
             }
             _ => (),
         };
 
-        if period.as_micros() == 0 {
-            return Err(TimerError::InvalidTimePeriod);
-        }
-
-        let mut cycles = (BASE_FREQUENCY / period.as_micros() as u32) as u16;
-
-        if cycles == 0xffff {
-            cycles = 0;
-        }
+        let cycles = (BASE_FREQUENCY / period.as_micros() as u32) as u16;
 
         Ok(cycles)
     }
@@ -160,6 +171,14 @@ impl Pit {
             outb_8(ChannelPort::Channel0 as u16, ((divisor >> 8) & 0xff) as u8);
         };
     }
+}
+
+#[isr]
+fn pit_isr() {
+    println!("recieved PIT interrupt!");
+    let this_lapic_id = LocalApic::get_this_apic_id();
+    let lapic = LocalApic::get_apic(this_lapic_id);
+    lapic.signal_eoi();
 }
 
 impl SpinLockDropable for Pit {

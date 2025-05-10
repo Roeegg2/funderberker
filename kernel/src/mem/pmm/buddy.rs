@@ -10,16 +10,17 @@ use crate::{
     arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
     boot::limine::get_page_count_from_mem_map,
     mem::{PhysAddr, vmm::allocate_pages},
+    sync::spinlock::{SpinLock, SpinLockDropable},
 };
 
 use super::{PmmAllocator, PmmError};
 
 /// Singleton instance of the buddy allocator
-pub(super) static mut BUDDY_ALLOCATOR: BuddyAllocator = BuddyAllocator {
+pub(super) static BUDDY_ALLOCATOR: SpinLock<BuddyAllocator> = SpinLock::new(BuddyAllocator {
     zones: &mut [],
     freelist: StackList::new(),
     freelist_refill_zone_index: 0,
-};
+});
 
 /// A buddy allocator for the PMM
 #[derive(Debug)]
@@ -33,7 +34,7 @@ pub(super) struct BuddyAllocator<'a> {
 }
 
 impl PmmAllocator for BuddyAllocator<'_> {
-    fn alloc_at(&mut self, addr: PhysAddr, mut page_count: NonZero<usize>) -> Result<(), PmmError> {
+    fn allocate_at(&mut self, addr: PhysAddr, mut page_count: NonZero<usize>) -> Result<(), PmmError> {
         // Round up `page_count` if needed
         page_count = page_count
             .checked_next_power_of_two()
@@ -53,7 +54,7 @@ impl PmmAllocator for BuddyAllocator<'_> {
         Ok(())
     }
 
-    fn alloc_any(
+    fn allocate(
         &mut self,
         alignment: NonZero<usize>,
         mut page_count: NonZero<usize>,
@@ -117,33 +118,28 @@ impl PmmAllocator for BuddyAllocator<'_> {
     unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
         let total_page_count = get_page_count_from_mem_map(mem_map);
 
-        #[allow(static_mut_refs)]
+        let mut allocator = BUDDY_ALLOCATOR.lock();
+
         let (freelist_entry_addr, entries_page_count) =
-            unsafe { BUDDY_ALLOCATOR.init_freelist(mem_map, total_page_count) };
+            allocator.init_freelist(mem_map, total_page_count);
 
         for entry in mem_map {
             if entry.entry_type == EntryType::USABLE {
                 let page_count = entry.length as usize / BASIC_PAGE_SIZE;
                 let addr = PhysAddr(entry.base as usize);
-                unsafe {
-                    #[allow(static_mut_refs)]
-                    BUDDY_ALLOCATOR
-                        .break_into_buckets_n_free(addr, NonZero::new(page_count).unwrap());
-                };
+
+                allocator.break_into_buckets_n_free(addr, NonZero::new(page_count).unwrap());
             }
         }
 
         // Mark the entries we used for the freelist and zones as used
         for i in 0..entries_page_count.get() {
-            unsafe {
-                #[allow(static_mut_refs)]
-                BUDDY_ALLOCATOR
-                    .alloc_at(
-                        PhysAddr(freelist_entry_addr.0 + (i * BASIC_PAGE_SIZE)),
-                        NonZero::new_unchecked(1),
-                    )
-                    .unwrap();
-            }
+            allocator
+                .allocate_at(
+                    PhysAddr(freelist_entry_addr.0 + (i * BASIC_PAGE_SIZE)),
+                    NonZero::new(1).unwrap(),
+                )
+                .unwrap();
         }
     }
 }
@@ -495,6 +491,11 @@ impl BuddyAllocator<'_> {
     }
 }
 
+unsafe impl Send for BuddyAllocator<'_> {}
+unsafe impl Sync for BuddyAllocator<'_> {}
+
+impl SpinLockDropable for BuddyAllocator<'_> {}
+
 #[cfg(test)]
 mod tests {
     use macros::test_fn;
@@ -567,23 +568,20 @@ mod tests {
 
     #[test_fn]
     fn test_buddy_alloc_n_frees() {
-        let allocator = unsafe {
-            #[allow(static_mut_refs)]
-            &mut BUDDY_ALLOCATOR
-        };
+        let mut allocator = BUDDY_ALLOCATOR.lock();
 
         let addr0 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(2)
             })
             .unwrap();
         let addr1 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(2) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(2) }, unsafe {
                 NonZero::new_unchecked(2)
             })
             .unwrap();
         let addr2 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(7)
             })
             .unwrap();
@@ -591,7 +589,7 @@ mod tests {
         unsafe { allocator.free(addr1, NonZero::new_unchecked(2)).unwrap() };
         for _ in 0..12 {
             let addr = allocator
-                .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+                .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                     NonZero::new_unchecked(1)
                 })
                 .unwrap();
@@ -617,23 +615,23 @@ mod tests {
         );
 
         let addr1 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(2)
             })
             .unwrap();
         let addr2 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(8)
             })
             .unwrap();
         unsafe { allocator.free(addr1, NonZero::new_unchecked(2)).unwrap() };
         let addr3 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(8)
             })
             .unwrap();
         let addr4 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(1)
             })
             .unwrap();
@@ -644,13 +642,10 @@ mod tests {
 
     #[test_fn]
     fn test_buddy_errors() {
-        let allocator = unsafe {
-            #[allow(static_mut_refs)]
-            &mut BUDDY_ALLOCATOR
-        };
+        let mut allocator = BUDDY_ALLOCATOR.lock();
 
         let addr0 = allocator
-            .alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            .allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(2)
             })
             .unwrap();
@@ -665,12 +660,12 @@ mod tests {
         };
 
         assert_eq!(
-            allocator.alloc_any(unsafe { NonZero::new_unchecked(1) }, unsafe {
+            allocator.allocate(unsafe { NonZero::new_unchecked(1) }, unsafe {
                 NonZero::new_unchecked(usize::MAX)
             }),
             Err(PmmError::NoAvailableBlock)
         );
     }
 
-    // TODO: Need to test alloc_at
+    // TODO: Need to test allocate_at
 }

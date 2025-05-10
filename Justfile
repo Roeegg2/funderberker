@@ -1,6 +1,6 @@
 # Configuration variables
 test-crates := "utils"
-rust-profile := "debug"
+rust-profile := "release"
 
 # Directory and file paths
 kernel-dir := "kernel"

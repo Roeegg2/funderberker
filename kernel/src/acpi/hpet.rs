@@ -31,7 +31,7 @@ pub(super) struct Hpet {
 
 impl Hpet {
     pub fn setup_hpet(&self) -> Result<(), AcpiError> {
-        unsafe { self.header.validate_checksum()? };
+        self.header.validate_checksum()?;
 
         // SAFETY: This should be OK since we're mapping a physical address that is marked as
         // reserved, so the kernel shouldn't be tracking it

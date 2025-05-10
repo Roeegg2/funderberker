@@ -2,12 +2,9 @@
 
 use core::num::NonZero;
 
-use super::PhysAddr;
+use crate::sync::spinlock::{SpinLockDropable, SpinLockGuard};
 
-#[cfg(feature = "pmm_buddy")]
-use buddy::BuddyAllocator;
-#[cfg(feature = "pmm_bump")]
-use bump::BumpAllocator;
+use super::PhysAddr;
 
 #[cfg(feature = "pmm_buddy")]
 mod buddy;
@@ -31,39 +28,35 @@ pub enum PmmError {
 }
 
 /// Get the used PMM
-pub fn get() -> &'static mut impl PmmAllocator {
+pub fn get<'a>() -> SpinLockGuard<'a, impl PmmAllocator> {
     #[cfg(feature = "pmm_bump")]
-    #[allow(static_mut_refs)]
-    unsafe {
-        &mut bump::BUMP_ALLOCATOR
+    {
+        bump::BUMP_ALLOCATOR.lock()
     }
     #[cfg(feature = "pmm_buddy")]
-    #[allow(static_mut_refs)]
-    unsafe {
-        &mut buddy::BUDDY_ALLOCATOR
+    {
+        buddy::BUDDY_ALLOCATOR.lock()
     }
 }
 
 /// Initilizes the used PMM from limine
 #[cfg(feature = "limine")]
 pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
-    #[cfg(feature = "pmm_bump")]
     unsafe {
-        BumpAllocator::init_from_limine(mem_map)
-    };
-    #[cfg(feature = "pmm_buddy")]
-    unsafe {
-        BuddyAllocator::init_from_limine(mem_map);
+        #[cfg(feature = "pmm_bump")]
+        bump::BumpAllocator::init_from_limine(mem_map);
+        #[cfg(feature = "pmm_buddy")]
+        buddy::BuddyAllocator::init_from_limine(mem_map);
     };
 }
 
-pub trait PmmAllocator {
+pub trait PmmAllocator: SpinLockDropable {
     /// Tries to allocates a **physically** contiguious block of pages of size `page_count`
     /// which satisfy the passed `alignment` page alignment.
     /// If allocation if successfull, the physical address of the start of the block is returned.
     ///
     /// NOTE: `alignment should be passed as page granularity. (e.g. 1 for 4KB, 2 for 8KB, etc.)`
-    fn alloc_any(
+    fn allocate(
         &mut self,
         alignment: NonZero<usize>,
         page_count: NonZero<usize>,
@@ -71,7 +64,7 @@ pub trait PmmAllocator {
 
     /// Tries to allocate a **physically** contiguous block of memory at a specific address
     #[allow(dead_code)]
-    fn alloc_at(&mut self, addr: PhysAddr, page_count: NonZero<usize>) -> Result<(), PmmError>;
+    fn allocate_at(&mut self, addr: PhysAddr, page_count: NonZero<usize>) -> Result<(), PmmError>;
 
     /// Tries to free a contiguous block of pages.
     #[allow(dead_code)]

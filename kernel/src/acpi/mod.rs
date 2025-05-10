@@ -2,6 +2,8 @@
 
 use rsdp::Rsdp2;
 
+use crate::mem::PhysAddr;
+
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 mod hpet;
 mod madt;
@@ -44,7 +46,7 @@ impl SdtHeader {
     }
 
     /// Validate the checksum of the table
-    unsafe fn validate_checksum(&self) -> Result<(), AcpiError> {
+    fn validate_checksum(&self) -> Result<(), AcpiError> {
         let sum = unsafe {
             core::slice::from_raw_parts(
                 core::ptr::from_ref(self).cast::<u8>(),
@@ -70,10 +72,11 @@ trait AcpiTable {
 }
 
 /// Initialize the ACPI subsystem
-pub unsafe fn init(rsdp: *const ()) -> Result<(), AcpiError> {
-    utils::sanity_assert!(rsdp.is_aligned_to(align_of::<Rsdp2>()));
+pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
+    utils::sanity_assert!(rsdp_addr.0 % align_of::<Rsdp2>() == 0);
 
-    let rsdp = unsafe { rsdp.cast::<Rsdp2>().as_ref().unwrap() };
+    let rsdp = unsafe { let ptr: *const Rsdp2 = rsdp_addr.add_hhdm_offset().into();
+        ptr.as_ref().unwrap() };
     rsdp.validate_checksum()?;
     let xsdt = rsdp.get_xsdt();
     xsdt.parse_tables()?;

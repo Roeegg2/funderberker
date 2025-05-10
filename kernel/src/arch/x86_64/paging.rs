@@ -159,7 +159,7 @@ impl Entry {
         self.set_flag(Self::FLAG_LAST_ENTRY);
 
         let phys_addr = pmm::get()
-            .alloc_any(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
+            .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
             .expect("Failed to allocate page");
 
         self.set_addr(phys_addr);
@@ -178,7 +178,7 @@ impl Entry {
         assert!(!self.is_flag_set(Self::FLAG_P), "Entry is already present");
 
         let phys_addr = pmm::get()
-            .alloc_any(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
+            .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
             .expect("Failed to allocate page");
 
         self.set_addr(phys_addr);
@@ -226,7 +226,7 @@ impl PageTable {
     /// Allocates a new page table
     fn new() -> (&'static mut Self, PhysAddr) {
         let phys_addr = pmm::get()
-            .alloc_any(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
+            .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
             .expect("Failed to allocate page table");
 
         // For easier bootstrapping, we are HHDM mapping all page tables
