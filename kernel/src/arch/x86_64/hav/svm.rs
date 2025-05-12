@@ -34,22 +34,13 @@ fn check_support() {
 
 /// Perform a check to see if virtualization is disabled by the firmware.
 fn check_firmware_disabled() {
-    const BIOS_DISABLED_BIT: u32 = 4;
+    // TODO: Perform a check for TPM as well
+    const SVML_BIT: u32 = 1 << 2;
 
-    let (low, _) = unsafe { rdmsr(Msr::VmCr) };
-
-    assert!(
-        low & BIOS_DISABLED_BIT == 0,
-        "SVM/VMX is disabled in BIOS and thus cannot be enabled"
-    );
-
-    // TODO: I think this for TPM
-    // const SVML_BIT: u32 = 1 << 2;
-    //
-    // unsafe {
-    //     assert!(
-    //         __cpuid(0x8000_000A).edx & SVML_BIT != 0,
-    //         "SVM is disabled by firmware and thus cannot be enabled"
-    //     );
-    // };
+    unsafe {
+        assert!(
+            __cpuid(0x8000_000A).edx & SVML_BIT != 0,
+            "SVM is disabled by firmware and thus cannot be enabled"
+        );
+    };
 }

@@ -35,7 +35,9 @@ pub fn funderberker_main() -> ! {
     #[cfg(test)]
     test_main();
 
+    println!("trying to test the ACPI timer!");
     let _timer = ApicTimer::new();
+    println!("testing went fine!");
 
     arch::x86_64::hav::enable();
 

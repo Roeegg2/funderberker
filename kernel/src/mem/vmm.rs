@@ -107,6 +107,11 @@ pub fn allocate_pages(count: usize, flags: usize) -> VirtAddr {
 
 /// Free a virtually contiguous block of 4KB pages
 pub unsafe fn free_pages(base_addr: VirtAddr, count: usize) {
+    assert!(
+        base_addr.0 % BASIC_PAGE_SIZE == 0,
+        "Base address wanted to free isn't page aligned"
+    );
+
     let pml = paging::get_pml();
     unsafe {
         pml.unmap(base_addr, count, PageSize::Size4KB);

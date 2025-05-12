@@ -1,7 +1,5 @@
 //! Parser for the MADT table
 
-use utils::id_allocator::IdAllocator;
-
 use super::{AcpiError, AcpiTable, SdtHeader};
 use crate::{
     arch::x86_64::{

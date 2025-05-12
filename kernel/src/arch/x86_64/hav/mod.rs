@@ -8,7 +8,10 @@ mod vmx;
 // Enable HAV
 pub fn enable() {
     match get_cpu_vendor() {
-        CpuVendor::Intel => vmx::enable(),
+        CpuVendor::Intel => {
+vmx::enable();
+vmx::start_operation();
+        },
         CpuVendor::Amd => svm::enable(),
         _ => unreachable!(),
     }

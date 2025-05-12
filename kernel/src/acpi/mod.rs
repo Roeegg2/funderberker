@@ -2,7 +2,10 @@
 
 use rsdp::Rsdp2;
 
-use crate::mem::PhysAddr;
+use crate::{
+    arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
+    mem::{PhysAddr, vmm::map_page},
+};
 
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 mod hpet;
@@ -76,9 +79,11 @@ pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
     utils::sanity_assert!(rsdp_addr.0 % align_of::<Rsdp2>() == 0);
 
     let rsdp = unsafe {
-        let ptr: *const Rsdp2 = rsdp_addr.add_hhdm_offset().into();
+        let diff = rsdp_addr.0 % BASIC_PAGE_SIZE;
+        let ptr: *const Rsdp2 = (map_page(rsdp_addr - diff, 0) + diff).into();
         ptr.as_ref().unwrap()
     };
+
     rsdp.validate_checksum()?;
     let xsdt = rsdp.get_xsdt();
     xsdt.parse_tables()?;

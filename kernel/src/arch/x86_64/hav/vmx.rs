@@ -2,7 +2,14 @@
 
 use core::arch::x86_64::__cpuid;
 
-use crate::{arch::x86_64::cpu::{rdmsr, Msr}, read_cr, write_cr};
+use crate::{
+    arch::x86_64::cpu::{Msr, rdmsr},
+    read_cr, write_cr,
+};
+
+pub(super) fn start_operation() {
+
+}
 
 /// Enables VMX on this processor
 pub(super) fn enable() {
@@ -19,7 +26,6 @@ pub(super) fn enable() {
     log_info!("Enabled VMX operation!");
 }
 
-
 /// Make sure VMX is supported on this CPU
 fn check_support() {
     const VMX_SUPPORT_ECX_BIT: u32 = 1 << 5;
@@ -32,7 +38,7 @@ fn check_support() {
     };
 }
 
-/// Makes sure VMX isn't disabled in the firmware 
+/// Makes sure VMX isn't disabled in the firmware
 fn check_firmware_disabled() {
     // TODO: Possibly check inside SMX as well. This is bit 1
     const OUTSIDE_SMX_DISABLE_BIT: u32 = 1 << 2;

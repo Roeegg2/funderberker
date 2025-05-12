@@ -5,7 +5,10 @@ use core::ptr::from_ref;
 use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 use crate::acpi::hpet::Hpet;
-use crate::mem::PhysAddr;
+use crate::{
+    arch::{x86_64::paging::Entry, BASIC_PAGE_SIZE},
+    mem::{vmm::map_page, PhysAddr},
+};
 
 /// The XSDT
 #[derive(Debug)]
@@ -41,13 +44,14 @@ impl Xsdt {
                     let hpet = unsafe { entry.cast::<Hpet>().as_ref().unwrap() };
                     hpet.setup_hpet()?;
                 }
-                _ => {
-                    log_warn!(
-                        "ACPI: Unhandled table: {:?}",
-                        core::str::from_utf8(signature)
-                    );
-                    continue;
-                }
+                _ => continue,
+                // _ => {
+                //     log_warn!(
+                //         "ACPI: Unhandled table: {:?}",
+                //         core::str::from_utf8(signature)
+                //     );
+                //     continue;
+                // }
             }
 
             log_info!("ACPI: Parsed table: {:?}", core::str::from_utf8(signature));
@@ -71,10 +75,11 @@ impl Iterator for Iter {
             return None;
         }
 
-        // let ptr: *const SdtHeader = unsafe {
-        //     map_page(self.ptr.read_unaligned(), Entry::FLAG_RW)
-        // }.into();
-        let ptr: *const SdtHeader = unsafe { self.ptr.read_unaligned().add_hhdm_offset().into() };
+        let ptr: *const SdtHeader = unsafe {
+            let addr = self.ptr.read_unaligned();
+            let diff = addr.0 % BASIC_PAGE_SIZE;
+            (map_page(addr - diff, Entry::FLAGS_NONE) + diff).into()
+        };
 
         self.ptr = unsafe { self.ptr.add(1) };
         self.count -= 1;

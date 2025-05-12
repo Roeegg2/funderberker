@@ -1,13 +1,22 @@
 //! A simple slab allocator for the kernel heap & custom use
 
 use alloc::boxed::Box;
+use core::mem;
 use core::{alloc::Layout, ptr::NonNull};
+use utils::sanity_assert;
 
 use utils::collections::stacklist::{Node, StackList};
 
 use crate::arch::BASIC_PAGE_SIZE;
 use crate::arch::x86_64::paging::Entry;
 use crate::mem::vmm::{allocate_pages, free_pages};
+
+use super::VirtAddr;
+
+/// A node that holds a pointer to an object.
+/// Pointer is uninitilized when `SlabObjEmbed` is used, but since the lowest size of memory that
+/// we allocate in the stack is 2^8 bytes anyway, it doesn't matter
+pub(super) type ObjectNode = Node<()>;
 
 /// Errors that the slab allocator might encounter
 #[derive(Debug, Copy, Clone)]
@@ -38,6 +47,15 @@ pub(super) struct InternalSlabAllocator {
     obj_layout: Layout,
     /// The amount of objects that will be allocated in each slab
     obj_count: usize,
+}
+
+/// The core structure of a slab
+#[derive(Debug)]
+struct Slab {
+    /// Pointer to the slab's buffer
+    buff_ptr: NonNull<ObjectNode>,
+    /// List of objects that are free in this slab
+    free_objs: StackList<()>,
 }
 
 // TODO: Add an option to embed the slab node in the slab itself as well
@@ -121,10 +139,10 @@ impl InternalSlabAllocator {
 
     /// Allocates an object from the slab allocator and returns a pointer to it. If the slab is
     /// full, it will try to grow the cache and return a pointer to an object in the new slab
-    pub(super) fn alloc(&mut self) -> Result<NonNull<()>, SlabError> {
+    pub(super) fn allocate(&mut self) -> Result<NonNull<()>, SlabError> {
         // First, try allocating from the partial slabs
         if let Some(partial_slab) = self.partial_slabs.peek_mut()
-            && let ret @ Ok(_) = partial_slab.alloc()
+            && let ret @ Ok(_) = partial_slab.allocate()
         {
             // If the allocation resulted in the slab being empty, move it to the full slabs
             if partial_slab.free_objs.is_empty() {
@@ -141,7 +159,7 @@ impl InternalSlabAllocator {
 
         // Try allocating from a free slab
         if let Some(free_slab) = self.free_slabs.peek_mut() {
-            let ret = free_slab.alloc()?;
+            let ret = free_slab.allocate()?;
             self.free_slabs.pop_into(&mut self.partial_slabs);
 
             return Ok(ret);
@@ -162,7 +180,7 @@ impl InternalSlabAllocator {
 
         // Check the partial slabs
         for (index, slab) in self.partial_slabs.iter_mut().enumerate() {
-            if slab.is_in_range(ptr, self.obj_count, self.obj_layout) {
+            if slab.is_in_range(ptr, self.obj_count, self.obj_layout.size()) {
                 unsafe { slab.free(ptr)? };
                 // If the slab is now completely free, move it to the free slabs
                 if slab.free_objs.len() == self.obj_count {
@@ -175,7 +193,7 @@ impl InternalSlabAllocator {
 
         // Check if the slab to whom `ptr` belongs is in the full slabs list
         for (index, slab) in self.full_slabs.iter_mut().enumerate() {
-            if slab.is_in_range(ptr, self.obj_count, self.obj_layout) {
+            if slab.is_in_range(ptr, self.obj_count, self.obj_layout.size()) {
                 unsafe { slab.free(ptr)? };
                 // Slab is no longer full, so move it to the partial slabs
                 self.full_slabs.remove_into(&mut self.partial_slabs, index);
@@ -192,87 +210,64 @@ impl InternalSlabAllocator {
     // TODO: Maybe pass in the amount of memory needed instead of freeing everything?
     pub(super) fn reap(&mut self) {
         while let Some(slab) = self.free_slabs.pop() {
-            unsafe { free_pages(slab.buff_ptr.into(), self.pages_per_slab) }
+            let offset = slab.buff_ptr.addr().get() % BASIC_PAGE_SIZE;
+            let addr = VirtAddr(slab.buff_ptr.addr().get() - offset);
+            unsafe { free_pages(addr, self.pages_per_slab); };
+
+            // IMPORTANT!!! We don't want to call the destructor on the slab, since it's already
+            // been freed by `free_pages`!!
+            mem::forget(slab);
         }
     }
 
     /// Grows the cache by allocating a new slab and adding it to the free slabs list.
     pub(super) fn cache_grow(&mut self) -> Result<(), SlabError> {
-        let buff_ptr: NonNull<()> = allocate_pages(self.pages_per_slab, Entry::FLAG_RW)
+        // Allocate the pages for the buffer + the `Node<Slab>` struct
+        let ptr: NonNull<()> = allocate_pages(self.pages_per_slab, Entry::FLAG_RW)
             .try_into()
             .map_err(|()| SlabError::PageAllocationError)?;
 
-        // let phys_addr = pmm::get().alloc_any(NonZero::new(1).unwrap(), NonZero::new(self.pages_per_slab).unwrap()).unwrap();
-        // let buff_ptr: NonNull<()> = phys_addr
-        //     .add_hhdm_offset()
-        //     .try_into()
-        //     .map_err(|_| SlabError::PageAllocationError)?;
-
+        let slab_node_ptr = ptr.cast::<Node<Slab>>();
         unsafe {
-            // SAFETY: Size is OK since we allocated the pages_per_slab amount of pages. Alignment
-            // is OK since BASIC_PAGE_SIZE * n is always aligned to Node<Slab>, and so BASIC_PAGE_SIZE * n -
-            // size_of(Node<Slab>) is also aligned to Node<Slab>
-            let slab_ptr = buff_ptr
-                .byte_add(
-                    self.pages_per_slab * BASIC_PAGE_SIZE
-                        - Layout::new::<Node<Slab>>().pad_to_align().size(),
-                )
-                .cast::<Node<Slab>>();
+            let offset = slab_node_ptr.add(1).align_offset(self.obj_layout.align());
+            let objs_ptr = slab_node_ptr.add(1).byte_add(offset).cast::<()>();
 
+            // Sanity check to make sure there is enough space on the buffer for self.obj_count
+            {
+                // The total size of pages we allocated minus the size of the `Node<Slab>` and any
+                // of the padding needed
+                let actually_obj_space = (BASIC_PAGE_SIZE * self.pages_per_slab)
+                    - (objs_ptr.addr().get() - ptr.addr().get());
+
+                // Just making sure they actually match
+                sanity_assert!(actually_obj_space / self.obj_layout.size() == self.obj_count);
+            }
+
+            // SAFETY: This is OK since `slab_node_ptr` is at least `BASIC_PAGE_SIZE` page aligned and sized, which of course satisfies `Node<Slab>`
+            // And we also aligned `obj_ptr` to the object's alignment and we already calculated so
+            // size should be fine as well
             NonNull::write(
-                slab_ptr,
-                Node::<Slab>::new(Slab::new(buff_ptr, self.obj_count, self.obj_layout)),
+                slab_node_ptr,
+                Node::<Slab>::new(Slab::new(objs_ptr, self.obj_count, self.obj_layout.size())),
             );
 
-            self.free_slabs.push_node(slab_ptr);
-        }
+            self.free_slabs.push_node(slab_node_ptr);
+        };
 
         Ok(())
     }
 }
 
-impl Drop for InternalSlabAllocator {
-    /// Frees all the slabs that were allocated by the allocator
-    fn drop(&mut self) {
-        // Free the free_slabs
-        self.reap();
-
-        // Free the partial slabs
-        while let Some(slab) = self.partial_slabs.pop() {
-            unsafe {
-                free_pages(slab.buff_ptr.into(), self.pages_per_slab);
-            }
-        }
-
-        // Free the full slabs
-        while let Some(slab) = self.full_slabs.pop() {
-            unsafe {
-                free_pages(slab.buff_ptr.into(), self.pages_per_slab);
-            }
-        }
-    }
-}
-
-/// A node that holds a pointer to an object.
-/// Pointer is uninitilized when `SlabObjEmbed` is used, but since the lowest size of memory that
-/// we allocate in the stack is 2^8 bytes anyway, it doesn't matter
-pub(super) type ObjectNode = Node<()>;
-
-/// The core structure of a slab
-#[derive(Debug)]
-struct Slab {
-    /// Pointer to the slab's buffer
-    buff_ptr: NonNull<ObjectNode>,
-    /// List of objects that are free in this slab
-    free_objs: StackList<()>,
-}
-
 impl Slab {
     /// Check if the given pointer **to the allocated data** belongs to this slab
     #[inline]
-    fn is_in_range(&self, ptr: NonNull<ObjectNode>, obj_count: usize, obj_layout: Layout) -> bool {
-        self.buff_ptr <= ptr
-            && ptr < unsafe { self.buff_ptr.byte_add(obj_count * obj_layout.size()) }
+    fn is_in_range(
+        &self,
+        ptr: NonNull<ObjectNode>,
+        obj_count: usize,
+        obj_padded_size: usize,
+    ) -> bool {
+        self.buff_ptr <= ptr && ptr < unsafe { self.buff_ptr.byte_add(obj_count * obj_padded_size) }
     }
 
     /// Constructs a new slab with the given parameters.
@@ -280,7 +275,7 @@ impl Slab {
     /// SAFETY: This is unsafe because `buff_ptr` must be a valid pointer to a slab of memory
     /// that is at least `obj_count` objects in size
     #[inline]
-    unsafe fn new(buff_ptr: NonNull<()>, obj_count: usize, obj_layout: Layout) -> Self {
+    unsafe fn new(buff_ptr: NonNull<()>, obj_count: usize, obj_padded_size: usize) -> Self {
         let mut free_objs = StackList::new();
 
         let buff_ptr = buff_ptr.cast::<ObjectNode>();
@@ -288,7 +283,7 @@ impl Slab {
             unsafe {
                 // SAFETY: This is OK because we already checked to make sure the ptr is aligned,
                 // and the size is fine (already checked in the allocator)
-                let ptr = buff_ptr.byte_add(i * obj_layout.size());
+                let ptr = buff_ptr.byte_add(i * obj_padded_size);
 
                 free_objs.push_node(ptr);
             };
@@ -301,7 +296,7 @@ impl Slab {
     }
 
     /// Allocates an object from the slab
-    fn alloc(&mut self) -> Result<NonNull<()>, SlabError> {
+    fn allocate(&mut self) -> Result<NonNull<()>, SlabError> {
         self.free_objs
             .pop_node()
             .map(|node| Box::into_non_null(node).cast::<()>())
@@ -328,9 +323,42 @@ impl Slab {
     }
 }
 
+impl Drop for InternalSlabAllocator {
+    /// Frees all the slabs that were allocated by the allocator
+    fn drop(&mut self) {
+        assert!(
+            self.partial_slabs.pop().is_none(),
+            "Freeing a used slab (a partial slab). This is bad."
+        );
+        assert!(
+            self.full_slabs.pop().is_none(),
+            "Freeing a used slab (a full slab). This is bad."
+        );
+
+        // Free the free_slabs
+        self.reap();
+    }
+}
+
+/// Implementing `Drop` manually here since when the `StackList` field gets drop, it's popping and
+/// trying to free all the `Node`s, and that's undefined behaviour because:
+/// 1. `Drop` on `Slab` should only ever be called when `reap`ing. And when reaping, we manually 
+///     `unmap` the object pages (on which `Slab` is also allocated)
+/// 2. The `Node`s here are allocated manually, so calling a traditional free on them is UB anyway
+///
+/// NOTE: Technically it's more correct to implement the freeing behaviour here, but that would
+/// require the slab to hold `pages_per_slab` as a field, but we want to keep `Slab` as small as
+/// possible so we can stuff more objects in each slab buffer
+impl Drop for Slab {
+    fn drop(&mut self) {
+        unreachable!("Drop called on slab. This shouldn't have happened");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::vec;
+    use alloc::{format, vec::Vec};
     use macros::test_fn;
 
     use super::*;
@@ -344,7 +372,7 @@ mod tests {
         // Allocate 10 objects
         let mut pointers = vec![];
         for _ in 0..10 {
-            let ptr = allocator.alloc().expect("Allocation failed");
+            let ptr = allocator.allocate().expect("Allocation failed");
             assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
             pointers.push(ptr);
         }
@@ -359,12 +387,12 @@ mod tests {
         }
 
         // Allocate again to ensure slab reuse
-        let ptr = allocator.alloc().expect("Allocation after free failed");
+        let ptr = allocator.allocate().expect("Allocation after free failed");
         unsafe {
             allocator
                 .free(ptr.cast::<ObjectNode>())
                 .expect("Free failed");
-        }
+        };
     }
 
     #[test_fn]
@@ -375,7 +403,7 @@ mod tests {
         // Allocate 5 large objects
         let mut pointers = vec![];
         for _ in 0..5 {
-            let ptr = allocator.alloc().expect("Allocation failed");
+            let ptr = allocator.allocate().expect("Allocation failed");
             assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
             pointers.push(ptr);
         }
@@ -387,62 +415,89 @@ mod tests {
                 allocator
                     .free(pointers[i].cast::<ObjectNode>())
                     .expect("Free failed");
-            }
+            };
         }
 
         // Allocate one more to test partial slab
-        let ptr = allocator.alloc().expect("Allocation after free failed");
+        let ptr = allocator.allocate().expect("Allocation after free failed");
         unsafe {
             allocator
                 .free(ptr.cast::<ObjectNode>())
                 .expect("Free failed");
-        }
+        };
     }
 
     #[test_fn]
     fn test_slab_mixed_layout_sizes() {
-        // Test with small, medium, and large layouts
+        // Define test layouts for small, medium, and large allocations
         let layouts = [
-            Layout::from_size_align(8, 4).unwrap(),
-            Layout::from_size_align(64, 8).unwrap(),
-            Layout::from_size_align(256, 16).unwrap(),
+            Layout::from_size_align(8, 4).expect("Invalid small layout"),
+            Layout::from_size_align(64, 8).expect("Invalid medium layout"),
+            Layout::from_size_align(256, 16).expect("Invalid large layout"),
         ];
 
-        for &layout in &layouts {
+        for layout in layouts {
             let mut allocator = InternalSlabAllocator::new(layout);
+            let mut pointers = Vec::with_capacity(12); // Pre-allocate for 8 + 4 pointers
 
-            // Allocate 8 objects
-            let mut pointers = vec![];
-            for _ in 0..8 {
-                let ptr = allocator.alloc().expect("Allocation failed");
-                assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
+            for i in 0..8 {
+                let ptr = allocator
+                    .allocate()
+                    .expect(&format!("Allocation {} failed for layout {:?}", i, layout));
+                assert!(
+                    ptr.is_aligned_to(layout.align()),
+                    "Pointer {} not aligned to {} for layout {:?}",
+                    i,
+                    layout.align(),
+                    layout
+                );
                 pointers.push(ptr);
             }
 
-            // Free every other object
-            for i in (0..8).step_by(2) {
+            // Step 2: Free every other object (indices 0, 2, 4, 6)
+            for (i, ptr) in pointers.iter().enumerate().step_by(2) {
                 unsafe {
-                    allocator
-                        .free(pointers[i].cast::<ObjectNode>())
-                        .expect("Free failed");
+                    allocator.free(ptr.cast::<ObjectNode>()).expect(&format!(
+                        "Free failed for pointer {} in layout {:?}",
+                        i, layout
+                    ));
                 }
             }
 
-            // Allocate 4 more
-            for _ in 0..4 {
-                let ptr = allocator
-                    .alloc()
-                    .expect("Allocation after partial free failed");
-                assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
-                pointers.push(ptr);
+            // Step 3: Allocate 4 more objects and verify alignment
+            let mut new_pointers = Vec::with_capacity(4);
+            for i in 0..4 {
+                let ptr = allocator.allocate().expect(&format!(
+                    "Allocation {} after partial free failed for layout {:?}",
+                    i, layout
+                ));
+                assert!(
+                    ptr.is_aligned_to(layout.align()),
+                    "Pointer {} after partial free not aligned to {} for layout {:?}",
+                    i,
+                    layout.align(),
+                    layout
+                );
+                new_pointers.push(ptr);
             }
 
-            // Free all remaining
-            for ptr in pointers.iter().skip(1).step_by(2) {
+            // Step 4: Free every other object (indices 0, 2, 4, 6)
+            for (i, ptr) in pointers.iter().enumerate().skip(1).step_by(2) {
                 unsafe {
-                    allocator
-                        .free(ptr.cast::<ObjectNode>())
-                        .expect("Free failed");
+                    allocator.free(ptr.cast::<ObjectNode>()).expect(&format!(
+                        "Free failed for pointer {} in layout {:?}",
+                        i, layout
+                    ));
+                }
+            }
+
+            // Step 5: Free the 4 other allocated pointers
+            for (i, ptr) in new_pointers.iter().enumerate() {
+                unsafe {
+                    allocator.free(ptr.cast::<ObjectNode>()).expect(&format!(
+                        "Free failed for pointer {} in layout {:?}",
+                        i, layout
+                    ));
                 }
             }
         }
@@ -457,14 +512,14 @@ mod tests {
         let obj_count = allocator.obj_count;
         let mut pointers = vec![];
         for _ in 0..obj_count {
-            let ptr = allocator.alloc().expect("Allocation failed");
+            let ptr = allocator.allocate().expect("Allocation failed");
             assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
             pointers.push(ptr);
         }
 
         // Allocate one more to trigger cache growth
         let extra_ptr = allocator
-            .alloc()
+            .allocate()
             .expect("Allocation after full slab failed");
         pointers.push(extra_ptr);
 

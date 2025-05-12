@@ -41,6 +41,8 @@ pub struct PageTable([Entry; ENTRIES_PER_TABLE]);
 
 #[allow(dead_code)]
 impl Entry {
+    /// Keep all flags as off
+    pub const FLAGS_NONE: usize = 0;
     /// Present bit (`0`):
     /// - If `1` the page is present.
     /// - If `0` the page isn't present, and accessing it would cause a PF
@@ -268,7 +270,11 @@ impl PageTable {
     /// Gets the parent page table of the given `base_addr`.
     ///
     /// If one of the page tables are missing during translation, a new page table is created.
-    fn get_range_table(&mut self, base_addr: VirtAddr, page_size: PageSize) -> &mut PageTable {
+    fn get_create_table_range(
+        &mut self,
+        base_addr: VirtAddr,
+        page_size: PageSize,
+    ) -> &mut PageTable {
         {
             let start = base_addr.next_level_index(page_size.bottom_paging_level());
             let end = start + (page_size as usize);
@@ -283,16 +289,45 @@ impl PageTable {
             (page_size.bottom_paging_level() + 1..=PageSize::Max.bottom_paging_level()).rev()
         {
             let i = base_addr.next_level_index(level);
-
             if !table[i].is_flag_set(Entry::FLAG_P) {
                 table[i].set_addr(PageTable::new().1);
                 table[i].set_flag(Entry::FLAG_P);
                 table[i].set_flag(Entry::FLAG_RW);
             }
+
             table = table[i].next_level_table();
         }
 
         table
+    }
+
+    /// Tries to get the parent table of the given `base_addr`.
+    ///
+    /// If one of the page tables are missing during the translation, `None` is returned
+    fn get_table_range(
+        &mut self,
+        base_addr: VirtAddr,
+        page_size: PageSize,
+    ) -> Option<&mut PageTable> {
+        {
+            let start = base_addr.next_level_index(page_size.bottom_paging_level());
+            let end = start + (page_size as usize);
+            assert!(end <= ENTRIES_PER_TABLE, "Range out of bounds");
+        }
+
+        let mut table = self;
+        for level in
+            (page_size.bottom_paging_level() + 1..=PageSize::Max.bottom_paging_level()).rev()
+        {
+            let i = base_addr.next_level_index(level);
+            if !table[i].is_flag_set(Entry::FLAG_P) {
+                return None;
+            }
+
+            table = table[i].next_level_table();
+        }
+
+        Some(table)
     }
 
     /// Activates the mapping for the given virtual address
@@ -317,7 +352,7 @@ impl PageTable {
         assert!(flags & !0b111 == 0, "Invalid flags");
 
         // Get the parent page table
-        let table = self.get_range_table(base_addr, page_size);
+        let table = self.get_create_table_range(base_addr, page_size);
 
         // Find out how much to skiop how much to take
         let to_skip = base_addr.next_level_index(page_size.bottom_paging_level());
@@ -338,19 +373,24 @@ impl PageTable {
         assert!(flags & !0b111 == 0, "Invalid flags");
 
         // Get the parent page table
-        let table = self.get_range_table(base_addr, page_size);
+        let table = self.get_create_table_range(base_addr, page_size);
+
         // Extract the index to the entry
         let i = base_addr.next_level_index(page_size.bottom_paging_level());
-
         // Map the entry
         table[i].map(phys_addr, flags, page_size);
     }
 
-    /// Unmaps the given virtual address range
+    /// Unmaps the given virtual address range, as well as frees the physical page mapped to it if the page was
+    /// mapped with `map_allocate`
     pub unsafe fn unmap(&mut self, base_addr: VirtAddr, count: usize, page_size: PageSize) {
-        let table = self.get_range_table(base_addr, page_size);
+        let table = self.get_table_range(base_addr, page_size).unwrap();
 
         let to_skip = base_addr.next_level_index(page_size.bottom_paging_level());
+
+        assert!(512 - to_skip >= count, "Freeing the requested page count starting this address will exceed this parent table and thus not possible.
+            You should instead call the function individually for each parent page table");
+
         for entry in table.iter_mut().skip(to_skip).take(count) {
             entry.release();
         }
@@ -437,13 +477,13 @@ pub unsafe fn init_from_limine(
     // TODO: Map only some portions of the USEABLE memory that is for HHDM mapped stuff
     // Mapping in all of the memory we need.
     //
-    // NOTE: We are doing the `KERNEL_AND_MODULES` mapping independently of the other sections,
+    // NOTE: We are doing the `EXECUTABLE_AND_MODULES` mapping independently of the other sections,
     // since the kernel's view of this section is different than HHDM (even though this memory is
     // also HHDM mapped IIRC)
     for entry in mem_map {
         let len = entry.length as usize / BASIC_PAGE_SIZE;
         match entry.entry_type {
-            EntryType::KERNEL_AND_MODULES => {
+            EntryType::EXECUTABLE_AND_MODULES => {
                 map_with_hhdm_offset(kernel_virt, kernel_phys, len, new_pml)
             }
             EntryType::ACPI_RECLAIMABLE | EntryType::BOOTLOADER_RECLAIMABLE => {

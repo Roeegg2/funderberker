@@ -1,7 +1,7 @@
 //! Parser for the RSDP table
 
 use super::{AcpiError, SdtHeader, xsdt::Xsdt};
-use crate::mem::PhysAddr;
+use crate::{arch::{x86_64::paging::{self, Entry}, BASIC_PAGE_SIZE}, mem::{vmm::map_page, PhysAddr}};
 use core::ptr;
 
 /// The RSDP (a pointer to the XSDT)
@@ -20,6 +20,8 @@ struct Rsdp {
 }
 
 /// The RSDP2 (the extended version of the RSDP)
+///
+/// This is an extension to the classic `Rsdp`
 #[repr(C, packed)]
 pub(super) struct Rsdp2 {
     old: Rsdp,
@@ -39,6 +41,7 @@ impl Rsdp2 {
     /// Validate the checksum of the RSDP2
     pub(super) fn validate_checksum(&self) -> Result<(), AcpiError> {
         // RSDP2 checksum is calculated for the original fields, and the extended fields separately
+        // Calculate checksum for the original Rsdp
         {
             let mut sum: usize = 0;
             let ptr = ptr::from_ref(self).cast::<u8>();
@@ -50,6 +53,7 @@ impl Rsdp2 {
                 return Err(AcpiError::InvalidChecksum);
             }
         }
+        // Calculate checksum for the new fields
         {
             let mut sum: usize = 0;
             let ptr = unsafe { ptr::from_ref(self).cast::<u8>().byte_add(size_of::<Rsdp>()) };
@@ -68,9 +72,11 @@ impl Rsdp2 {
     /// Get a pointer to the XSDT
     #[inline]
     pub(super) fn get_xsdt(&self) -> &Xsdt {
-        let ptr: *const SdtHeader = PhysAddr(self.xsdt_address as usize)
-            .add_hhdm_offset()
-            .into();
+        let ptr: *const SdtHeader = unsafe {
+            let addr = PhysAddr(self.xsdt_address as usize);
+            let diff = addr.0 % BASIC_PAGE_SIZE;
+            (map_page(addr - diff, Entry::FLAGS_NONE) + diff).into()
+        };
 
         utils::sanity_assert!(ptr.is_aligned_to(align_of::<Xsdt>()));
 

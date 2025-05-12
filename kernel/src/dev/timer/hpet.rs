@@ -13,7 +13,7 @@ use crate::{
 use core::{mem::transmute, ptr, time::Duration};
 use modular_bitfield::prelude::*;
 use utils::{
-    id_allocator::{Id, IdAllocator, IdAllocatorError},
+    id_allocator::{Id, IdAllocator},
     sanity_assert,
 };
 
@@ -163,6 +163,8 @@ pub struct HpetTimer {
     area: MmioArea<usize, usize, u64>,
     /// The ID assigned of this timer
     id: Id,
+    /// The bit width of the timer's comparator
+    size_64_bits: bool,
 }
 
 /// The HPET
@@ -179,6 +181,10 @@ pub struct Hpet {
     /// The `InterruptRoutingMode` the HPET was configured with. This is as well cached for faster
     /// access
     int_routing_mode: InterruptRoutingMode,
+    /// The bit width of the main counter. This is as well cached for faster access
+    ///
+    /// NOTE: This is not the same as the bit width of a specific timer's comparator.
+    size_64_bits: bool,
 }
 
 // TODO: Move this out of here
@@ -191,6 +197,7 @@ pub static HPET: SpinLock<Hpet> = SpinLock::new(Hpet {
     minimum_tick: 0,
     timer_ids: IdAllocator::uninit(),
     int_routing_mode: InterruptRoutingMode::Normal,
+    size_64_bits: false,
 });
 
 impl ReadableRegs {
@@ -289,6 +296,7 @@ impl Hpet {
             minimum_tick,
             timer_ids: IdAllocator::uninit(),
             int_routing_mode,
+            size_64_bits: false,
         };
 
         let capabilities: GeneralCapabilities =
@@ -297,11 +305,13 @@ impl Hpet {
         // Revision of 0 isn't valid
         sanity_assert!(capabilities.rev_id() != 0);
 
-        // Making sure 64 bit capable. We don't support 32 bit mode
-        sanity_assert!(capabilities.count_size_cap() == 1);
-
         // Sanity checking to make sure the clock period makes sense
         sanity_assert!(capabilities.counter_clock_period() < 0x05F5_E100);
+
+        if capabilities.count_size_cap() == 1 {
+            hpet.size_64_bits = true;
+        }
+
         // Get the main clock's period
         hpet.main_clock_period = capabilities.counter_clock_period().into();
 
@@ -412,10 +422,25 @@ impl HpetTimer {
         // We don't need HPET anymore, so release the lock
         drop(hpet);
 
-        Ok(Self {
+        let mut ret = Self {
             area: MmioArea::new(base),
             id,
-        })
+            size_64_bits: false,
+        };
+
+        // Checking if the timer's comparator is 64/32 bits
+        ret.size_64_bits = {
+            let config: TimerConfiguration =
+                unsafe { transmute(ret.area.read(ret.config_reg_offset())) };
+
+            if config.size_capable() == 1 {
+                true
+            } else {
+                false
+            }
+        };
+
+        Ok(ret)
     }
 
     /// Check if the timer has fired
@@ -487,18 +512,16 @@ impl Timer for HpetTimer {
         let mut config: TimerConfiguration =
             unsafe { transmute(self.area.read(self.config_reg_offset())) };
 
-        // Make sure the timer is a 64bit one
-        sanity_assert!(config.size_capable() == 1);
-
         // Make sure the timer mode is supported
         if timer_mode == TimerMode::Periodic && config.periodic_int_capable() == false.into() {
             return Err(TimerError::UnsupportedTimerMode);
         }
 
+        // TODO: Need to make sure this doens't overflow! And check for 32 bit mode
         let cycles_delta: TimerComparator = hpet.time_to_cycles(time);
         // We want to tick for `time`. So we add the current main counter's value and write this
         // to the comparator
-        let target_cycles: TimerComparator =
+        let target_cycles: TimerComparator = 
             unsafe { hpet.area.read(ReadableRegs::MAIN_COUNTER_VALUE) + cycles_delta };
 
         // We don't need the HPET instance anymore

@@ -74,7 +74,7 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 
         // Try accessing allocators, and then also try to allocate
         if let Some(allocator) = unsafe { self.0[index].get().as_mut() }
-            && let Ok(ptr) = allocator.alloc()
+            && let Ok(ptr) = allocator.allocate()
         {
             return ptr.as_ptr().cast::<u8>();
         }
