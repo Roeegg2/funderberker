@@ -6,8 +6,8 @@ use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 use crate::acpi::hpet::Hpet;
 use crate::{
-    arch::{x86_64::paging::Entry, BASIC_PAGE_SIZE},
-    mem::{vmm::map_page, PhysAddr},
+    arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
+    mem::{PhysAddr, vmm::map_page},
 };
 
 /// The XSDT

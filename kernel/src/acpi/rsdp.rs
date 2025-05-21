@@ -1,7 +1,13 @@
 //! Parser for the RSDP table
 
 use super::{AcpiError, SdtHeader, xsdt::Xsdt};
-use crate::{arch::{x86_64::paging::{self, Entry}, BASIC_PAGE_SIZE}, mem::{vmm::map_page, PhysAddr}};
+use crate::{
+    arch::{
+        BASIC_PAGE_SIZE,
+        x86_64::paging::{self, Entry},
+    },
+    mem::{PhysAddr, vmm::map_page},
+};
 use core::ptr;
 
 /// The RSDP (a pointer to the XSDT)

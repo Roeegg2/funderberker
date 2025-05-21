@@ -2,7 +2,7 @@
 
 use crate::arch::x86_64::{
     apic::ioapic::{self, map_irq_to_vector},
-    cpu::get_cs,
+    cpu::read_cs,
     interrupts::{self, Dpl, GateType, IsrStub, Present},
 };
 
@@ -26,7 +26,7 @@ unsafe fn register_irq(irq: u8, isr_stub: IsrStub) {
         // Install the new ISR
         let vector = interrupts::install_isr(
             isr_stub,
-            get_cs(),
+            read_cs(),
             0,
             GateType::Interrupt,
             Dpl::Kernel,

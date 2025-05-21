@@ -8,9 +8,10 @@ use crate::mem::mmio::MmioCell;
 use crate::mem::vmm::map_page;
 use crate::sync::spinlock::{SpinLock, SpinLockDropable};
 use alloc::vec::Vec;
+use utils::collections::id::tracker::{IdTracker, IdTrackerError};
+use utils::collections::id::Id;
 use core::cell::SyncUnsafeCell;
 use modular_bitfield::prelude::*;
-use utils::id_allocator::{Id, IdAllocator, IdAllocatorError};
 
 /// Errors the IO APIC might encounter
 #[derive(Debug, Copy, Clone)]
@@ -31,7 +32,7 @@ struct IrqOverride {
 }
 
 /// An IRQ allocator, to keep track of used/unused IRQs efficiently
-pub static IRQ_ALLOCATOR: SpinLock<IdAllocator> = SpinLock::new(IdAllocator::uninit());
+pub static IRQ_ALLOCATOR: SpinLock<IdTracker> = SpinLock::new(IdTracker::uninit());
 
 /// The registered IRQ overrides
 static IRQ_OVERRIDES: SyncUnsafeCell<Vec<IrqOverride>> = SyncUnsafeCell::new(Vec::new());
@@ -232,7 +233,7 @@ pub fn init_irq_allocator() {
         .map(|ioapic| ioapic.lock())
         .fold(0, |acc, ioapic| acc + ioapic.gsi_count as usize);
 
-    *irq_allocator = IdAllocator::new(Id(0)..Id(gsi_count));
+    *irq_allocator = IdTracker::new(Id(0)..Id(gsi_count));
 }
 
 /// Mark the given IRQ as used.
@@ -240,7 +241,7 @@ pub fn init_irq_allocator() {
 /// SAFETY: This function is unsafe since some IRQ lines are hardwired to certain devices, and so
 /// cannot be used for other purposes.
 /// It is up to the caller to make sure that the IRQ line requested is legal for it's use case
-pub unsafe fn allocate_irq_at(irq: u8) -> Result<(), IdAllocatorError> {
+pub unsafe fn allocate_irq_at(irq: u8) -> Result<(), IdTrackerError> {
     // TODO: Possibly perform a small check to make sure we aren't overriding some known devices?
     // (PIT, RTC, RTC)
     let mut irq_allocator = IRQ_ALLOCATOR.lock();
@@ -381,4 +382,4 @@ unsafe impl Sync for IoApic {}
 impl SpinLockDropable for IoApic {}
 
 // TODO: Move this some place else
-impl SpinLockDropable for IdAllocator {}
+impl SpinLockDropable for IdTracker {}

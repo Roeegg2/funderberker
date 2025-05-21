@@ -3,7 +3,6 @@
 #![feature(box_vec_non_null)]
 
 pub mod collections;
-pub mod id_allocator;
 pub mod mem;
 
 #[cfg(not(test))]

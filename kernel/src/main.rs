@@ -13,11 +13,13 @@
 #![feature(stmt_expr_attributes)]
 #![feature(sync_unsafe_cell)]
 #![feature(naked_functions)]
+#![feature(concat_idents)]
 
 use core::arch::asm;
 use dev::timer::apic::ApicTimer;
 
 mod boot;
+mod sched;
 #[macro_use]
 #[cfg(any(feature = "serial", feature = "framebuffer"))]
 mod print;
@@ -25,6 +27,7 @@ mod acpi;
 mod arch;
 mod dev;
 mod mem;
+mod virt;
 #[macro_use]
 mod sync;
 #[cfg(test)]
@@ -35,11 +38,12 @@ pub fn funderberker_main() -> ! {
     #[cfg(test)]
     test_main();
 
-    println!("trying to test the ACPI timer!");
     let _timer = ApicTimer::new();
-    println!("testing went fine!");
 
-    arch::x86_64::hav::enable();
+    let virt_tech = VirtTech::get();
+    virt_tech.init();
+    // create vessel
+    // run it
 
     log_info!("Starting Funderberker main operation!");
 

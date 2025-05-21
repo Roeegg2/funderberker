@@ -5,7 +5,7 @@ use core::{arch::x86_64::__cpuid_count, cell::SyncUnsafeCell, mem::transmute};
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use crate::{
     arch::x86_64::{
-        cpu::{Msr, rdmsr, wrmsr},
+        cpu::{IntelMsr, rdmsr, wrmsr},
         paging::Entry,
     },
     dev::timer::apic::{TimerDivisor, TimerMode},
@@ -168,10 +168,10 @@ impl LocalApic {
 
         Self::check_support();
 
-        let mut value = unsafe { rdmsr(Msr::Ia32ApicBase) };
+        let mut value = unsafe { rdmsr(IntelMsr::Ia32ApicBase) };
         value.0 |= APIC_ENABLE;
 
-        unsafe { wrmsr(Msr::Ia32ApicBase, value.0, value.1) };
+        unsafe { wrmsr(IntelMsr::Ia32ApicBase, value.0, value.1) };
     }
 
     /// Creates a new Local APIC instance

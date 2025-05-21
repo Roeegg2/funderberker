@@ -2,9 +2,11 @@ use core::ops::Range;
 
 use crate::collections::bitmap::Bitmap;
 
+use super::Id;
+
 /// Possible errors the ID allocator might encounter
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum IdAllocatorError {
+pub enum IdTrackerError {
     /// The allocator is out of IDs
     OutOfIds,
     /// The ID that was trying to be freed is already freed
@@ -15,13 +17,8 @@ pub enum IdAllocatorError {
     IdAlreadyTaken,
 }
 
-// TODO: Maybe enforce this to be a primitive number type? IDK
-/// A handle for the handed ID
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Id(pub usize);
-
-/// The ID allocator
-pub struct IdAllocator {
+/// ID allocator that allocates and tracks IDs from a given, finite, pool.
+pub struct IdTracker {
     /// Bitmap for keeping track of IDs
     bitmap: Bitmap,
     /// The range of the ID pool
@@ -30,8 +27,8 @@ pub struct IdAllocator {
 
 // TODO: Use a ring ptr here?
 
-impl IdAllocator {
-    /// Get an uninitilized instance of an `IdAllocator`
+impl IdTracker {
+    /// Get an uninitilized instance of an `IdTracker`
     pub const fn uninit() -> Self {
         Self {
             bitmap: Bitmap::uninit(),
@@ -39,7 +36,7 @@ impl IdAllocator {
         }
     }
 
-    /// Construct a new `IdAllocator`
+    /// Construct a new `IdTracker`
     pub fn new(pool_range: Range<Id>) -> Self {
         Self {
             bitmap: Bitmap::new(pool_range.end.0 - pool_range.start.0 + 1),
@@ -49,7 +46,7 @@ impl IdAllocator {
 
     /// Try to find a free id in the pool_range and allocate it
     #[must_use = "Not freeing the ID will cause leaking"]
-    pub fn allocate(&mut self) -> Result<Id, IdAllocatorError> {
+    pub fn allocate(&mut self) -> Result<Id, IdTrackerError> {
         let max_id = self.bitmap.used_bits_count();
 
         for i in 0..max_id {
@@ -59,14 +56,14 @@ impl IdAllocator {
             }
         }
 
-        Err(IdAllocatorError::OutOfIds)
+        Err(IdTrackerError::OutOfIds)
     }
 
-    pub fn allocate_at(&mut self, id: Id) -> Result<(), IdAllocatorError> {
+    pub fn allocate_at(&mut self, id: Id) -> Result<(), IdTrackerError> {
         if id.0 >= self.bitmap.used_bits_count() {
-            return Err(IdAllocatorError::InvalidId);
+            return Err(IdTrackerError::InvalidId);
         } else if self.bitmap.is_set(id.0) {
-            return Err(IdAllocatorError::IdAlreadyTaken);
+            return Err(IdTrackerError::IdAlreadyTaken);
         }
 
         self.bitmap.set(id.0);
@@ -76,10 +73,10 @@ impl IdAllocator {
 
     // TODO: Give a handle or something to prevent bad freeing?
     /// Tries to free the given id
-    pub unsafe fn free(&mut self, id: Id) -> Result<(), IdAllocatorError> {
+    pub unsafe fn free(&mut self, id: Id) -> Result<(), IdTrackerError> {
         // Make sure the ID is in the given pool_range
         if self.pool_range.end.0 < id.0 || id.0 < self.pool_range.start.0 {
-            return Err(IdAllocatorError::OutOfIds);
+            return Err(IdTrackerError::OutOfIds);
         }
 
         let index = id.0 - self.pool_range.start.0;
@@ -91,7 +88,7 @@ impl IdAllocator {
             return Ok(());
         }
 
-        Err(IdAllocatorError::IdAlreadyFree)
+        Err(IdTrackerError::IdAlreadyFree)
     }
 
     pub fn pool_range(&self) -> Range<Id> {
@@ -108,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_id_allocator() {
-        let mut allocator = IdAllocator::new(Id(0)..Id(10));
+        let mut allocator = IdTracker::new(Id(0)..Id(10));
 
         let id1 = allocator.allocate().unwrap();
         assert_eq!(id1.0, 0);
@@ -123,5 +120,5 @@ mod tests {
     }
 }
 
-unsafe impl Send for IdAllocator {}
-unsafe impl Sync for IdAllocator {}
+unsafe impl Send for IdTracker {}
+unsafe impl Sync for IdTracker {}

@@ -12,10 +12,7 @@ use crate::{
 };
 use core::{mem::transmute, ptr, time::Duration};
 use modular_bitfield::prelude::*;
-use utils::{
-    id_allocator::{Id, IdAllocator},
-    sanity_assert,
-};
+use utils::{collections::id::{tracker::IdTracker, Id}, sanity_assert};
 
 /// The different interrupt routing modes the HPET timer supports
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -177,7 +174,7 @@ pub struct Hpet {
     /// access
     minimum_tick: u16,
     /// ID allocator for the timers
-    timer_ids: IdAllocator,
+    timer_ids: IdTracker,
     /// The `InterruptRoutingMode` the HPET was configured with. This is as well cached for faster
     /// access
     int_routing_mode: InterruptRoutingMode,
@@ -195,7 +192,7 @@ pub static HPET: SpinLock<Hpet> = SpinLock::new(Hpet {
     area: MmioArea::new(ptr::dangling_mut()),
     main_clock_period: 0,
     minimum_tick: 0,
-    timer_ids: IdAllocator::uninit(),
+    timer_ids: IdTracker::uninit(),
     int_routing_mode: InterruptRoutingMode::Normal,
     size_64_bits: false,
 });
@@ -294,7 +291,7 @@ impl Hpet {
             area: MmioArea::new(base),
             main_clock_period: 0,
             minimum_tick,
-            timer_ids: IdAllocator::uninit(),
+            timer_ids: IdTracker::uninit(),
             int_routing_mode,
             size_64_bits: false,
         };
@@ -322,7 +319,7 @@ impl Hpet {
         sanity_assert!(max_timer_index < Self::MAX_TIMER_AMOUNT);
 
         // Construct the range
-        hpet.timer_ids = IdAllocator::new(Id(0)..Id(max_timer_index));
+        hpet.timer_ids = IdTracker::new(Id(0)..Id(max_timer_index));
 
         hpet
     }
@@ -521,7 +518,7 @@ impl Timer for HpetTimer {
         let cycles_delta: TimerComparator = hpet.time_to_cycles(time);
         // We want to tick for `time`. So we add the current main counter's value and write this
         // to the comparator
-        let target_cycles: TimerComparator = 
+        let target_cycles: TimerComparator =
             unsafe { hpet.area.read(ReadableRegs::MAIN_COUNTER_VALUE) + cycles_delta };
 
         // We don't need the HPET instance anymore

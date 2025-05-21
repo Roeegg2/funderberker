@@ -9,6 +9,8 @@ use alloc::fmt;
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::paging::PageSize;
 
+use utils::collections::fast_lazy_static::FastLazyStatic;
+
 mod heap;
 pub mod mmio;
 pub mod pmm;
@@ -20,8 +22,7 @@ pub mod vmm;
 /// An temporary invalid HHDM offset that will be changed once the HHDM offset is set
 const INVALID_HHDM_OFFSET: usize = 0xFFFF_FFFF_FFFF_FFFF;
 
-/// The offset between the HHDM mapped virtual address and the physical address
-static mut HHDM_OFFSET: usize = INVALID_HHDM_OFFSET;
+pub static HHDM_OFFSET: FastLazyStatic<usize> = FastLazyStatic::new(INVALID_HHDM_OFFSET);
 
 /// A physical address
 #[repr(transparent)]
@@ -38,7 +39,7 @@ impl VirtAddr {
     ///
     /// NOTE: This function can't be const since we don't know the HHDM offset at compile time
     pub fn subtract_hhdm_offset(self) -> PhysAddr {
-        PhysAddr(self.0 - get_hhdm_offset())
+        PhysAddr(self.0 - HHDM_OFFSET.get())
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -52,35 +53,7 @@ impl VirtAddr {
 impl PhysAddr {
     /// Get the virtual address of a physical address. A Virtual address **that is HHDM mapped**
     pub fn add_hhdm_offset(self) -> VirtAddr {
-        VirtAddr(self.0 + get_hhdm_offset())
-    }
-}
-
-// TODO: Possibly remove these asserts, these could possibly slow things down
-
-/// Get the HHDM offset
-#[inline]
-pub fn get_hhdm_offset() -> usize {
-    unsafe {
-        assert!(
-            HHDM_OFFSET != INVALID_HHDM_OFFSET,
-            "HHDM offset not set. Did you forget to call `set_hhdm_offset`?",
-        );
-
-        HHDM_OFFSET
-    }
-}
-
-/// Set the HHDM offset
-#[inline]
-pub fn set_hhdm_offset(offset: usize) {
-    unsafe {
-        assert!(
-            HHDM_OFFSET == INVALID_HHDM_OFFSET,
-            "HHDM offset already set. Did you forget you called `set_hhdm_offset`?",
-        );
-
-        HHDM_OFFSET = offset;
+        VirtAddr(self.0 + HHDM_OFFSET.get())
     }
 }
 

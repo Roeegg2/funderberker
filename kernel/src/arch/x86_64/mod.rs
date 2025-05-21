@@ -2,19 +2,23 @@
 
 use core::arch::x86_64::__cpuid_count;
 
-use super::Architecture;
-use interrupts::Idt;
+use crate::mem::VirtAddr;
 
-pub mod hav;
+use super::Architecture;
+use gdt::FullSegmentSelector;
+use interrupts::Idt;
+use utils::collections::fast_lazy_static::FastLazyStatic;
+
 #[macro_use]
 pub mod cpu;
 pub mod apic;
 pub mod event;
+pub mod gdt;
 pub mod interrupts;
 pub mod paging;
 
 /// A static variable to store the CPU vendor we are running on
-static mut CPU_VENDOR: CpuVendor = CpuVendor::Invalid;
+static CPU_VENDOR: FastLazyStatic<CpuVendor> = FastLazyStatic::new(CpuVendor::Invalid);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// The x86_64 CPU vendors Funderberker supports
@@ -32,8 +36,8 @@ pub(super) struct X86_64;
 
 /// Pointer to some descriptor table (IDTR, GDTR, etc)
 #[repr(C, packed)]
-#[derive(Debug)]
-pub(super) struct DescriptorTablePtr {
+#[derive(Debug, Default)]
+pub struct DescriptorTablePtr {
     limit: u16,
     base: u64,
 }
@@ -54,12 +58,10 @@ fn find_cpu_vendor() {
     type CpuidVendorString = (u32, u32, u32);
 
     // Making sure we're not executing this for nothing
-    unsafe {
-        assert!(
-            CPU_VENDOR == CpuVendor::Invalid,
-            "CPU vendor is already set. Did you forget you called `find_cpu_vendor`?",
-        );
-    }
+    assert!(
+        CPU_VENDOR.get() == CpuVendor::Invalid,
+        "CPU vendor is already set. Did you forget you called `find_cpu_vendor`?",
+    );
 
     // The strings (broken down into parts) we should compare to to find out the vendor.
     //
@@ -81,23 +83,20 @@ fn find_cpu_vendor() {
     };
 
     unsafe {
-        CPU_VENDOR = match string {
+        CPU_VENDOR.set(match string {
             INTEL_STRING => CpuVendor::Intel,
             AMD_STRING => CpuVendor::Amd,
             _ => panic!("Invalid CPU vendor found"),
-        };
+        });
     };
 
-    log_info!("CPU Vendor found: `{:?}`", get_cpu_vendor());
+    log_info!("CPU Vendor found: `{:?}`", CPU_VENDOR.get());
 }
 
-#[inline]
-fn get_cpu_vendor() -> CpuVendor {
-    unsafe {
-        assert!(
-            CPU_VENDOR != CpuVendor::Invalid,
-            "CPU vendor is not set. Did you forget to call `find_cpu_vendor`?",
-        );
-        CPU_VENDOR
+impl From<DescriptorTablePtr> for VirtAddr {
+    fn from(value: DescriptorTablePtr) -> Self {
+        // SAFETY: The value stored here should be the linear address, so we just put it into
+        // `VirtAddr`
+        Self(value.base as usize)
     }
 }

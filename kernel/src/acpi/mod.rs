@@ -88,7 +88,7 @@ pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
     let xsdt = rsdp.get_xsdt();
     xsdt.parse_tables()?;
 
-    log_info!("ACPI Parsed successfully");
+    log_info!("ACPI: All tables parsed successfully");
 
     Ok(())
 }

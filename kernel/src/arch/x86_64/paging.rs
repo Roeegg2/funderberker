@@ -2,14 +2,14 @@ use core::fmt::Debug;
 use core::num::NonZero;
 use core::ops::{Deref, DerefMut};
 
-use limine::memory_map::{self, EntryType};
-use utils::mem::memset;
-
 use crate::arch::BASIC_PAGE_SIZE;
 use crate::mem::{
     PhysAddr, VirtAddr,
     pmm::{self, PmmAllocator},
 };
+use limine::memory_map::{self, EntryType};
+use utils::mem::memset;
+use utils::sanity_assert;
 
 /// The number of entries per page table
 pub const ENTRIES_PER_TABLE: usize = 512;
@@ -436,7 +436,7 @@ impl PageSize {
 
 /// Get the top level paging table PML4/PML5 (depending on the paging level)
 pub fn get_pml() -> &'static mut PageTable {
-    let phys_addr = PhysAddr(read_cr!(3));
+    let phys_addr = PhysAddr(read_cr!(3) as usize);
 
     let ptr: *mut PageTable = phys_addr.add_hhdm_offset().into();
 
@@ -451,7 +451,6 @@ pub unsafe fn init_from_limine(
     kernel_phys: PhysAddr,
 ) {
     // TODO: CPUID check as well
-
     #[cfg(feature = "paging_5")]
     if read_cr!(cr4) & (1 << 12) != 0 {
         panic!("5 level paging requested, but not supported");
@@ -459,14 +458,20 @@ pub unsafe fn init_from_limine(
 
     let (new_pml, new_pml_addr) = PageTable::new();
 
-    // Helper function to avoid code duplication
+    // Helper function to avoid code duplication.
+    //
+    // Maps in the given virtual address to the given
     fn map_with_hhdm_offset(
         base_virt_addr: VirtAddr,
         base_phys_addr: PhysAddr,
-        len: usize,
+        page_count: usize,
         new_pml: &mut PageTable,
     ) {
-        for i in 0..len {
+        // Just making sure the addresses are both aligned
+        sanity_assert!(base_virt_addr.0 % BASIC_PAGE_SIZE == 0);
+        sanity_assert!(base_phys_addr.0 % BASIC_PAGE_SIZE == 0);
+
+        for i in 0..page_count {
             let virt_addr = base_virt_addr + (i * BASIC_PAGE_SIZE);
             let phys_addr = base_phys_addr + (i * BASIC_PAGE_SIZE);
 
@@ -481,30 +486,33 @@ pub unsafe fn init_from_limine(
     // since the kernel's view of this section is different than HHDM (even though this memory is
     // also HHDM mapped IIRC)
     for entry in mem_map {
-        let len = entry.length as usize / BASIC_PAGE_SIZE;
+        // Just making sure the length is a multiple of a page size
+        sanity_assert!(entry.length as usize % BASIC_PAGE_SIZE == 0);
+
+        let page_count = entry.length as usize / BASIC_PAGE_SIZE;
         match entry.entry_type {
             EntryType::EXECUTABLE_AND_MODULES => {
-                map_with_hhdm_offset(kernel_virt, kernel_phys, len, new_pml)
+                map_with_hhdm_offset(kernel_virt, kernel_phys, page_count, new_pml)
             }
             EntryType::ACPI_RECLAIMABLE | EntryType::BOOTLOADER_RECLAIMABLE => {
                 map_with_hhdm_offset(
                     PhysAddr(entry.base as usize).add_hhdm_offset(),
                     PhysAddr(entry.base as usize),
-                    len,
+                    page_count,
                     new_pml,
                 )
             }
             EntryType::USABLE => map_with_hhdm_offset(
                 PhysAddr(entry.base as usize).add_hhdm_offset(),
                 PhysAddr(entry.base as usize),
-                len,
+                page_count,
                 new_pml,
             ),
             #[cfg(feature = "framebuffer")]
             EntryType::FRAMEBUFFER => map_with_hhdm_offset(
                 PhysAddr(entry.base as usize).add_hhdm_offset(),
                 PhysAddr(entry.base as usize),
-                len,
+                page_count,
                 new_pml,
             ),
             _ => (),

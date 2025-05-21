@@ -2,20 +2,40 @@
 //!
 //! `NOTE:` `core::arch::x86_64` already implements `__cpuid`, `rdtsc` and many others, so use them when needed
 
+use super::gdt::SegmentSelector;
 use core::arch::asm;
+use core::mem::transmute;
 
+/// A shared trait for all MSRs
+trait Msr {
+    /// Get the address of that MSR
+    fn address(self) -> u32;
+}
+
+// TODO: Make a shared MSRs enum
+
+/// Intel CPUs specific MSRs
 #[repr(u32)]
-pub enum Msr {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum IntelMsr {
     /// Address of the `IA32_APIC_BASE` MSR
     Ia32ApicBase = 0x1B,
     /// Address of the `IA32_FEATURE_CONTROL` MSR
     Ia32FeatureControl = 0x3A,
-    /// FOR AMD CPUs!
-    ///
+    /// Address of the `IA32_VMX_BASIC` MSR
+    Ia32VmxBasic = 0x480,
+}
+
+/// AMD CPUs specific MSRs
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AmdMsr {
     /// Extended feature enable
     Efer = 0xC000_0080,
-    /// Control and status bits for HAV
+    /// Control and status bits for SVM
     VmCr = 0xC001_0114,
+    /// Physical address of the host state save area
+    VmHsavePa = 0xC001_0117,
 }
 
 #[allow(unused)]
@@ -96,7 +116,7 @@ pub fn sti() {
 
 /// Read the value of a model specific register (MSR)
 #[inline]
-pub unsafe fn rdmsr(msr: Msr) -> (u32, u32) {
+pub unsafe fn rdmsr(msr: impl Msr) -> (u32, u32) {
     let low: u32;
     let high: u32;
     unsafe {
@@ -104,7 +124,7 @@ pub unsafe fn rdmsr(msr: Msr) -> (u32, u32) {
             "rdmsr",
             out("eax") low,
             out("edx") high,
-            in("ecx") msr as u32,
+            in("ecx") msr.address(),
             options(nostack, nomem),
         );
     };
@@ -113,30 +133,73 @@ pub unsafe fn rdmsr(msr: Msr) -> (u32, u32) {
 
 /// Write a value to a model specific register (MSR)
 #[inline]
-pub unsafe fn wrmsr(msr: Msr, low: u32, high: u32) {
+pub unsafe fn wrmsr(msr: impl Msr, low: u32, high: u32) {
     unsafe {
         asm!(
             "wrmsr",
             in("eax") low,
             in("edx") high,
-            in("ecx") msr as u32,
+            in("ecx") msr.address(),
             options(nostack, nomem),
         );
     };
 }
 
-/// Read the value of the current CS register
 #[inline]
-pub fn get_cs() -> u16 {
-    let cs: u16;
+pub fn get_rflags() -> u64 {
+    let rflags: u64;
     unsafe {
         asm! (
-            "mov {:x}, cs",
-            out(reg) cs,
+            "pushfq",
+            "pop {}",
+            out(reg) rflags,
         );
     };
-    cs
+
+    rflags
 }
+
+impl Msr for IntelMsr {
+    #[inline]
+    fn address(self) -> u32 {
+        self as u32
+    }
+}
+
+impl Msr for AmdMsr {
+    #[inline]
+    fn address(self) -> u32 {
+        self as u32
+    }
+}
+
+macro_rules! define_register_reader {
+    ($func_name:ident, $segment:ident, $raw:ty, $actual:ty) => {
+        /// Read the value of the $segment register
+        #[inline]
+        pub fn $func_name() -> $actual {
+            let segment: $raw;
+            unsafe {
+                asm! (
+                    concat!("mov {}, ", stringify!($segment)),
+                    out(reg) segment,
+                    options(nostack),
+                );
+
+                transmute(segment)
+            }
+        }
+    };
+}
+
+define_register_reader!(read_cs, cs, u16, SegmentSelector);
+define_register_reader!(read_ds, ds, u16, SegmentSelector);
+define_register_reader!(read_es, es, u16, SegmentSelector);
+define_register_reader!(read_fs, fs, u16, SegmentSelector);
+define_register_reader!(read_gs, gs, u16, SegmentSelector);
+define_register_reader!(read_ss, ss, u16, SegmentSelector);
+define_register_reader!(read_dr6, dr6, u32, u32);
+define_register_reader!(read_dr7, dr7, u32, u32);
 
 // TODO: Maybe implement these as functions with enums for the fields you can write to make it
 // safer?
@@ -146,7 +209,7 @@ pub fn get_cs() -> u16 {
 macro_rules! validate_cr {
     ($cr:literal) => {
         const _: () = assert!(
-            matches!($cr, 2 | 3 | 4 | 8),
+            matches!($cr, 0 | 2 | 3 | 4 | 8),
             "Invalid control register number. Must be 2, 3, 4, or 8.",
         );
     };
@@ -158,7 +221,7 @@ macro_rules! read_cr {
     ($cr:literal) => {{
         $crate::validate_cr!($cr);
         unsafe {
-            let value: usize;
+            let value: u64;
             core::arch::asm!(
                 concat!("mov {}, cr", $cr),
                 out(reg) value,

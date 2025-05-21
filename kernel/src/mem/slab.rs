@@ -212,7 +212,9 @@ impl InternalSlabAllocator {
         while let Some(slab) = self.free_slabs.pop() {
             let offset = slab.buff_ptr.addr().get() % BASIC_PAGE_SIZE;
             let addr = VirtAddr(slab.buff_ptr.addr().get() - offset);
-            unsafe { free_pages(addr, self.pages_per_slab); };
+            unsafe {
+                free_pages(addr, self.pages_per_slab);
+            };
 
             // IMPORTANT!!! We don't want to call the destructor on the slab, since it's already
             // been freed by `free_pages`!!
@@ -342,7 +344,7 @@ impl Drop for InternalSlabAllocator {
 
 /// Implementing `Drop` manually here since when the `StackList` field gets drop, it's popping and
 /// trying to free all the `Node`s, and that's undefined behaviour because:
-/// 1. `Drop` on `Slab` should only ever be called when `reap`ing. And when reaping, we manually 
+/// 1. `Drop` on `Slab` should only ever be called when `reap`ing. And when reaping, we manually
 ///     `unmap` the object pages (on which `Slab` is also allocated)
 /// 2. The `Node`s here are allocated manually, so calling a traditional free on them is UB anyway
 ///

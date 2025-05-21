@@ -7,9 +7,11 @@ use crate::{
 use core::{
     arch::asm,
     mem::{size_of, transmute},
-    ptr::from_ref,
+    ptr::{self, from_ref},
 };
 use modular_bitfield::prelude::*;
+
+use super::{DescriptorTablePtr, gdt::SegmentSelector};
 
 /// The number of entries in the IDT
 const IDT_ENTRIES_NUM: usize = 256;
@@ -19,7 +21,7 @@ const IDT_ENTRIES_NUM: usize = 256;
 static IDT: SpinLock<Idt> = SpinLock::new(Idt([GateDescriptor::DEFAULT; IDT_ENTRIES_NUM]));
 
 /// The IDT
-pub(super) struct Idt([GateDescriptor; IDT_ENTRIES_NUM]);
+pub struct Idt([GateDescriptor; IDT_ENTRIES_NUM]);
 
 /// An ISR stub
 ///
@@ -82,14 +84,14 @@ impl GateDescriptor {
     fn register(
         &mut self,
         offset: u64,
-        segment_selector: u16,
+        segment_selector: SegmentSelector,
         ist: u8,
         gate_type: GateType,
         dpl: Dpl,
         present: Present,
     ) {
         self.set_offset_0(offset as u16);
-        self.set_segment_selector(segment_selector);
+        self.set_segment_selector(segment_selector.into());
         self.set_ist(ist);
         self.set_gate_type(gate_type as u8);
         self.set_dpl(dpl as u8);
@@ -120,7 +122,7 @@ impl Idt {
     #[inline]
     #[rustfmt::skip]
     fn install_exception_isrs(&mut self) {
-        let cs = cpu::get_cs();
+        let cs = cpu::read_cs();
 
         self.0[0].register(__isr_stub_exception_0 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
         self.0[1].register(__isr_stub_exception_1 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
@@ -179,6 +181,34 @@ impl Idt {
 
         log_info!("Loaded IDT successfully");
     }
+    pub fn read_gdtr() -> DescriptorTablePtr {
+        let gdtr = DescriptorTablePtr { limit: 0, base: 0 };
+        unsafe {
+            let ptr = ptr::from_ref(&gdtr);
+            asm!(
+                "sgdt [{}]",
+                in(reg) ptr,
+                options(nostack),
+            );
+        };
+
+        gdtr
+    }
+
+    /// Get the address of the IDTR, aquired by reading the `IDTR`
+    pub fn read_idtr() -> DescriptorTablePtr {
+        let idtr = DescriptorTablePtr::default();
+        unsafe {
+            let ptr = ptr::from_ref(&idtr);
+            asm!(
+                "sidt [{}]",
+                in(reg) ptr,
+                options(nostack),
+            );
+        };
+
+        idtr
+    }
 }
 
 /// Find an available entry in the IDT and install an ISR entry there
@@ -186,7 +216,7 @@ impl Idt {
 /// NOTE: Make sure to call with the *ISR stub* and *not the actual handler!!* (ie. `__isr_stub_..`)
 pub unsafe fn install_isr(
     isr_stub: IsrStub,
-    segment_selector: u16,
+    segment_selector: SegmentSelector,
     ist: u8,
     gate_type: GateType,
     dpl: Dpl,

@@ -15,8 +15,8 @@ use crate::arch::{self, BASIC_PAGE_SIZE, x86_64};
 #[cfg(feature = "framebuffer")]
 use crate::dev::framebuffer;
 use crate::dev::serial;
-use crate::mem;
 use crate::mem::vmm;
+use crate::mem::{self, HHDM_OFFSET};
 use crate::mem::{PhysAddr, VirtAddr, pmm};
 
 /// Sets the base revision to the latest revision supported by the crate.
@@ -112,7 +112,9 @@ unsafe extern "C" fn kmain() -> ! {
         .get_response()
         .expect("Can't get Limine framebuffer feature response");
 
-    mem::set_hhdm_offset(hhdm.offset() as usize);
+    unsafe {
+        HHDM_OFFSET.set(hhdm.offset() as usize);
+    };
 
     unsafe {
         arch::init();

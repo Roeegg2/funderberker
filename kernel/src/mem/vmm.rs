@@ -1,65 +1,71 @@
 //! Virtual memory manager for handing out virtual pages
 
-use utils::sanity_assert;
-
+use crate::mem::HHDM_OFFSET;
 use crate::{
     arch::{
         BASIC_PAGE_SIZE,
         x86_64::paging::{self, PageSize},
     },
-    mem::get_hhdm_offset,
     sync::spinlock::{SpinLock, SpinLockDropable},
 };
+use utils::collections::id::Id;
+use utils::sanity_assert;
+use utils::collections::id::hander::IdHander;
+
 
 use super::{PhysAddr, VirtAddr};
 #[cfg(feature = "limine")]
 use limine::memory_map;
 
-static VIRTUAL_ADDRESS_ALLOCATOR: SpinLock<VirtualAddressAllocator> =
-    SpinLock::new(VirtualAddressAllocator { next: VirtAddr(42) });
+static VIRTUAL_ADDRESS_ALLOCATOR: SpinLock<VirtualAddressAllocator> = SpinLock::new(VirtualAddressAllocator::uninit());
 
-/// A simple bump page ID allocator
-struct VirtualAddressAllocator {
-    /// The next free ID to allocate
-    next: VirtAddr,
-}
+struct VirtualAddressAllocator(IdHander);
 
 impl VirtualAddressAllocator {
-    /// Allocate `count` virtually contiguous block of 4KB pages
-    fn bump(&mut self, count: usize) -> VirtAddr {
-        let ret = self.next;
-        self.next = self.next + (count * BASIC_PAGE_SIZE);
+    fn new(start_addr: VirtAddr) -> Self {
+        // The minimal memory range we demand
+        const MIN_MEM_SPAN: usize = 8 * 0x1000 * 0x1000 * 0x1000 * 0x1000; // 8TB
+                                                                       
+        // Making sure address is page aligned
+        sanity_assert!(start_addr.0 % BASIC_PAGE_SIZE == 0);
 
-        sanity_assert!(self.next.0 < get_hhdm_offset());
+        // Make sure we have enough virtual memory space
+        assert!(
+            HHDM_OFFSET.get() - start_addr.0 >= MIN_MEM_SPAN,
+            "Cannot find enough virtual memory space"
+        );
 
-        ret
+        log_info!(
+            "VAA initialized with start address of {:?}",
+            start_addr
+        );
+
+        unsafe {
+            let start_id = Id(start_addr.0 / BASIC_PAGE_SIZE);
+            Self(IdHander::new_starting_from(start_id))
+        }
+    }
+
+    #[inline]
+    const fn uninit() -> Self {
+        Self(IdHander::new())
+    }
+
+    #[inline]
+    fn handout(&mut self) -> VirtAddr {
+        VirtAddr(self.0.handout().0 * BASIC_PAGE_SIZE)
     }
 }
 
-// XXX: This is a bit hacky, but it works
 #[cfg(feature = "limine")]
 pub fn init_from_limine(mem_map: &[&memory_map::Entry]) {
-    use crate::mem::get_hhdm_offset;
-
-    const MIN_MEM_SPAN: usize = 8 * 0x1000 * 0x1000 * 0x1000 * 0x1000; // 8TB
-
     // Get the last entry in the memory map
     let last_entry = mem_map.last().unwrap();
     let addr = VirtAddr(last_entry.base as usize + last_entry.length as usize);
 
-    // Make sure we have enough virtual memory space
-    assert!(
-        get_hhdm_offset() - addr.0 >= MIN_MEM_SPAN,
-        "Cannot find enough virtual memory space"
-    );
-
     let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
-    vaa.next = addr;
+    *vaa = VirtualAddressAllocator::new(addr);
 
-    log_info!(
-        "Page ID allocator initialized with start bump address of {:?}",
-        vaa.next
-    );
 }
 
 /// Map the given physical address to some virtual address
@@ -70,8 +76,7 @@ pub fn init_from_limine(mem_map: &[&memory_map::Entry]) {
 pub unsafe fn map_page(phys_addr: PhysAddr, flags: usize) -> VirtAddr {
     let virt_addr = {
         let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
-
-        vaa.bump(1)
+        vaa.handout()
     };
 
     let pml = paging::get_pml();
@@ -88,21 +93,19 @@ pub unsafe fn map_page(phys_addr: PhysAddr, flags: usize) -> VirtAddr {
 /// it takes up less memory
 #[must_use = "Not freeing the pages will cause a memory leak"]
 pub fn allocate_pages(count: usize, flags: usize) -> VirtAddr {
-    // Allocate the virtual addresses
-    let base_virt_addr = {
+    let virt_addr = {
         let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
-
-        vaa.bump(count)
+        vaa.handout()
     };
 
     // TODO: Support multiple page sizes
 
     {
         let pml = paging::get_pml();
-        pml.map_allocate(base_virt_addr, count, PageSize::Size4KB, flags);
+        pml.map_allocate(virt_addr, count, PageSize::Size4KB, flags);
     }
 
-    base_virt_addr
+    virt_addr
 }
 
 /// Free a virtually contiguous block of 4KB pages
@@ -116,6 +119,20 @@ pub unsafe fn free_pages(base_addr: VirtAddr, count: usize) {
     unsafe {
         pml.unmap(base_addr, count, PageSize::Size4KB);
     }
+}
+
+/// Returns the physical address mapped to get given virtual address.
+///
+/// If the virtual address isn't mapped, `None` is returned
+pub fn translate(base_addr: VirtAddr) -> Option<PhysAddr> {
+    assert!(
+        base_addr.0 % BASIC_PAGE_SIZE == 0,
+        "Base address wanted to free isn't page aligned"
+    );
+
+    let pml = paging::get_pml();
+
+    pml.translate(base_addr)
 }
 
 impl SpinLockDropable for VirtualAddressAllocator {}
