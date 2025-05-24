@@ -5,7 +5,6 @@ use core::arch::x86_64::__cpuid_count;
 use crate::mem::VirtAddr;
 
 use super::Architecture;
-use gdt::FullSegmentSelector;
 use interrupts::Idt;
 use utils::collections::fast_lazy_static::FastLazyStatic;
 
@@ -18,7 +17,7 @@ pub mod interrupts;
 pub mod paging;
 
 /// A static variable to store the CPU vendor we are running on
-static CPU_VENDOR: FastLazyStatic<CpuVendor> = FastLazyStatic::new(CpuVendor::Invalid);
+pub static CPU_VENDOR: FastLazyStatic<CpuVendor> = FastLazyStatic::new(CpuVendor::Invalid);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// The x86_64 CPU vendors Funderberker supports

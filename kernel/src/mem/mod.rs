@@ -11,7 +11,6 @@ use crate::arch::x86_64::paging::PageSize;
 
 use utils::collections::fast_lazy_static::FastLazyStatic;
 
-mod heap;
 pub mod mmio;
 pub mod pmm;
 pub mod slab;

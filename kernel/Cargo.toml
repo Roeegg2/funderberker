@@ -13,7 +13,7 @@ utils = { path = "../utils" }
 macros = { path = "../macros" }
 
 [features]
-default = ["limine", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "hpet"]
+default = ["limine", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "hpet", "scheduler_constant"]
 
 # Booting method
 limine = ["dep:limine"]
@@ -39,6 +39,11 @@ hpet = []
 # Most (if not all) modern systems have a HPET built in them with legacy support, so this is usually not needed 
 # (more so, there's a trend in newer CPUs to exclude support for PIT and RTC, so you might have to keep this disabled)
 legacy_timers = [] # UNSUPPORTED
+
+# Possible schedulers
+# Constant scheduler
+scheduler_constant = []
+
 
 [lints.clippy]
 pedantic = "warn"

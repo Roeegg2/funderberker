@@ -5,4 +5,3 @@ pub mod tracker;
 /// A handle for the handed ID
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Id(pub usize);
-

@@ -1,9 +1,4 @@
-use core::{
-    arch::{asm, x86_64::__cpuid},
-    num::NonZero,
-    ptr,
-};
-use utils::mem::memset;
+use super::{Vesselable, VirtTech};
 use crate::{
     arch::{
         BASIC_PAGE_SIZE,
@@ -20,14 +15,26 @@ use crate::{
     mem::{
         PhysAddr, VirtAddr,
         pmm::{self, PmmAllocator},
+        slab::{SlabAllocatable, SlabAllocator},
         vmm::{allocate_pages, map_page, translate},
     },
     read_cr,
+    sync::spinlock::{SpinLock, SpinLockDropable},
 };
-use super::{Vesselable, VirtTech};
+use alloc::boxed::Box;
+use core::{
+    arch::{asm, x86_64::__cpuid},
+    cell::{SyncUnsafeCell, UnsafeCell},
+    num::NonZero,
+    ops::{Deref, DerefMut},
+    ptr,
+};
+use utils::{mem::memset, sanity_assert};
+
+static VMCB_ALLOCATOR: SlabAllocator<Vmcb> = SlabAllocator::new();
 
 /// A ZST to implement the `VirtTech` trait on
-struct Svm;
+pub struct Svm;
 
 /// The `StateSave` part of the VMCB
 #[repr(C, packed)]
@@ -157,11 +164,11 @@ struct ControlArea {
     reserved_26: [u8; 752],
 }
 
-/// The VMCB structure. 
+/// The VMCB structure.
 ///
 /// Each VM has one, so HAV could be used
-#[repr(C, packed)]
-struct Vmcb {
+#[repr(C, packed(0x1000))]
+pub struct Vmcb {
     control: ControlArea,
     state_save: StateSaveArea,
 }
@@ -373,6 +380,11 @@ enum InterceptCode {
 }
 
 impl Vmcb {
+    #[inline]
+    fn uninit() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+
     /// Initializes the guest state of the VMCB.
     ///
     /// The processor will load these fields when `VMLOAD` is executed.
@@ -422,25 +434,12 @@ impl Vmcb {
         // TODO: Not sure about RAX
     }
 
-    pub fn load(&mut self) {
-        let ptr = ptr::from_mut(self);
-        let phys_addr = translate(ptr.into()).unwrap();
-
-        unsafe {
-            vmrun(phys_addr);
-        };
-
-        self.handle_vmexit();
-    }
-
     fn handle_vmexit(&mut self) {
         {
             let foo = self.control.exitcode;
             println!("this is the error code {:?}", foo);
             unsafe {
-                asm!(
-                    "hlt"
-                );
+                asm!("hlt");
             };
         }
     }
@@ -495,7 +494,7 @@ fn enable() {
         wrmsr(AmdMsr::Efer, low, high);
     }
 
-    log_info!("Enabled SVM operation!");
+    log_info!("Enabled SVM sucessfully");
 }
 /// Make sure SVM is supported on this CPU
 fn check_support() {
@@ -534,48 +533,45 @@ fn check_firmware_disabled() {
     //     );
     // };
 }
+
 impl VirtTech for Svm {
     type VesselControlBlock = Vmcb;
 
     fn start() {
         enable();
-
-        log_info!("Enabled SVM sucessfully");
-
         init_host_state();
 
-        log_info!("Initialized SVM operation successfully");
+        log_info!("Started SVM operation successfully");
     }
 
-    fn stop() {
-
-    }
+    fn stop() {}
 }
 
 impl Vesselable for Vmcb {
-    fn new() -> &'static mut Self {
+    fn new() -> Box<Self, &'static SlabAllocator<Self>> {
         // TODO: Might be better to use a custom slab allocator for this?
         const PAGE_COUNT: usize = size_of::<Vmcb>().div_ceil(BASIC_PAGE_SIZE);
 
-        let vmcb = {
-            // NOTE: This should be mapped as WB memory
-            let ptr: *mut Self = {
-                let vmcb_virt_addr = allocate_pages(PAGE_COUNT, Entry::FLAG_RW);
-                vmcb_virt_addr.into()
-            };
+        // TODO: Fix this slab allocator. It's bad
+        let vmcb = Box::new_in(Self::uninit(), &VMCB_ALLOCATOR);
 
-            // Making sure to get rid of any stale data
-            unsafe { memset(ptr.cast::<u8>(), 0x0, PAGE_COUNT * BASIC_PAGE_SIZE) };
-            unsafe { ptr.as_mut().unwrap() }
-        };
-
-        vmcb.init_guest_state();
+        println!("that's the address {:?}", ptr::from_ref(vmcb.as_ref()));
 
         vmcb
     }
 
     fn load(&mut self) {
-        
+        let ptr = ptr::from_mut(self);
+        let phys_addr = translate(ptr.into()).unwrap();
+
+        unsafe {
+            vmrun(phys_addr);
+        };
+
+        self.handle_vmexit();
     }
 }
 
+impl SlabAllocatable for Vmcb {
+    fn initalizer() {}
+}

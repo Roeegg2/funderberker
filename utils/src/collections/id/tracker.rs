@@ -119,6 +119,3 @@ mod tests {
         assert_eq!(id3.0, 0);
     }
 }
-
-unsafe impl Send for IdTracker {}
-unsafe impl Sync for IdTracker {}

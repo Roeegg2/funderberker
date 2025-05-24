@@ -9,15 +9,15 @@ use crate::{
     sync::spinlock::{SpinLock, SpinLockDropable},
 };
 use utils::collections::id::Id;
-use utils::sanity_assert;
 use utils::collections::id::hander::IdHander;
-
+use utils::sanity_assert;
 
 use super::{PhysAddr, VirtAddr};
 #[cfg(feature = "limine")]
 use limine::memory_map;
 
-static VIRTUAL_ADDRESS_ALLOCATOR: SpinLock<VirtualAddressAllocator> = SpinLock::new(VirtualAddressAllocator::uninit());
+static VIRTUAL_ADDRESS_ALLOCATOR: SpinLock<VirtualAddressAllocator> =
+    SpinLock::new(VirtualAddressAllocator::uninit());
 
 struct VirtualAddressAllocator(IdHander);
 
@@ -25,7 +25,7 @@ impl VirtualAddressAllocator {
     fn new(start_addr: VirtAddr) -> Self {
         // The minimal memory range we demand
         const MIN_MEM_SPAN: usize = 8 * 0x1000 * 0x1000 * 0x1000 * 0x1000; // 8TB
-                                                                       
+
         // Making sure address is page aligned
         sanity_assert!(start_addr.0 % BASIC_PAGE_SIZE == 0);
 
@@ -35,10 +35,7 @@ impl VirtualAddressAllocator {
             "Cannot find enough virtual memory space"
         );
 
-        log_info!(
-            "VAA initialized with start address of {:?}",
-            start_addr
-        );
+        log_info!("VAA initialized with start address of {:?}", start_addr);
 
         unsafe {
             let start_id = Id(start_addr.0 / BASIC_PAGE_SIZE);
@@ -65,7 +62,6 @@ pub fn init_from_limine(mem_map: &[&memory_map::Entry]) {
 
     let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
     *vaa = VirtualAddressAllocator::new(addr);
-
 }
 
 /// Map the given physical address to some virtual address

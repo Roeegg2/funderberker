@@ -8,10 +8,10 @@ use crate::mem::mmio::MmioCell;
 use crate::mem::vmm::map_page;
 use crate::sync::spinlock::{SpinLock, SpinLockDropable};
 use alloc::vec::Vec;
-use utils::collections::id::tracker::{IdTracker, IdTrackerError};
-use utils::collections::id::Id;
 use core::cell::SyncUnsafeCell;
 use modular_bitfield::prelude::*;
+use utils::collections::id::Id;
+use utils::collections::id::tracker::{IdTracker, IdTrackerError};
 
 /// Errors the IO APIC might encounter
 #[derive(Debug, Copy, Clone)]

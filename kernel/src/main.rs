@@ -16,10 +16,8 @@
 #![feature(concat_idents)]
 
 use core::arch::asm;
-use dev::timer::apic::ApicTimer;
 
 mod boot;
-mod sched;
 #[macro_use]
 #[cfg(any(feature = "serial", feature = "framebuffer"))]
 mod print;
@@ -38,12 +36,7 @@ pub fn funderberker_main() -> ! {
     #[cfg(test)]
     test_main();
 
-    let _timer = ApicTimer::new();
-
-    let virt_tech = VirtTech::get();
-    virt_tech.init();
-    // create vessel
-    // run it
+    virt::start();
 
     log_info!("Starting Funderberker main operation!");
 

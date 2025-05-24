@@ -3,7 +3,7 @@
 use super::Id;
 
 /// A simple ID allocator that just hands out IDs from a virtually infinite pool, not requiring a
-/// free 
+/// free
 pub struct IdHander {
     /// The next ID to be allocated
     next: Id,
@@ -16,17 +16,13 @@ impl IdHander {
     /// `next` will wrap over and that's an error
     #[inline]
     pub const unsafe fn new_starting_from(start_id: Id) -> Self {
-        Self {
-            next: start_id,
-        }
+        Self { next: start_id }
     }
 
     /// Creates a new `IdHander` starting from 0.
     #[inline]
-    pub const fn new() ->  Self {
-        unsafe {
-            Self::new_starting_from(Id(0))
-        }
+    pub const fn new() -> Self {
+        unsafe { Self::new_starting_from(Id(0)) }
     }
 
     /// Handout the next ID

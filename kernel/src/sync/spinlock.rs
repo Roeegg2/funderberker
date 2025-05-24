@@ -1,6 +1,6 @@
 //! A simple spinlock implementation
 
-use core::cell::UnsafeCell;
+use core::cell::{SyncUnsafeCell, UnsafeCell};
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
 use utils::spin_until;
@@ -8,7 +8,7 @@ use utils::spin_until;
 /// A trait for types that can be used with the spinlock
 ///
 /// SAFETY: This trait is unsafe because it CANNOT be implemented for non custom types.
-pub trait SpinLockDropable: Send + Sync {
+pub trait SpinLockDropable {
     /// Additional cleanup code for the spinlock, that will be called **BEFORE** the lock is
     /// released.
     /// NOTE: There is no need to release the lock here, it will be released for you. This simply an option for when you need to
@@ -24,7 +24,7 @@ where
     T: SpinLockDropable,
 {
     lock: AtomicBool,
-    data: UnsafeCell<T>,
+    data: SyncUnsafeCell<T>,
 }
 
 /// A guard for the spinlock, which unlocks the spinlock when dropped
@@ -38,7 +38,6 @@ where
 }
 
 unsafe impl<T: Send + SpinLockDropable> Send for SpinLock<T> {}
-unsafe impl<T: Send + SpinLockDropable> Sync for SpinLock<T> {}
 
 impl<T> SpinLock<T>
 where
@@ -48,7 +47,7 @@ where
     pub const fn new(data: T) -> Self {
         SpinLock {
             lock: AtomicBool::new(false),
-            data: UnsafeCell::new(data),
+            data: SyncUnsafeCell::new(data),
         }
     }
 

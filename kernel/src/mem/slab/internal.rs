@@ -1,4 +1,4 @@
-//! A simple slab allocator for the kernel heap & custom use
+//! "Backend" of the slab allocator
 
 use alloc::boxed::Box;
 use core::mem;
@@ -9,9 +9,8 @@ use utils::collections::stacklist::{Node, StackList};
 
 use crate::arch::BASIC_PAGE_SIZE;
 use crate::arch::x86_64::paging::Entry;
+use crate::mem::VirtAddr;
 use crate::mem::vmm::{allocate_pages, free_pages};
-
-use super::VirtAddr;
 
 /// A node that holds a pointer to an object.
 /// Pointer is uninitilized when `SlabObjEmbed` is used, but since the lowest size of memory that

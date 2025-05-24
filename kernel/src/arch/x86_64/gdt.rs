@@ -9,6 +9,7 @@ use modular_bitfield::prelude::*;
 use super::DescriptorTablePtr;
 
 /// The "full" form of a segment selector (i.e. the actual selector + the hidden cached information)
+#[derive(Default)]
 #[repr(C, packed)]
 pub struct FullSegmentSelector {
     selector: SegmentSelector,
@@ -40,7 +41,7 @@ pub struct Gdt {
 }
 
 #[bitfield]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(u16)]
 pub struct SegmentSelector {
     rpl: B2,

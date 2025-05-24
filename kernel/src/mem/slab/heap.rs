@@ -1,6 +1,6 @@
 //! A global heap allocator for the kernel. Structured as a bunch of uninitable object slab allocators
 
-use super::slab::{InternalSlabAllocator, ObjectNode};
+use super::internal::{InternalSlabAllocator, ObjectNode};
 
 use core::{
     alloc::{GlobalAlloc, Layout},

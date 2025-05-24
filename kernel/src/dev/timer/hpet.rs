@@ -12,7 +12,10 @@ use crate::{
 };
 use core::{mem::transmute, ptr, time::Duration};
 use modular_bitfield::prelude::*;
-use utils::{collections::id::{tracker::IdTracker, Id}, sanity_assert};
+use utils::{
+    collections::id::{Id, tracker::IdTracker},
+    sanity_assert,
+};
 
 /// The different interrupt routing modes the HPET timer supports
 #[derive(Debug, Clone, Copy, PartialEq)]
