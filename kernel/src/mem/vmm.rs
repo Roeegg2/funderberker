@@ -37,20 +37,24 @@ impl VirtualAddressAllocator {
 
         log_info!("VAA initialized with start address of {:?}", start_addr);
 
-        unsafe {
+        {
             let start_id = Id(start_addr.0 / BASIC_PAGE_SIZE);
-            Self(IdHander::new_starting_from(start_id))
+            Self(IdHander::new_starting_from(start_id, Id::MAX_ID))
         }
     }
 
     #[inline]
     const fn uninit() -> Self {
-        Self(IdHander::new())
+        Self(IdHander::new(Id(0)))
     }
 
     #[inline]
-    fn handout(&mut self) -> VirtAddr {
-        VirtAddr(self.0.handout().0 * BASIC_PAGE_SIZE)
+    fn handout(&mut self, count: usize) -> VirtAddr {
+        let page_id = unsafe {
+            self.0.handout_and_skip(count)
+        };
+
+        VirtAddr(page_id.0 * BASIC_PAGE_SIZE)
     }
 }
 
@@ -72,7 +76,7 @@ pub fn init_from_limine(mem_map: &[&memory_map::Entry]) {
 pub unsafe fn map_page(phys_addr: PhysAddr, flags: usize) -> VirtAddr {
     let virt_addr = {
         let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
-        vaa.handout()
+        vaa.handout(1)
     };
 
     let pml = paging::get_pml();
@@ -91,7 +95,7 @@ pub unsafe fn map_page(phys_addr: PhysAddr, flags: usize) -> VirtAddr {
 pub fn allocate_pages(count: usize, flags: usize) -> VirtAddr {
     let virt_addr = {
         let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
-        vaa.handout()
+        vaa.handout(count)
     };
 
     // TODO: Support multiple page sizes
@@ -123,7 +127,7 @@ pub unsafe fn free_pages(base_addr: VirtAddr, count: usize) {
 pub fn translate(base_addr: VirtAddr) -> Option<PhysAddr> {
     assert!(
         base_addr.0 % BASIC_PAGE_SIZE == 0,
-        "Base address wanted to free isn't page aligned"
+        "Address wanted to translate isn't page aligned"
     );
 
     let pml = paging::get_pml();

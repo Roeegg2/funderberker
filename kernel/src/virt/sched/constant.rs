@@ -13,7 +13,7 @@ pub struct Constant<T>
 where
     T: Schedulable,
 {
-    vessel: Option<Box<T>>,
+    scheduable: Option<Box<T>>,
 }
 
 impl<T> Constant<T>
@@ -22,7 +22,7 @@ where
 {
     // TODO: Remove this `new_const` when we get const fn in trait support, and use `new` instead
     pub const fn new_const() -> Self {
-        Self { vessel: None }
+        Self { scheduable: None }
     }
 }
 
@@ -33,26 +33,26 @@ where
     type ParametersForNew = ParametersForNew<T>;
 
     fn new(params: Self::ParametersForNew) -> Self {
-        Self { vessel: params }
+        Self { scheduable: params }
     }
 
     fn add(&mut self, vessel: Box<T>) {
         // sanity_assert!("Tried to add an additional schedulable but this is the 'const' scheduler");
-        sanity_assert!(self.vessel.is_none());
-        self.vessel = Some(vessel);
+        sanity_assert!(self.scheduable.is_none());
+        self.scheduable = Some(vessel);
     }
 
     fn remove(&mut self) -> Box<T> {
-        self.vessel
+        self.scheduable
             .take()
             .expect("Tried to expel an additional schedulable but this is the 'const' scheduler")
     }
 
     fn operation_loop(&mut self) -> ! {
         log_info!("Entered scheduler loop");
-        loop {
-            // jump to the running point stored in the Context
-        }
+
+        // jump to the running point stored in the Context
+        self.scheduable.take().unwrap().run();
     }
 }
 

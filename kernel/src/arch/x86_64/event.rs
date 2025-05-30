@@ -1,8 +1,8 @@
-//! Various x86_64 specific events handling
+//! Various `x86_64` specific events handling
 
 use macros::isr;
 
-use crate::arch::x86_64::apic::lapic::LocalApic;
+use crate::arch::x86_64::{apic::lapic::LocalApic, cpu::{Cr2, Register}};
 
 pub const GENERIC_ISR_VECTOR: u8 = 255;
 
@@ -74,7 +74,7 @@ fn exception_14() {
     panic!(
         "Exception: {} at address: {:#x}",
         EXCEPTION_MESSAGES[14],
-        read_cr!(2)
+        unsafe {Cr2::read().0},
     );
 }
 

@@ -9,6 +9,7 @@ pub mod constant;
 pub trait Schedulable {
     fn id(&self) -> Id;
 
+    fn run(&mut self) -> !;
     // TODO: Add `Context` struct to store info and shit
 }
 

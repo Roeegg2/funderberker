@@ -55,9 +55,8 @@ where
 
         // Try getting the allocator
         // Then also try allocating an object
-        if let Some(allocator) = unsafe { self.allocator.get().as_mut() }
-            && let Ok(object) = allocator.allocate()
-        {
+        if let Some(allocator) = unsafe { self.allocator.get().as_mut() } {
+            let object = allocator.allocate().unwrap();
             // if we were successfull, return the object
             Ok(NonNull::slice_from_raw_parts(
                 object.cast::<u8>(),
@@ -87,4 +86,5 @@ where
 }
 
 unsafe impl<T> Sync for SlabAllocator<T> where T: SlabAllocatable + Send {}
+
 impl<T> SpinLockDropable for SlabAllocator<T> where T: SlabAllocatable + Send {}

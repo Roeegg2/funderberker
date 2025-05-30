@@ -4,15 +4,11 @@ use core::{arch::x86_64::__cpuid_count, cell::SyncUnsafeCell, mem::transmute};
 
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use crate::{
-    arch::x86_64::{
-        cpu::{IntelMsr, rdmsr, wrmsr},
-        paging::Entry,
-    },
+    arch::x86_64::{cpu::msr::{rdmsr, wrmsr, IntelMsr}, 
+        paging::Entry},
     dev::timer::apic::{TimerDivisor, TimerMode},
     mem::{
-        PhysAddr,
-        mmio::{MmioArea, Offsetable},
-        vmm::map_page,
+        mmio::{MmioArea, Offsetable}, vmm::map_page, PhysAddr
     },
     sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard},
 };
@@ -169,9 +165,9 @@ impl LocalApic {
         Self::check_support();
 
         let mut value = unsafe { rdmsr(IntelMsr::Ia32ApicBase) };
-        value.0 |= APIC_ENABLE;
+        value.low |= APIC_ENABLE;
 
-        unsafe { wrmsr(IntelMsr::Ia32ApicBase, value.0, value.1) };
+        unsafe { wrmsr(IntelMsr::Ia32ApicBase, value) };
     }
 
     /// Creates a new Local APIC instance

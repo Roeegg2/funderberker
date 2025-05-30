@@ -41,3 +41,42 @@ macro_rules! spin_until {
         }
     };
 }
+
+#[macro_export]
+macro_rules! sanity_assert {
+    ($cond:expr) => {
+        debug_assert!($cond, "Sanity check failed!");
+    };
+    ($cond:expr, $msg:expr) => {
+        debug_assert!($cond, "Sanity check failed: {}", $msg);
+    };
+    ($cond:expr, $fmt:expr, $($arg:tt)*) => {
+        debug_assert!($cond, "Sanity check failed: {}", format!($fmt, $($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! sanity_assert_eq {
+    ($left:expr, $right:expr) => {
+        debug_assert_eq!($left, $right, "Sanity check failed!");
+    };
+    ($left:expr, $right:expr, $msg:expr) => {
+        debug_assert_eq!($left, $right, "Sanity check failed: {}", $msg);
+    };
+    ($left:expr, $right:expr, $fmt:expr, $($arg:tt)*) => {
+        debug_assert_eq!($left, $right, "Sanity check failed: {}", format!($fmt, $($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! sanity_assert_ne {
+    ($left:expr, $right:expr) => {
+        debug_assert_ne!($left, $right, "Sanity check failed!");
+    };
+    ($left:expr, $right:expr, $msg:expr) => {
+        debug_assert_ne!($left, $right, "Sanity check failed: {}", $msg);
+    };
+    ($left:expr, $right:expr, $fmt:expr, $($arg:tt)*) => {
+        debug_assert_ne!($left, $right, "Sanity check failed: {}", format!($fmt, $($arg)*));
+    };
+}

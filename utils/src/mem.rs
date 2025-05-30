@@ -18,23 +18,3 @@ pub unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
     };
 }
 
-#[macro_export]
-macro_rules! sanity_assert {
-    ($cond:expr) => {
-        debug_assert!($cond, "Sanity check failed!");
-    };
-}
-
-#[macro_export]
-macro_rules! sanity_assert_eq {
-    ($left:expr, $right:expr) => {
-        debug_assert_eq!($left, $right, "Sanity check failed!");
-    };
-}
-
-#[macro_export]
-macro_rules! sanity_assert_ne {
-    ($left:expr, $right:expr) => {
-        debug_assert_ne!($left, $right, "Sanity check failed!");
-    };
-}

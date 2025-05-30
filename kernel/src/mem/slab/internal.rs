@@ -3,7 +3,7 @@
 use alloc::boxed::Box;
 use core::mem;
 use core::{alloc::Layout, ptr::NonNull};
-use utils::sanity_assert;
+use utils::{const_max, sanity_assert};
 
 use utils::collections::stacklist::{Node, StackList};
 
@@ -45,7 +45,7 @@ pub(super) struct InternalSlabAllocator {
     /// The layout of the objects that will be allocated
     obj_layout: Layout,
     /// The amount of objects that will be allocated in each slab
-    obj_count: usize,
+    obj_per_slab: usize,
 }
 
 /// The core structure of a slab
@@ -59,44 +59,38 @@ struct Slab {
 
 // TODO: Add an option to embed the slab node in the slab itself as well
 impl InternalSlabAllocator {
-    /// Calculates the amount of pages needed to fit at least one object of the given layout
-    const fn calc_pages_per_slab(obj_layout: Layout) -> usize {
-        // The initial (r)emainder (i.e. unused space due to internal fragmentation)
-        let r = BASIC_PAGE_SIZE % obj_layout.size();
+    /// The size of the `Node<Slab>` struct, which is embedded in the slab buffer.
+    const EMBEDDED_SLAB_NODE_SIZE: usize = Layout::new::<Node<Slab>>().pad_to_align().size();
 
-        // If allocating a single page is enough to get internal fragmentation under 12.5% (1/8)
-        // XXX: Might need to multiple here by 10000 or something
-        if (r * 100000 / BASIC_PAGE_SIZE) <= (1 * 100000 / 8) {
-            return 1;
+    /// Calculates the amount of pages needed to fit at least one object of the given layout
+    const fn pages_per_slab(obj_layout: Layout) -> usize {
+        // In case of a ZST
+        if obj_layout.size() == 0 || obj_layout.align() == 0 {
+            return 0;
         }
 
-        // Find the page (c)ount that would let us fit another obj inside
-        let c = usize::div_ceil(obj_layout.size(), r);
-        // Find the (d)ifference by which internal fragmentation decreases every time we allocate
-        // an addtional `c` pages
-        let d = r - ((r * c) - obj_layout.size());
+        assert!(obj_layout.align() <= BASIC_PAGE_SIZE);
 
-        // Formula to get the minimal amount of `c` pages that would result in internal
-        // fragmentation being less than 12.5%.
-        // This formula is a simplification of this expression:
-        //
-        //    r - d * x       1
-        // -------------- <= ---
-        // BASIC_PAGE_SIZE * c * x     8
-        //
-        // (where `x` is the amount of `c` blocks we want to find)
-        //
-        // To this:
-        //
-        //       r
-        // ------------- <= x
-        //  512 * q + d
-        //
-        // And since `x` is a whole number (a physical amount of blocks), we need to round up.
-        // And then after we calculated x, to get the actual final page amount we return
-        // (rounded up `x`) * c
-        //
-        usize::div_ceil(r, (512 * c) + d) * c
+        // The minimum amount of pages that we need to allocate to fit at least one object
+        let min_pages_per_slab =
+            usize::div_ceil(obj_layout.size(), BASIC_PAGE_SIZE);
+
+        // Calculate the remainder if we were to allocate `pages_per_slab` pages
+        let r = (min_pages_per_slab * BASIC_PAGE_SIZE) % obj_layout.size();
+        // If the remainder is less than the size of the `Node<Slab>` struct, we need to allocate
+        // an additional page to fit the slab node
+        if r < Self::EMBEDDED_SLAB_NODE_SIZE {
+            min_pages_per_slab + 1
+        } else {
+            min_pages_per_slab
+        }
+    }
+
+    /// Calculates the amount of objects with `obj_layout` that can fit in a slab
+    const fn obj_per_slab(obj_layout: Layout, pages_per_slab: usize) -> usize {
+        // The amount of objects that can fit in a slab
+        (pages_per_slab * BASIC_PAGE_SIZE - Self::EMBEDDED_SLAB_NODE_SIZE)
+            / obj_layout.size()
     }
 
     /// Creates a new slab allocator with the given object layout
@@ -104,16 +98,10 @@ impl InternalSlabAllocator {
     ///
     // TODO: Possibly return an error instead of asserting
     pub(super) const fn new(mut obj_layout: Layout) -> InternalSlabAllocator {
-        /// Calculates the amount of objects with `obj_layout` that can fit in a slab
-        const fn calc_obj_count(pages_per_slab: usize, obj_size: usize) -> usize {
-            (pages_per_slab * BASIC_PAGE_SIZE - Layout::new::<Node<Slab>>().pad_to_align().size())
-                / obj_size
-        }
-
         // Get the actual spacing between objects
         obj_layout = obj_layout.pad_to_align();
 
-        let pages_per_slab = Self::calc_pages_per_slab(obj_layout);
+        let pages_per_slab = Self::pages_per_slab(obj_layout);
 
         assert!(
             obj_layout.size() >= size_of::<ObjectNode>(),
@@ -124,7 +112,11 @@ impl InternalSlabAllocator {
             "Object alignment is not valid"
         );
 
-        let obj_count = calc_obj_count(pages_per_slab, obj_layout.size());
+        let obj_per_slab = Self::obj_per_slab(obj_layout, pages_per_slab);
+        assert!(
+            obj_per_slab > 0,
+            "Slab allocator cannot allocate less than one object"
+        );
 
         InternalSlabAllocator {
             full_slabs: StackList::new(),
@@ -132,7 +124,7 @@ impl InternalSlabAllocator {
             free_slabs: StackList::new(),
             pages_per_slab,
             obj_layout,
-            obj_count,
+            obj_per_slab,
         }
     }
 
@@ -179,10 +171,10 @@ impl InternalSlabAllocator {
 
         // Check the partial slabs
         for (index, slab) in self.partial_slabs.iter_mut().enumerate() {
-            if slab.is_in_range(ptr, self.obj_count, self.obj_layout.size()) {
+            if slab.is_in_range(ptr, self.obj_per_slab, self.obj_layout.size()) {
                 unsafe { slab.free(ptr)? };
                 // If the slab is now completely free, move it to the free slabs
-                if slab.free_objs.len() == self.obj_count {
+                if slab.free_objs.len() == self.obj_per_slab {
                     self.partial_slabs.remove_into(&mut self.free_slabs, index);
                 }
 
@@ -192,7 +184,7 @@ impl InternalSlabAllocator {
 
         // Check if the slab to whom `ptr` belongs is in the full slabs list
         for (index, slab) in self.full_slabs.iter_mut().enumerate() {
-            if slab.is_in_range(ptr, self.obj_count, self.obj_layout.size()) {
+            if slab.is_in_range(ptr, self.obj_per_slab, self.obj_layout.size()) {
                 unsafe { slab.free(ptr)? };
                 // Slab is no longer full, so move it to the partial slabs
                 self.full_slabs.remove_into(&mut self.partial_slabs, index);
@@ -224,32 +216,26 @@ impl InternalSlabAllocator {
     /// Grows the cache by allocating a new slab and adding it to the free slabs list.
     pub(super) fn cache_grow(&mut self) -> Result<(), SlabError> {
         // Allocate the pages for the buffer + the `Node<Slab>` struct
-        let ptr: NonNull<()> = allocate_pages(self.pages_per_slab, Entry::FLAG_RW)
+        let objs_ptr: NonNull<()> = allocate_pages(self.pages_per_slab, Entry::FLAG_RW)
             .try_into()
             .map_err(|()| SlabError::PageAllocationError)?;
 
-        let slab_node_ptr = ptr.cast::<Node<Slab>>();
+        // XXX: Make the slab node be at the end and the objects at the beginning of the buffer
+
         unsafe {
-            let offset = slab_node_ptr.add(1).align_offset(self.obj_layout.align());
-            let objs_ptr = slab_node_ptr.add(1).byte_add(offset).cast::<()>();
+            let offset = objs_ptr.byte_add(self.obj_layout.size() * self.obj_per_slab)
+                .align_offset(align_of::<Node<Slab>>());
+            let slab_node_ptr = objs_ptr.byte_add(self.obj_layout.size() * self.obj_per_slab).byte_add(offset)
+                .cast::<Node<Slab>>();
 
-            // Sanity check to make sure there is enough space on the buffer for self.obj_count
-            {
-                // The total size of pages we allocated minus the size of the `Node<Slab>` and any
-                // of the padding needed
-                let actually_obj_space = (BASIC_PAGE_SIZE * self.pages_per_slab)
-                    - (objs_ptr.addr().get() - ptr.addr().get());
+            // Sanity check to make sure there is enough space on the buffer for the slab node
+            sanity_assert!(
+                slab_node_ptr.addr().get() - objs_ptr.addr().get() >= Self::EMBEDDED_SLAB_NODE_SIZE
+            );
 
-                // Just making sure they actually match
-                sanity_assert!(actually_obj_space / self.obj_layout.size() == self.obj_count);
-            }
-
-            // SAFETY: This is OK since `slab_node_ptr` is at least `BASIC_PAGE_SIZE` page aligned and sized, which of course satisfies `Node<Slab>`
-            // And we also aligned `obj_ptr` to the object's alignment and we already calculated so
-            // size should be fine as well
             NonNull::write(
                 slab_node_ptr,
-                Node::<Slab>::new(Slab::new(objs_ptr, self.obj_count, self.obj_layout.size())),
+                Node::<Slab>::new(Slab::new(objs_ptr, self.obj_per_slab, self.obj_layout.size())),
             );
 
             self.free_slabs.push_node(slab_node_ptr);
@@ -265,22 +251,22 @@ impl Slab {
     fn is_in_range(
         &self,
         ptr: NonNull<ObjectNode>,
-        obj_count: usize,
+        obj_per_slab: usize,
         obj_padded_size: usize,
     ) -> bool {
-        self.buff_ptr <= ptr && ptr < unsafe { self.buff_ptr.byte_add(obj_count * obj_padded_size) }
+        self.buff_ptr <= ptr && ptr < unsafe { self.buff_ptr.byte_add(obj_per_slab * obj_padded_size) }
     }
 
     /// Constructs a new slab with the given parameters.
     ///
     /// SAFETY: This is unsafe because `buff_ptr` must be a valid pointer to a slab of memory
-    /// that is at least `obj_count` objects in size
+    /// that is at least `obj_per_slab` objects in size
     #[inline]
-    unsafe fn new(buff_ptr: NonNull<()>, obj_count: usize, obj_padded_size: usize) -> Self {
+    unsafe fn new(buff_ptr: NonNull<()>, obj_per_slab: usize, obj_padded_size: usize) -> Self {
         let mut free_objs = StackList::new();
 
         let buff_ptr = buff_ptr.cast::<ObjectNode>();
-        for i in 0..obj_count {
+        for i in 0..obj_per_slab {
             unsafe {
                 // SAFETY: This is OK because we already checked to make sure the ptr is aligned,
                 // and the size is fine (already checked in the allocator)
@@ -510,9 +496,9 @@ mod tests {
         let mut allocator = InternalSlabAllocator::new(layout);
 
         // Fill the slab completely
-        let obj_count = allocator.obj_count;
+        let obj_per_slab = allocator.obj_per_slab;
         let mut pointers = vec![];
-        for _ in 0..obj_count {
+        for _ in 0..obj_per_slab {
             let ptr = allocator.allocate().expect("Allocation failed");
             assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
             pointers.push(ptr);

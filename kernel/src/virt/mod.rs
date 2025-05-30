@@ -13,7 +13,7 @@ mod svm;
 
 static SCHEDULER: SpinLock<Constant<Vessel<Svm>>> = SpinLock::new(Constant::new_const());
 
-static VID_ALLOCATOR: SpinLock<IdHander> = SpinLock::new(IdHander::new());
+static VID_ALLOCATOR: SpinLock<IdHander> = SpinLock::new(IdHander::new(Id(0xffff_ffff)));
 
 trait VirtTech {
     type VesselControlBlock: Vesselable + 'static;
@@ -26,7 +26,7 @@ trait VirtTech {
 trait Vesselable: SlabAllocatable + Sized {
     fn new() -> Box<Self, &'static SlabAllocator<Self>>;
 
-    fn load(&mut self);
+    fn run(&mut self) -> !;
 }
 
 // TODO: Implement the type specific slab allocator, and then use a Box with that custom allocator instead
@@ -52,10 +52,6 @@ where
             control: T::VesselControlBlock::new(),
         }
     }
-
-    fn load(&mut self) {
-        self.control.load();
-    }
 }
 
 pub fn start() -> ! {
@@ -73,6 +69,10 @@ where
 {
     fn id(&self) -> Id {
         self.id
+    }
+
+    fn run(&mut self) -> ! {
+        self.control.run();
     }
 }
 

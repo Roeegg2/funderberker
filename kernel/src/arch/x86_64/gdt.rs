@@ -2,20 +2,20 @@
 //!
 //! NOTE: Setting up the GDT only happens when we're booting on raw UEFI without any bootloaders.
 
-use core::{arch::asm, ops::Index, ptr};
+use core::{arch::asm, mem::transmute, ops::Index, ptr};
 
 use modular_bitfield::prelude::*;
 
-use super::DescriptorTablePtr;
+use super::{cpu::Register, DescriptorTablePtr};
 
 /// The "full" form of a segment selector (i.e. the actual selector + the hidden cached information)
 #[derive(Default)]
 #[repr(C, packed)]
 pub struct FullSegmentSelector {
-    selector: SegmentSelector,
-    attributes: u16,
-    limit: u32,
-    base: u64,
+    pub selector: SegmentSelector,
+    pub attributes: u16,
+    pub limit: u32,
+    pub base: u64,
 }
 
 /// A segment descriptor.
@@ -23,31 +23,56 @@ pub struct FullSegmentSelector {
 #[derive(Debug, Clone, Copy)]
 #[repr(u64)]
 pub struct SegmentDescriptor {
-    limit_0: B16,
-    base_0: B24,
-    access: B8,
-    limit_1: B4,
-    flags: B4,
-    base_1: B8,
+    pub limit_0: B16,
+    pub base_0: B24,
+    pub access: B8,
+    pub limit_1: B4,
+    pub flags: B4,
+    pub base_1: B8,
 }
 
+// TODO: Add TSS here as well
 /// The GDT
 ///
-// TODO: Add TSS here as well
 #[cfg(feature = "limine")]
 #[repr(C, packed)]
 pub struct Gdt {
     segments: [SegmentDescriptor; 6],
 }
 
+/// The basic, visible part of a segment selector.
 #[bitfield]
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(u16)]
 pub struct SegmentSelector {
-    rpl: B2,
-    gdt: B1,
-    index: B13,
+    pub rpl: B2,
+    pub gdt: B1,
+    pub index: B13,
 }
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Cs(pub SegmentSelector);
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Ds(pub SegmentSelector);
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Ss(pub SegmentSelector);
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Es(pub SegmentSelector);
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Fs(pub SegmentSelector);
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Gs(pub SegmentSelector);
 
 // /// The possible, valid, segment descriptors
 // #[cfg(feature = "limine")]
@@ -123,6 +148,168 @@ impl SegmentDescriptor {
     }
 }
 
+impl Register for Cs {
+    #[inline]
+    unsafe fn read() -> Self {
+        let selector: u16;
+        unsafe {
+            asm!(
+                "mov {:x}, cs",
+                out(reg) selector,
+                options(nostack, nomem),
+            );
+        }
+
+        Self(SegmentSelector::from(selector))
+    }
+
+    #[inline]
+    unsafe fn write(self) {
+        unsafe {
+            asm!(
+                "mov cs, {:x}",
+                in(reg) transmute::<Self, u16>(self),
+                options(nostack, nomem),
+            );
+        }
+    }
+}
+
+impl Register for Ds {
+    #[inline]
+    unsafe fn read() -> Self {
+        let selector: u16;
+        unsafe {
+            asm!(
+                "mov {:x}, ds",
+                out(reg) selector,
+                options(nostack, nomem),
+            );
+        }
+
+        Self(SegmentSelector::from(selector))
+    }
+
+    #[inline]
+    unsafe fn write(self) {
+        unsafe {
+            asm!(
+                "mov ds, {:x}",
+                in(reg) transmute::<Self, u16>(self),
+                options(nostack, nomem),
+            );
+        }
+    }
+}
+
+impl Register for Gs {
+    #[inline]
+    unsafe fn read() -> Self {
+        let selector: u16;
+        unsafe {
+            asm!(
+                "mov {:x}, gs",
+                out(reg) selector,
+                options(nostack, nomem),
+            );
+        }
+
+        Self(SegmentSelector::from(selector))
+    }
+
+    #[inline]
+    unsafe fn write(self) {
+        unsafe {
+            asm!(
+                "mov gs, {:x}",
+                in(reg) transmute::<Self, u16>(self),
+                options(nostack, nomem),
+            );
+        }
+    }
+}
+
+impl Register for Fs {
+    #[inline]
+    unsafe fn read() -> Self {
+        let selector: u16;
+        unsafe {
+            asm!(
+                "mov {:x}, fs",
+                out(reg) selector,
+                options(nostack, nomem),
+            );
+        }
+
+        Self(SegmentSelector::from(selector))
+    }
+
+    #[inline]
+    unsafe fn write(self) {
+        unsafe {
+            asm!(
+                "mov fs, {:x}",
+                in(reg) transmute::<Self, u16>(self),
+                options(nostack, nomem),
+            );
+        }
+    }
+}
+
+impl Register for Es {
+    #[inline]
+    unsafe fn read() -> Self {
+        let selector: u16;
+        unsafe {
+            asm!(
+                "mov {:x}, es",
+                out(reg) selector,
+                options(nostack, nomem),
+            );
+        }
+
+        Self(SegmentSelector::from(selector))
+    }
+
+    #[inline]
+    unsafe fn write(self) {
+        unsafe {
+            asm!(
+                "mov es, {:x}",
+                in(reg) transmute::<Self, u16>(self),
+                options(nostack, nomem),
+            );
+        }
+    }
+}
+
+impl Register for Ss {
+    #[inline]
+    unsafe fn read() -> Self {
+        let selector: u16;
+        unsafe {
+            asm!(
+                "mov {:x}, ss",
+                out(reg) selector,
+                options(nostack, nomem),
+            );
+        }
+
+        Self(SegmentSelector::from(selector))
+    }
+
+    #[inline]
+    unsafe fn write(self) {
+        unsafe {
+            asm!(
+                "mov ss, {:x}",
+                in(reg) transmute::<Self, u16>(self),
+                options(nostack, nomem),
+            );
+        }
+    }
+}
+
 impl Index<SegmentSelector> for Gdt {
     type Output = SegmentDescriptor;
 
@@ -145,5 +332,21 @@ impl From<DescriptorTablePtr> for FullSegmentSelector {
             limit: value.limit as u32,
             base: value.base as u64,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::mem::offset_of;
+    use macros::test_fn;
+
+    use crate::arch::x86_64::gdt::FullSegmentSelector;
+
+    #[test_fn]
+    fn test_full_segment_selector_layout() {
+        assert_eq!(offset_of!(FullSegmentSelector, selector), 0);
+        assert_eq!(offset_of!(FullSegmentSelector, attributes), 2);
+        assert_eq!(offset_of!(FullSegmentSelector, limit), 4);
+        assert_eq!(offset_of!(FullSegmentSelector, base), 8);
     }
 }

@@ -2,6 +2,7 @@ use core::fmt::Debug;
 use core::num::NonZero;
 use core::ops::{Deref, DerefMut};
 
+use crate::arch::x86_64::cpu::{Cr3, Register};
 use crate::arch::BASIC_PAGE_SIZE;
 use crate::mem::{
     PhysAddr, VirtAddr,
@@ -188,7 +189,7 @@ impl Entry {
     }
 
     /// Immediately maps the entry to the given physical address with the given flags.
-    fn map(&mut self, phys_addr: PhysAddr, flags: usize, page_size: PageSize) {
+    unsafe fn map(&mut self, phys_addr: PhysAddr, flags: usize, page_size: PageSize) {
         assert!(!self.is_flag_set(Self::FLAG_P), "Entry is not present");
         assert!(
             !self.is_flag_set(Self::FLAG_TAKEN),
@@ -378,7 +379,7 @@ impl PageTable {
         // Extract the index to the entry
         let i = base_addr.next_level_index(page_size.bottom_paging_level());
         // Map the entry
-        table[i].map(phys_addr, flags, page_size);
+        unsafe { table[i].map(phys_addr, flags, page_size) };
     }
 
     /// Unmaps the given virtual address range, as well as frees the physical page mapped to it if the page was
@@ -436,7 +437,9 @@ impl PageSize {
 
 /// Get the top level paging table PML4/PML5 (depending on the paging level)
 pub fn get_pml() -> &'static mut PageTable {
-    let phys_addr = PhysAddr(read_cr!(3) as usize);
+    let phys_addr = unsafe {
+        PhysAddr((Cr3::read().top_pml() << 12) as usize)
+    };
 
     let ptr: *mut PageTable = phys_addr.add_hhdm_offset().into();
 
@@ -527,7 +530,11 @@ pub unsafe fn init_from_limine(
 /// Finalize the initialization of the paging system by moving over to the newly setup page table
 unsafe fn finalize_init(pml_phys_addr: PhysAddr) {
     // TODO: Make sure CRs flags are OK
-    write_cr!(3, pml_phys_addr.0);
+    unsafe {
+        let mut cr3 = Cr3::read();
+        cr3.set_top_pml(pml_phys_addr.0 as u64 >> 12);
+        cr3.write();
+    }
 }
 
 impl Deref for PageTable {

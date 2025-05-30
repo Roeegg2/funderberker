@@ -1,7 +1,7 @@
 //! Everything IDT and interrupts
 
 use crate::{
-    arch::x86_64::{cpu, event::GENERIC_ISR_VECTOR},
+    arch::x86_64::{cpu::{self, Register}, event::GENERIC_ISR_VECTOR, gdt::Cs},
     sync::spinlock::{SpinLock, SpinLockDropable},
 };
 use core::{
@@ -122,7 +122,7 @@ impl Idt {
     #[inline]
     #[rustfmt::skip]
     fn install_exception_isrs(&mut self) {
-        let cs = cpu::read_cs();
+        let cs = unsafe { Cs::read().0 };
 
         self.0[0].register(__isr_stub_exception_0 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
         self.0[1].register(__isr_stub_exception_1 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);

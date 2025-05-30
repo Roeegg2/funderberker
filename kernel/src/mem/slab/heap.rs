@@ -27,9 +27,9 @@ macro_rules! create_slab_allocators {
 }
 
 impl KernelHeapAllocator {
-    const MIN_POW: usize = 16_usize.ilog2() as usize;
-    const MAX_POW: usize = 16384_usize.ilog2() as usize;
-    const SIZE: usize = Self::MAX_POW - Self::MIN_POW + 1;
+    const MIN_POW: usize = 6;
+    const MAX_POW: usize = 15;
+    const SIZE: usize = 10;
 
     /// Create a new instance of the kernel heap allocator
     #[rustfmt::skip]
@@ -37,17 +37,16 @@ impl KernelHeapAllocator {
         // TODO: Use a const array::from_fn here!
         // TODO: Benchmark and possibly change the slab allocator sizes
         Self(create_slab_allocators!(
-            2_usize.pow(Self::MIN_POW as u32),
-            2_usize.pow(Self::MIN_POW as u32 + 1),
-            2_usize.pow(Self::MIN_POW as u32 + 2),
-            2_usize.pow(Self::MIN_POW as u32 + 3),
-            2_usize.pow(Self::MIN_POW as u32 + 4),
-            2_usize.pow(Self::MIN_POW as u32 + 5),
-            2_usize.pow(Self::MIN_POW as u32 + 6),
-            2_usize.pow(Self::MIN_POW as u32 + 7),
-            2_usize.pow(Self::MIN_POW as u32 + 8),
-            2_usize.pow(Self::MIN_POW as u32 + 9),
-            2_usize.pow(Self::MIN_POW as u32 + 10)
+            2_usize.pow(6),
+            2_usize.pow(7),
+            2_usize.pow(8),
+            2_usize.pow(9),
+            2_usize.pow(10),
+            2_usize.pow(11),
+            2_usize.pow(12),
+            2_usize.pow(13),
+            2_usize.pow(14),
+            2_usize.pow(15)
         ))
     }
 
@@ -85,7 +84,7 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         // Use the allocator that is closest to the total size layout requires
-        let index = layout.size().next_power_of_two().ilog2() as usize;
+        let index = KernelHeapAllocator::get_matching_allocator_index(layout);
 
         // Convert ptr to a NonNull one + cast, get the allocator and pass the pointer to the
         // allocator

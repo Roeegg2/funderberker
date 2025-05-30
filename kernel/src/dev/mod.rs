@@ -1,9 +1,7 @@
 //! Various drivers and driver interfaces
 
 use crate::arch::x86_64::{
-    apic::ioapic::{self, map_irq_to_vector},
-    cpu::read_cs,
-    interrupts::{self, Dpl, GateType, IsrStub, Present},
+    apic::ioapic::{self, map_irq_to_vector}, cpu::Register, gdt::Cs, interrupts::{self, Dpl, GateType, IsrStub, Present}
 };
 
 pub mod clock;
@@ -26,7 +24,7 @@ unsafe fn register_irq(irq: u8, isr_stub: IsrStub) {
         // Install the new ISR
         let vector = interrupts::install_isr(
             isr_stub,
-            read_cs(),
+            Cs::read().0,
             0,
             GateType::Interrupt,
             Dpl::Kernel,

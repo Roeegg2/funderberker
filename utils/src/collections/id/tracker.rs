@@ -28,6 +28,7 @@ pub struct IdTracker {
 // TODO: Use a ring ptr here?
 
 impl IdTracker {
+    // TODO: Remove this and use the `Default` when const default is possible
     /// Get an uninitilized instance of an `IdTracker`
     pub const fn uninit() -> Self {
         Self {
