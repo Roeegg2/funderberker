@@ -51,8 +51,13 @@ where
     fn operation_loop(&mut self) -> ! {
         log_info!("Entered scheduler loop");
 
-        // jump to the running point stored in the Context
-        self.scheduable.take().unwrap().run();
+        if let Some(ref mut vessel) = self.scheduable {
+            loop {
+                vessel.run();
+            }
+        } else {
+            panic!("No schedulable found in the constant scheduler");
+        }
     }
 }
 

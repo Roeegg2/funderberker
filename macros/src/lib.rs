@@ -2,9 +2,9 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, ItemStatic};
+use syn::{parse_macro_input, ItemFn};
 
-/// A macro to make a function a unit testing function
+/// A macro to make a function an mock/integration testing function
 #[proc_macro_attribute]
 pub fn test_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse the input function

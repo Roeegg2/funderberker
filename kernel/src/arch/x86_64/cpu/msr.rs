@@ -17,6 +17,8 @@ pub enum IntelMsr {
     Ia32FeatureControl = 0x3A,
     /// Address of the `IA32_VMX_BASIC` MSR
     Ia32VmxBasic = 0x480,
+    /// Address of the `IA32_PAT` MSR
+    Ia32Pat = 0x277,
 }
 
 /// AMD CPUs specific MSRs

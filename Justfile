@@ -131,6 +131,8 @@ _run-qemu: _download-firmware
 # Helper recipe for running QEMU with debug
 _run-qemu-debug: _download-firmware
     qemu-system-x86_64 \
+        -enable-kvm \
+        -cpu host \
         -vga virtio \
         -nodefaults \
         -serial stdio \
@@ -138,7 +140,8 @@ _run-qemu-debug: _download-firmware
         -drive if=pflash,unit=0,format=raw,file={{ovmf-code}},readonly=on \
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \
         -cdrom {{iso-file}} \
-        -d in_asm,int -D qemu.log \
+        -d guest_errors,unimp \
+        -D qemu.log \
 
 # Common ISO creation steps
 _create-iso-common: _setup-limine

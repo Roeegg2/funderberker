@@ -367,15 +367,17 @@ pub fn sti() {
     };
 }
 
-pub unsafe fn read_rsp() -> VirtAddr {
+/// Read the current stack pointer (RSP) register
+pub fn read_rsp() -> usize {
     let rsp: u64;
     unsafe {
         asm!("mov {:r}, rsp", out(reg) rsp);
     }
     
-    VirtAddr(rsp as usize)
+    rsp as usize
 }
 
+/// Write a new value to the stack pointer (RSP) register
 pub unsafe fn write_rsp(addr: VirtAddr) {
     unsafe {
         asm!("mov rsp, {:r}", in(reg) addr.0);

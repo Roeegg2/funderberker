@@ -24,9 +24,9 @@ trait VirtTech {
 }
 
 trait Vesselable: SlabAllocatable + Sized {
-    fn new() -> Box<Self, &'static SlabAllocator<Self>>;
+    fn new(rip: usize) -> Box<Self, &'static SlabAllocator<Self>>;
 
-    fn run(&mut self) -> !;
+    fn run(&mut self);
 }
 
 // TODO: Implement the type specific slab allocator, and then use a Box with that custom allocator instead
@@ -45,22 +45,22 @@ impl<T> Vessel<T>
 where
     T: VirtTech,
 {
-    fn new() -> Self {
+    fn new(rip: usize) -> Self {
         Self {
             id: VID_ALLOCATOR.lock().handout(),
             phantom: PhantomData,
-            control: T::VesselControlBlock::new(),
+            control: T::VesselControlBlock::new(rip),
         }
     }
 }
 
-pub fn start() -> ! {
+pub fn start() {
     Svm::start();
-    let vessel: Box<Vessel<Svm>> = Box::new(Vessel::new());
-    let mut scheduler = SCHEDULER.lock();
-    scheduler.add(vessel);
-
-    scheduler.operation_loop()
+    // let vessel: Box<Vessel<Svm>> = Box::new(Vessel::new(rip));
+    // let mut scheduler = SCHEDULER.lock();
+    // scheduler.add(vessel);
+    //
+    // scheduler.operation_loop()
 }
 
 impl<T> Schedulable for Vessel<T>
@@ -71,7 +71,7 @@ where
         self.id
     }
 
-    fn run(&mut self) -> ! {
+    fn run(&mut self) {
         self.control.run();
     }
 }

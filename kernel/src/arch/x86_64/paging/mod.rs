@@ -1,3 +1,4 @@
+use core::arch::x86_64::__cpuid;
 use core::fmt::Debug;
 use core::num::NonZero;
 use core::ops::{Deref, DerefMut};
@@ -9,8 +10,14 @@ use crate::mem::{
     pmm::{self, PmmAllocator},
 };
 use limine::memory_map::{self, EntryType};
+use pat::check_pat_support;
 use utils::mem::memset;
 use utils::sanity_assert;
+
+use super::cpu::msr::{rdmsr, wrmsr, AmdMsr, Efer};
+use super::cpu::Cr4;
+
+mod pat;
 
 /// The number of entries per page table
 pub const ENTRIES_PER_TABLE: usize = 512;
@@ -527,10 +534,57 @@ pub unsafe fn init_from_limine(
     log_info!("Paging system initialized successfully");
 }
 
+/// Check if the CPU supports Paging Global Enable (PGE).
+#[inline]
+fn check_pge_support() {
+    const PGE_BIT: u32 = 1 << 12;
+
+    unsafe {
+        // TODO: possibly handle the case this isn't supported?
+        if __cpuid(1).edx & PGE_BIT == 0 {
+            panic!("Paging Global Enable (PGE) is not supported by the CPU");
+        }
+    }
+}
+
+/// Check if the CPU supports NX (No-Execute) bit.
+#[inline]
+fn check_nx_support() {
+    const NX_BIT: u32 = 1 << 20;
+
+    unsafe {
+        if __cpuid(1).edx & NX_BIT == 0 {
+            panic!("No-Execute (NX) bit is not supported by the CPU");
+        }
+    }
+}
+
+/// Enable the No-Execute (NX) bit in the EFER MSR.
+#[inline]
+fn enable_nx() {
+    check_nx_support();
+
+    let mut efer: u64 = unsafe { rdmsr(AmdMsr::Efer).into() };
+    efer |= Efer::NX;
+    unsafe { wrmsr(AmdMsr::Efer, efer.into()) };
+}
+
 /// Finalize the initialization of the paging system by moving over to the newly setup page table
 unsafe fn finalize_init(pml_phys_addr: PhysAddr) {
     // TODO: Make sure CRs flags are OK
     unsafe {
+        // Check to make sure the features we want to enable are supported
+        check_pat_support();
+        check_pge_support();
+        // enable_nx();
+
+        let mut cr4 = Cr4::read();
+        // Enable global pages support
+        cr4.set_pge(1);
+        cr4.write();
+
+
+        // Set the CR3 register to the new PML
         let mut cr3 = Cr3::read();
         cr3.set_top_pml(pml_phys_addr.0 as u64 >> 12);
         cr3.write();
@@ -550,3 +604,7 @@ impl DerefMut for PageTable {
         &mut self.0
     }
 }
+
+// possibly TODO: 
+// PCIDs
+// SMEP/SMAP

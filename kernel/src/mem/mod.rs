@@ -170,3 +170,13 @@ impl<T> TryFrom<VirtAddr> for NonNull<T> {
         NonNull::new(value.0 as *mut T).ok_or(())
     }
 }
+
+pub unsafe fn memdump(ptr: *const u8, len: usize) {
+    unsafe {
+        for i in 0..len {
+            let byte = core::ptr::read_volatile(ptr.add(i));
+            print!("{:02x} ", byte);
+        }
+        println!("");
+    };
+}

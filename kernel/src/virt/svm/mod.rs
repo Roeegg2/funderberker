@@ -6,15 +6,15 @@ self, cpu::{msr::{rdmsr, wrmsr, AmdMsr, Efer, MsrData}, read_rsp, AmdDr6, AmdDr7
         }, BASIC_PAGE_SIZE
     },
     mem::{
-        pmm::{self, PmmAllocator}, slab::{SlabAllocatable, SlabAllocator}, vmm::{map_page, translate}, VirtAddr
+        pmm::{self, PmmAllocator}, slab::{SlabAllocatable, SlabAllocator}, vmm::{map_page, map_page_to, translate}, PhysAddr, VirtAddr
     }, sync::spinlock::SpinLock,
 };
 use alloc::boxed::Box;
 use modular_bitfield::prelude::*;
 use core::{
-    arch::{asm, x86_64::__cpuid}, num::NonZero, ops::{Deref, DerefMut}, ptr
+    arch::{asm, naked_asm, x86_64::__cpuid}, mem::transmute, num::NonZero, ops::{Deref, DerefMut}, ptr
 };
-use utils::{collections::id::{tracker::IdTracker, Id}, mem::memset, sanity_assert};
+use utils::{collections::id::{tracker::IdTracker, Id}, mem::{memcpy, memset}, sanity_assert};
 
 mod cpu;
 
@@ -28,8 +28,8 @@ static ASID_ALLOCATOR: SpinLock<IdTracker> = SpinLock::new(IdTracker::uninit());
 pub struct Svm;
 
 #[allow(dead_code)]
-#[bitfield]
 #[repr(C, packed)]
+#[bitfield]
 struct Intercepts {
     cr_reads: B16,
     cr_writes: B16,
@@ -116,6 +116,20 @@ struct ExitIntInfo {
     error_code: B32,
 }
 
+// TODO: Change the name fo this
+#[bitfield]
+#[repr(u64)]
+struct Flags {
+    np_enable: B1,
+    sev_enable: B1,
+    essev_enable: B1,
+    guest_mode_execute_trap: B1,
+    sss_check_fn: B1,
+    vte_enable: B1,
+    ro_guest_page_tables_enable: B1,
+    invlpgb_tlbsync_enable: B1,
+    reserved_mbz_0: B56,
+}
 
 /// The `Control` part of the VMCB
 #[allow(dead_code)]
@@ -136,7 +150,7 @@ struct ControlArea {
     exitinfo1: u64,
     exitinfo2: u64,
     exitintinfo: ExitIntInfo,
-    partially_reserved_12: u64,
+    flags: Flags,
     avic_apic_bar_reserved: u64,
     guest_phys_addr_ghcb: u64,
     event_injection: u64,
@@ -195,12 +209,12 @@ struct StateSaveArea {
     dr7: AmdDr7,
     dr6: AmdDr6,
     rflags: Rflags,
-    rip: VirtAddr,
+    rip: usize,
     reserved_4: [u8; 0x1c0 - 0x180],
     instr_retired_ctr: u64,
     perf_ctr_global_sts: u64,
     perf_ctr_global_ctl: u64,
-    rsp: VirtAddr,
+    rsp: u64,
     s_cet: u64,
     ssp: u64,
     isst_addr: u64,
@@ -241,6 +255,7 @@ struct StateSaveArea {
     // we don't specifiy it here, since it'll get allocated anyways when we allocate the VMCB page
 }
 
+/// The actual VMCB. The definition is broken down into 2 parts so we can force `4096` bytes alignment
 #[repr(C, packed)]
 pub struct VmcbInner {
     control: ControlArea,
@@ -252,6 +267,9 @@ pub struct VmcbInner {
 #[repr(C, align(0x1000))]
 pub struct Vmcb(VmcbInner);
 
+/// The possible valid intercept codes that can be found in the `exitcode` field in the VMCB.
+///
+/// Some intercept codes specify more information in `exitinfo1` and `exitinfo2`
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 #[repr(i64)]
@@ -596,13 +614,37 @@ impl Vmcb {
         // TODO: Processor should always support long mode
     }
 
+    #[inline]
+    fn check_nested_paging_support() {
+        const NESTED_PAGING_BIT: u32 = 1 << 0;
+        unsafe {
+            // TODO: Possibly run without nested pagiong?
+            if __cpuid(0x8000_000a).edx & NESTED_PAGING_BIT == 0 {
+                panic!("Nested paging is not supported on this processor");
+            }
+        }
+    }
+
+    unsafe fn init_nested_paging(&mut self) {
+        Self::check_nested_paging_support();
+        self.control.flags.set_np_enable(1);
+        // setup gcr3
+        // setup ncr3
+        // need to sanity check nCR3 mbz bits aren't set and G_PAT.PA don't have unsupported type
+        // encdiong AND G_PAT reserved bits are zero
+        //
+        //
+        // NOTE: check support for nested paging before setiting it up. this is done using CPUID Fn8000_000A_EDX[NP] = 1
+        // VMRUN is executed with hCR0.PG cleared to zero and NP_ENABLE set to 1, VMRUN terminates with #VMEXIT(VMEXIT_INVALID
+    }
+
     /// Initializes the guest state of the VMCB.
     ///
     /// The processor will load these fields when `VMRUN` is executed.
     ///
     /// NOTE: Not every combination of fields is valid. See the AMD APM Vol 2, `Canonicalization
     /// and Consistency Checks`
-    fn init_guest_state(&mut self) {
+    fn init_guest_state(&mut self, rip: usize) {
         let gdt = {
             let virt_addr: VirtAddr = Gdt::read_gdtr().into();
             let ptr: *mut Gdt = virt_addr.into();
@@ -610,14 +652,23 @@ impl Vmcb {
         };
         
         unsafe {
+            // let phys_page = pmm::get()
+            //     .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
+            //     .unwrap();
+            // let virt_addr = VirtAddr(0x40_000);
+            //
+            // map_page_to(phys_page, virt_addr, Entry::FLAG_RW);
+            //
+            // memcpy(virt_addr.into(), GUEST_CODE.as_ptr(), GUEST_CODE.len());
+
+            println!("thats the address of the vmcb: {:?}", ptr::from_ref(self));
             self.state_save.cs = gdt.read_full_selector(Cs::read().0);
-            self.state_save.rip = VirtAddr(0x1); // This is the reset vector
-            self.state_save.rflags = Rflags::read();
+            self.state_save.rip = rip;
+            self.state_save.rflags = transmute(1_u64 << 1);
             self.state_save.rax = 0; // TODO: Not sure about RAX
             self.state_save.ss = gdt.read_full_selector(Ss::read().0);
-            self.state_save.rsp = read_rsp();
-            self.state_save.cr0 = Cr0::read();
-            self.state_save.cr2 = Cr2::read();
+            self.state_save.rsp = read_rsp() as u64;
+            self.state_save.cr0 = Cr0::new().with_cd(1).with_nw(1);
             self.state_save.cr3 = Cr3::read();
             self.state_save.cr4 = Cr4::read();
             self.state_save.efer = rdmsr(AmdMsr::Efer).into();
@@ -628,8 +679,16 @@ impl Vmcb {
             self.state_save.dr6 = AmdDr6::read();
             self.state_save.dr7 = AmdDr7::read();
             self.state_save.cpl = 0; // We start in ring 0
+
             self.control.intercepts.set_vmrun(1);
-            self.control.guest_asid = 1;
+            self.control.intercepts.set_cpuid(1);
+            self.control.intercepts.set_hlt(1);
+            self.control.intercepts.set_exceptions(0xFFFFFFFF);
+            self.control.guest_asid = ASID_ALLOCATOR.lock().allocate().unwrap().0 as u32;
+
+            let val = self.state_save.rip;
+            println!("this si the rip: {:#x}", val);
+            // self.init_nested_paging();
         }
 
         self.sanity_check_guest_state();
@@ -642,23 +701,41 @@ impl Vmcb {
             return;
         }
 
-        unreachable!()
+        todo!("Recieved interrupt during VMEXIT, but not implemented yet {:x}", self.control.exitintinfo.vector());
     }
-
     fn handle_vmexit(&mut self) {
+        // hardware does these things on vmexit:
+        // 1. clears GIF so the switch isn't interrupted
+        // 2. writes to VMCB the current state + exitcode info
+        // 3. clears intercepts
+        // 4. sets guest ASID to 0
+        // 5. clears v_irq, v_intr_masking and tsc offset
+        // 6. reloads processor state with the saved host state from before VMRUN
+        // ... and oither things
+        
         // TODO: Check Fn8000_000A_EDX[NRIPS] for nrip support
         // TODO: Check exitintinfo to see if was in the middle of int/exception handling
         
+        let exitcode = self.control.exitcode;
+        log_info!("VMEXIT with exitcode: {:?}", exitcode);
+
         self.handle_intercept_during_int();
-        let foo = self.control.exitcode;
 
-        println!("VMEXIT: {:?}", foo);
-
-        match foo {
-            _ => (),
+        match exitcode {
+            InterceptCode::Cpuid => {
+                println!("CPUID intercept triggered");
+            },
+            InterceptCode::Hlt => {
+                println!("HLT intercept triggered");
+            }
+            _ => panic!("Unhandled VMEXIT"),
         }
     }
 }
+
+static GUEST_CODE: [u8; 5] = [
+    0xE9, 0xFB, 0xFF, 0xFF, 0xFF,
+];
 
 impl VirtTech for Svm {
     type VesselControlBlock = Vmcb;
@@ -668,7 +745,6 @@ impl VirtTech for Svm {
         Self::init_asid_allocator();
         Self::init_host_state();
         
-
         log_info!("Started SVM operation successfully");
     }
 
@@ -676,20 +752,15 @@ impl VirtTech for Svm {
 }
 
 impl Vesselable for Vmcb {
-    fn new() -> Box<Self, &'static SlabAllocator<Self>> {
-        let vmcb = Box::new_in(Self::uninit(), &VMCB_ALLOCATOR);
+    fn new(rip: usize) -> Box<Self, &'static SlabAllocator<Self>> {
+        let mut vmcb = Box::new_in(Self::uninit(), &VMCB_ALLOCATOR);
 
-        println!("that's the address {:?}", ptr::from_ref(vmcb.as_ref()));
+        vmcb.init_guest_state(rip);
 
         vmcb
     }
 
-    fn run(&mut self) -> ! {
-        // Hardware expects us to disable interrupts before entering the VM to make sure the
-        // transition is atomic. It'll turn them back on on VMRUN.
-        x86_64::cpu::cli();
-        self.init_guest_state();
-
+    fn run(&mut self) {
         let ptr = ptr::from_mut(self);
         let phys_addr = translate(ptr.into()).unwrap();
 
@@ -698,8 +769,6 @@ impl Vesselable for Vmcb {
         };
 
         self.handle_vmexit();
-
-        loop {}
     }
 }
 
@@ -726,6 +795,19 @@ mod tests {
     use super::*;
     use macros::test_fn;
     use core::mem::{size_of, offset_of};
+
+    #[test_fn]
+    fn test_simple_cpuid_intercept() {
+        fn to_run() {
+            // This function is called by the guest code to trigger a CPUID intercept
+            unsafe {
+                asm!("cpuid", options(nostack));
+            }
+        }
+
+        let mut vmcb = Vmcb::new(translate(VirtAddr(to_run as usize)).unwrap().0);
+        vmcb.run();
+    }
 
     // TODO: Make this a compile time check
     #[test_fn]

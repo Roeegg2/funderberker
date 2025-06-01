@@ -33,10 +33,10 @@ mod test;
 
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() -> ! {
+    virt::start();
+
     #[cfg(test)]
     test_main();
-
-    virt::start();
 
     log_info!("Starting Funderberker main operation!");
 

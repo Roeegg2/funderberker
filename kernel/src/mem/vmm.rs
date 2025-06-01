@@ -87,6 +87,26 @@ pub unsafe fn map_page(phys_addr: PhysAddr, flags: usize) -> VirtAddr {
     virt_addr
 }
 
+/// Map the given physical address to the given virtual address
+///
+/// NOTE: This doesn't allocate a page from the PMM, it just maps the given physical address to
+/// some virtual address.
+/// If you want to allocate a page, use `allocate_pages` instead.
+///
+/// This function is unsafe for 2 reasons:
+/// 1. The mapped physical page may not be valid, thus accessing is UB
+pub unsafe fn map_page_to(phys_addr: PhysAddr, virt_addr: VirtAddr, flags: usize) {
+    assert!(
+        virt_addr.0 % BASIC_PAGE_SIZE == 0,
+        "Virtual address wanted to map isn't page aligned"
+    );
+
+    let pml = paging::get_pml();
+    unsafe {
+        pml.map(virt_addr, phys_addr, PageSize::Size4KB, flags);
+    }
+}
+
 /// Allocate `count` virtually contiguous block of 4KB pages
 ///
 /// NOTE: This function might use 2MB or 1GB pages if the allocation is large enough for it, OR if
@@ -125,14 +145,14 @@ pub unsafe fn free_pages(base_addr: VirtAddr, count: usize) {
 ///
 /// If the virtual address isn't mapped, `None` is returned
 pub fn translate(base_addr: VirtAddr) -> Option<PhysAddr> {
-    assert!(
-        base_addr.0 % BASIC_PAGE_SIZE == 0,
-        "Address wanted to translate isn't page aligned"
-    );
-
     let pml = paging::get_pml();
 
-    pml.translate(base_addr)
+    // XXX: This might cause problem when using 2MB or 1GB pages
+    let offset = base_addr.0 % BASIC_PAGE_SIZE;
+
+    pml.translate(base_addr - offset).map(|phys_addr| {
+        PhysAddr(phys_addr.0 + offset)
+    })
 }
 
 impl SpinLockDropable for VirtualAddressAllocator {}
