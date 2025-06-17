@@ -1,8 +1,8 @@
-use super::{Vesselable, VirtTech};
+use super::{mem::{create_guest_address_space, new_guest_page_table}, Vesselable, VirtTech};
 use crate::{
     arch::{
         x86_64::{
-self, cpu::{msr::{rdmsr, wrmsr, AmdMsr, Efer, MsrData}, read_rsp, AmdDr6, AmdDr7, Cr0, Cr2, Cr3, Cr4, Register, Rflags}, event::__isr_stub_generic_irq_isr, gdt::{Cs, Ds, Es, FullSegmentSelector, Gdt, Ss}, interrupts::Idt, paging::Entry
+self, cpu::{msr::{rdmsr, wrmsr, AmdMsr, Efer, MsrData}, read_rsp, AmdDr6, AmdDr7, Cr0, Cr2, Cr3, Cr4, Register, Rflags}, event::__isr_stub_generic_irq_isr, gdt::{Cs, Ds, Es, FullSegmentSelector, Gdt, Ss}, interrupts::Idt, paging::{Entry, PageSize}
         }, BASIC_PAGE_SIZE
     },
     mem::{
@@ -22,6 +22,7 @@ mod cpu;
 // TODO: Make this a box to a dyn or something since we might use VMX or something isntead
 static VMCB_ALLOCATOR: SlabAllocator<Vmcb> = SlabAllocator::new();
 
+/// The ASID allocator for the guests.
 static ASID_ALLOCATOR: SpinLock<IdTracker> = SpinLock::new(IdTracker::uninit());
 
 /// A ZST to implement the `VirtTech` trait on
@@ -271,7 +272,7 @@ pub struct Vmcb(VmcbInner);
 ///
 /// Some intercept codes specify more information in `exitinfo1` and `exitinfo2`
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(i64)]
 enum InterceptCode {
     // CR reads
@@ -476,6 +477,11 @@ enum InterceptCode {
     QemuInvalid = 0xffff_ffff,
 }
 
+impl Intercepts {
+    /// Intercept all the exception types.
+    const ALL_EXCEPTIONS: u32 = 0xffff_ffff;
+}
+
 impl Svm {
     /// Allocates and initializes the host state area.
     ///
@@ -576,8 +582,12 @@ impl Svm {
 
 
 impl Vmcb {
+    /// Creates a new VMCB.
+    ///
+    /// The specs obligates us to just have it all zeroed out, and then initialize whatever fields we
+    /// wish.
     #[inline]
-    fn uninit() -> Self {
+    const fn uninit() -> Self {
         unsafe { core::mem::zeroed() }
     }
 
@@ -614,6 +624,7 @@ impl Vmcb {
         // TODO: Processor should always support long mode
     }
 
+    /// Makes sure the processor supports nested paging before we try to set it up.
     #[inline]
     fn check_nested_paging_support() {
         const NESTED_PAGING_BIT: u32 = 1 << 0;
@@ -625,9 +636,21 @@ impl Vmcb {
         }
     }
 
-    unsafe fn init_nested_paging(&mut self) {
+    unsafe fn setup_nested_paging(&mut self) {
+        // Make sure nested paging is supported before we try to set it up
         Self::check_nested_paging_support();
+
+        // Enable the feature in the VMCB
         self.control.flags.set_np_enable(1);
+
+        let (n_cr3_addr, n_cr3) = create_guest_address_space(4);
+        self.control.n_cr3 = n_cr3_addr.0 as u64;
+        self.state_save.cr3 = (new_guest_page_table(n_cr3).0.0 as u64).into();
+        // self.cr3 = new_page_table();
+        // self.n_cr3 = new_mem_space();
+
+        // TODO: dop the sanity cehcks specified on the nested paging section
+
         // setup gcr3
         // setup ncr3
         // need to sanity check nCR3 mbz bits aren't set and G_PAT.PA don't have unsupported type
@@ -661,7 +684,6 @@ impl Vmcb {
             //
             // memcpy(virt_addr.into(), GUEST_CODE.as_ptr(), GUEST_CODE.len());
 
-            println!("thats the address of the vmcb: {:?}", ptr::from_ref(self));
             self.state_save.cs = gdt.read_full_selector(Cs::read().0);
             self.state_save.rip = rip;
             self.state_save.rflags = transmute(1_u64 << 1);
@@ -673,7 +695,7 @@ impl Vmcb {
             self.state_save.cr4 = Cr4::read();
             self.state_save.efer = rdmsr(AmdMsr::Efer).into();
             self.state_save.idtr = Idt::read_idtr().into();
-            self.state_save.gdtr = Idt::read_gdtr().into();
+            self.state_save.gdtr = Gdt::read_gdtr().into();
             self.state_save.es = gdt.read_full_selector(Es::read().0);
             self.state_save.ds = gdt.read_full_selector(Ds::read().0);
             self.state_save.dr6 = AmdDr6::read();
@@ -683,12 +705,10 @@ impl Vmcb {
             self.control.intercepts.set_vmrun(1);
             self.control.intercepts.set_cpuid(1);
             self.control.intercepts.set_hlt(1);
-            self.control.intercepts.set_exceptions(0xFFFFFFFF);
+            self.control.intercepts.set_exceptions(Intercepts::ALL_EXCEPTIONS);
             self.control.guest_asid = ASID_ALLOCATOR.lock().allocate().unwrap().0 as u32;
 
-            let val = self.state_save.rip;
-            println!("this si the rip: {:#x}", val);
-            // self.init_nested_paging();
+            // self.setup_nested_paging();
         }
 
         self.sanity_check_guest_state();
@@ -703,6 +723,33 @@ impl Vmcb {
 
         todo!("Recieved interrupt during VMEXIT, but not implemented yet {:x}", self.control.exitintinfo.vector());
     }
+
+    /// Handles the VMEXIT when testing the intercepts.
+    #[cfg(test)]
+    fn test_intercepts_handle_vmexit(&mut self, expceted_exit_code: InterceptCode) {
+        let exit_code = self.control.exitcode;
+
+        self.handle_intercept_during_int();
+        assert_eq!(exit_code, expceted_exit_code, "Expected exit code {:?}, got {:?}", expceted_exit_code, exit_code);
+    }
+
+    // TODO: get rid of this function
+    /// Same as run, but with test VMEXIT handling
+    #[cfg(test)]
+    fn run_test(&mut self, expected_exit_code: InterceptCode) {
+        let ptr = ptr::from_mut(self);
+        let phys_addr = translate(ptr.into(), PageSize::Size4KB).unwrap();
+
+        unsafe {
+            cpu::vmrun(phys_addr);
+        };
+
+        self.test_intercepts_handle_vmexit(expected_exit_code);
+    }
+
+    /// Handles the VMEXIT.
+    ///
+    /// This if the very first function that is called when a `VMEXIT` happens.
     fn handle_vmexit(&mut self) {
         // hardware does these things on vmexit:
         // 1. clears GIF so the switch isn't interrupted
@@ -716,26 +763,28 @@ impl Vmcb {
         // TODO: Check Fn8000_000A_EDX[NRIPS] for nrip support
         // TODO: Check exitintinfo to see if was in the middle of int/exception handling
         
-        let exitcode = self.control.exitcode;
-        log_info!("VMEXIT with exitcode: {:?}", exitcode);
+        let exit_code = self.control.exitcode;
+        log_info!("VMEXIT with exitcode: {:?}", exit_code);
 
         self.handle_intercept_during_int();
 
-        match exitcode {
+        match exit_code {
             InterceptCode::Cpuid => {
-                println!("CPUID intercept triggered");
+                // println!("CPUID intercept triggered");
             },
             InterceptCode::Hlt => {
                 println!("HLT intercept triggered");
+            },
+            InterceptCode::Vmrun | InterceptCode::Vmload | InterceptCode::Vmsave => {
+                log_err!("Nested virtualization is not supported yet.");
+            }
+            InterceptCode::Invalid | InterceptCode::QemuInvalid => {
+                panic!("Unknown invalid VMCB state. Fatal error");
             }
             _ => panic!("Unhandled VMEXIT"),
         }
     }
 }
-
-static GUEST_CODE: [u8; 5] = [
-    0xE9, 0xFB, 0xFF, 0xFF, 0xFF,
-];
 
 impl VirtTech for Svm {
     type VesselControlBlock = Vmcb;
@@ -762,7 +811,7 @@ impl Vesselable for Vmcb {
 
     fn run(&mut self) {
         let ptr = ptr::from_mut(self);
-        let phys_addr = translate(ptr.into()).unwrap();
+        let phys_addr = translate(ptr.into(), PageSize::Size4KB).unwrap();
 
         unsafe {
             cpu::vmrun(phys_addr);
@@ -786,27 +835,27 @@ impl DerefMut for Vmcb {
     }
 }
 
-impl SlabAllocatable for Vmcb {
-    fn initalizer() {}
-}
+impl SlabAllocatable for Vmcb {}
 
 #[cfg(test)]
 mod tests {
+    use crate::arch::x86_64::paging::PageSize;
+
     use super::*;
     use macros::test_fn;
     use core::mem::{size_of, offset_of};
 
     #[test_fn]
-    fn test_simple_cpuid_intercept() {
+    fn test_cpuid_intercept() {
         fn to_run() {
             // This function is called by the guest code to trigger a CPUID intercept
             unsafe {
-                asm!("cpuid", options(nostack));
+                asm!("cpuid");
             }
         }
 
-        let mut vmcb = Vmcb::new(translate(VirtAddr(to_run as usize)).unwrap().0);
-        vmcb.run();
+        let mut vmcb = Vmcb::new(translate(VirtAddr(to_run as usize), PageSize::Size4KB).unwrap().0);
+        vmcb.run_test(InterceptCode::Cpuid);
     }
 
     // TODO: Make this a compile time check

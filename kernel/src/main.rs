@@ -52,6 +52,7 @@ pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     hcf();
 }
 
+/// Halt the CPU forever
 pub fn hcf() -> ! {
     loop {
         unsafe {

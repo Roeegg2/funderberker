@@ -10,6 +10,7 @@ use utils::collections::id::{Id, hander::IdHander};
 
 mod sched;
 mod svm;
+mod mem;
 
 static SCHEDULER: SpinLock<Constant<Vessel<Svm>>> = SpinLock::new(Constant::new_const());
 

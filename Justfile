@@ -129,10 +129,10 @@ _run-qemu: _download-firmware
         -cdrom {{iso-file}}
 
 # Helper recipe for running QEMU with debug
+#
+# Add `-s -S` for debugging with GDB
 _run-qemu-debug: _download-firmware
     qemu-system-x86_64 \
-        -enable-kvm \
-        -cpu host \
         -vga virtio \
         -nodefaults \
         -serial stdio \
@@ -140,7 +140,7 @@ _run-qemu-debug: _download-firmware
         -drive if=pflash,unit=0,format=raw,file={{ovmf-code}},readonly=on \
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \
         -cdrom {{iso-file}} \
-        -d guest_errors,unimp \
+        -d in_asm,int -D qemu.log \
         -D qemu.log \
 
 # Common ISO creation steps

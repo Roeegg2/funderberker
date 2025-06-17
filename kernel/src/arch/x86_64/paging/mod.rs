@@ -234,7 +234,7 @@ impl Entry {
 
 impl PageTable {
     /// Allocates a new page table
-    fn new() -> (&'static mut Self, PhysAddr) {
+    pub fn new() -> (&'static mut Self, PhysAddr) {
         let phys_addr = pmm::get()
             .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
             .expect("Failed to allocate page table");
@@ -428,7 +428,7 @@ impl PageSize {
 
     /// Get the flag that needs to be set to make the entry map a page of this size
     #[inline]
-    pub const fn flag(self) -> usize {
+    const fn flag(self) -> usize {
         match self {
             PageSize::Size4KB => 0,
             _ => Entry::FLAG_PS,
@@ -437,8 +437,16 @@ impl PageSize {
 
     /// Get the amount of bits of the offset in the virtual address
     #[inline]
-    pub const fn offset_size(self) -> usize {
+    pub const fn offset_bit_count(self) -> usize {
         12 + (self as usize * 9)
+    }
+
+    // TODO: Possibly have the enum contian this value instead of calculating it every time if the
+    // usage is high enough
+    /// Get the size in bytes of this page size
+    #[inline]
+    pub const fn size(self) -> usize {
+        2_usize.pow(self.offset_bit_count() as u32)
     }
 }
 
@@ -451,6 +459,27 @@ pub fn get_pml() -> &'static mut PageTable {
     let ptr: *mut PageTable = phys_addr.add_hhdm_offset().into();
 
     unsafe { ptr.cast::<PageTable>().as_mut().expect("Failed to get PML") }
+}
+
+/// Helper function to avoid code duplication.
+///
+/// Maps in the given virtual address to the given
+fn map_with_hhdm_offset(
+    base_virt_addr: VirtAddr,
+    base_phys_addr: PhysAddr,
+    page_count: usize,
+    new_pml: &mut PageTable,
+) {
+    // Just making sure the addresses are both aligned
+    sanity_assert!(base_virt_addr.0 % BASIC_PAGE_SIZE == 0);
+    sanity_assert!(base_phys_addr.0 % BASIC_PAGE_SIZE == 0);
+
+    for i in 0..page_count {
+        let virt_addr = base_virt_addr + (i * BASIC_PAGE_SIZE);
+        let phys_addr = base_phys_addr + (i * BASIC_PAGE_SIZE);
+
+        unsafe { new_pml.map(virt_addr, phys_addr, PageSize::Size4KB, Entry::FLAG_RW) };
+    }
 }
 
 /// Initialize the paging subsystem when booting from Limine
@@ -467,27 +496,6 @@ pub unsafe fn init_from_limine(
     }
 
     let (new_pml, new_pml_addr) = PageTable::new();
-
-    // Helper function to avoid code duplication.
-    //
-    // Maps in the given virtual address to the given
-    fn map_with_hhdm_offset(
-        base_virt_addr: VirtAddr,
-        base_phys_addr: PhysAddr,
-        page_count: usize,
-        new_pml: &mut PageTable,
-    ) {
-        // Just making sure the addresses are both aligned
-        sanity_assert!(base_virt_addr.0 % BASIC_PAGE_SIZE == 0);
-        sanity_assert!(base_phys_addr.0 % BASIC_PAGE_SIZE == 0);
-
-        for i in 0..page_count {
-            let virt_addr = base_virt_addr + (i * BASIC_PAGE_SIZE);
-            let phys_addr = base_phys_addr + (i * BASIC_PAGE_SIZE);
-
-            unsafe { new_pml.map(virt_addr, phys_addr, PageSize::Size4KB, Entry::FLAG_RW) };
-        }
-    }
 
     // TODO: Map only some portions of the USEABLE memory that is for HHDM mapped stuff
     // Mapping in all of the memory we need.
@@ -533,6 +541,7 @@ pub unsafe fn init_from_limine(
 
     log_info!("Paging system initialized successfully");
 }
+
 
 /// Check if the CPU supports Paging Global Enable (PGE).
 #[inline]

@@ -39,6 +39,7 @@ pub enum CmosIndex {
     // The rest of the CMOS isn't standardized
 }
 
+/// Status of the Non-Maskable Interrupt (NMI) in the CMOS.
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum NmiStatus {

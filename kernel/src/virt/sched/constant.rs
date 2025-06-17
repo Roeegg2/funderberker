@@ -7,8 +7,12 @@ use crate::sync::spinlock::SpinLockDropable;
 
 use super::{Schedulable, Scheduler};
 
+/// The parameters required to create a new `Constant` scheduler.
 pub type ParametersForNew<T> = Option<Box<T>>;
 
+/// A simple scheduler that runs a single constant vessel.
+///
+/// Used for testing purposes
 pub struct Constant<T>
 where
     T: Schedulable,

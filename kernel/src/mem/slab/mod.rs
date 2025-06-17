@@ -2,7 +2,7 @@
 
 use core::{
     alloc::Layout,
-    cell::{SyncUnsafeCell, UnsafeCell},
+    cell::SyncUnsafeCell,
     marker::PhantomData,
     ptr::NonNull,
 };
@@ -17,9 +17,8 @@ use crate::sync::spinlock::SpinLockDropable;
 mod heap;
 pub(super) mod internal;
 
-pub trait SlabAllocatable {
-    fn initalizer();
-}
+/// A trait for every type that can be allocated using a custom slab allocator.
+pub trait SlabAllocatable {}
 
 pub struct SlabAllocator<T>
 where

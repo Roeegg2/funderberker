@@ -291,6 +291,10 @@ impl BuddyAllocator<'_> {
         // If we need to perform emergency allocation (i.e. the amount of nodes are exactly the
         // amount of zones. This is the minimum amount of nodes we need to have spare in order to
         // increase the freelist)
+        //
+        // SAFETY: If there are too many physical pages we need to allocate when setting up paging,
+        // we'll have a problem since we'll be mapping the memory to Limine's page table, not the new
+        // one
         if self.freelist.len() == self.zones.len() {
             // Get the bucket size needed for the allocation to refill the freelist
             let freelist_nodes_bucket_size =

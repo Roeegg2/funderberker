@@ -45,7 +45,7 @@ impl VirtAddr {
     pub const fn next_level_index(self, level: usize) -> usize {
         assert!(level < 5);
 
-        (self.0 >> (PageSize::Size4KB.offset_size() + (level * 9))) & 0b1_1111_1111
+        (self.0 >> (PageSize::Size4KB.offset_bit_count() + (level * 9))) & 0b1_1111_1111
     }
 }
 
@@ -171,6 +171,7 @@ impl<T> TryFrom<VirtAddr> for NonNull<T> {
     }
 }
 
+/// Dumps out the memory to the console in hex format.
 pub unsafe fn memdump(ptr: *const u8, len: usize) {
     unsafe {
         for i in 0..len {

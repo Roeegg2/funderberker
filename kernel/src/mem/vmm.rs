@@ -141,14 +141,14 @@ pub unsafe fn free_pages(base_addr: VirtAddr, count: usize) {
     }
 }
 
-/// Returns the physical address mapped to get given virtual address.
+/// Returns the physical address mapped to the given virtual address.
 ///
 /// If the virtual address isn't mapped, `None` is returned
-pub fn translate(base_addr: VirtAddr) -> Option<PhysAddr> {
+pub fn translate(base_addr: VirtAddr, page_size: PageSize) -> Option<PhysAddr> {
     let pml = paging::get_pml();
 
     // XXX: This might cause problem when using 2MB or 1GB pages
-    let offset = base_addr.0 % BASIC_PAGE_SIZE;
+    let offset = base_addr.0 % page_size.size();
 
     pml.translate(base_addr - offset).map(|phys_addr| {
         PhysAddr(phys_addr.0 + offset)

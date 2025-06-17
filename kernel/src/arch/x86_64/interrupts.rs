@@ -81,7 +81,8 @@ pub enum Present {
 impl GateDescriptor {
     const DEFAULT: Self = unsafe { transmute(0_u128) };
 
-    fn register(
+    /// Registers the entry in the IDT with the given parameters.
+    fn install(
         &mut self,
         offset: u64,
         segment_selector: SegmentSelector,
@@ -124,40 +125,40 @@ impl Idt {
     fn install_exception_isrs(&mut self) {
         let cs = unsafe { Cs::read().0 };
 
-        self.0[0].register(__isr_stub_exception_0 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[1].register(__isr_stub_exception_1 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[2].register(__isr_stub_exception_2 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[3].register(__isr_stub_exception_3 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[4].register(__isr_stub_exception_4 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[5].register(__isr_stub_exception_5 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[6].register(__isr_stub_exception_6 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[7].register(__isr_stub_exception_7 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[8].register(__isr_stub_exception_8 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[9].register(__isr_stub_exception_9 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[10].register(__isr_stub_exception_10 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[11].register(__isr_stub_exception_11 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[12].register(__isr_stub_exception_12 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[13].register(__isr_stub_exception_13 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[14].register(__isr_stub_exception_14 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[15].register(__isr_stub_exception_15 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[16].register(__isr_stub_exception_16 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[17].register(__isr_stub_exception_17 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[18].register(__isr_stub_exception_18 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[19].register(__isr_stub_exception_19 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[20].register(__isr_stub_exception_20 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[21].register(__isr_stub_exception_21 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[22].register(__isr_stub_exception_22 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[23].register(__isr_stub_exception_23 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[24].register(__isr_stub_exception_24 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[25].register(__isr_stub_exception_25 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[26].register(__isr_stub_exception_26 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[27].register(__isr_stub_exception_27 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[28].register(__isr_stub_exception_28 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[29].register(__isr_stub_exception_29 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[30].register(__isr_stub_exception_30 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
-        self.0[31].register(__isr_stub_exception_31 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[0].install(__isr_stub_exception_0 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[1].install(__isr_stub_exception_1 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[2].install(__isr_stub_exception_2 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[3].install(__isr_stub_exception_3 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[4].install(__isr_stub_exception_4 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[5].install(__isr_stub_exception_5 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[6].install(__isr_stub_exception_6 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[7].install(__isr_stub_exception_7 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[8].install(__isr_stub_exception_8 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[9].install(__isr_stub_exception_9 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[10].install(__isr_stub_exception_10 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[11].install(__isr_stub_exception_11 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[12].install(__isr_stub_exception_12 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[13].install(__isr_stub_exception_13 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[14].install(__isr_stub_exception_14 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[15].install(__isr_stub_exception_15 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[16].install(__isr_stub_exception_16 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[17].install(__isr_stub_exception_17 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[18].install(__isr_stub_exception_18 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[19].install(__isr_stub_exception_19 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[20].install(__isr_stub_exception_20 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[21].install(__isr_stub_exception_21 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[22].install(__isr_stub_exception_22 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[23].install(__isr_stub_exception_23 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[24].install(__isr_stub_exception_24 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[25].install(__isr_stub_exception_25 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[26].install(__isr_stub_exception_26 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[27].install(__isr_stub_exception_27 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[28].install(__isr_stub_exception_28 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[29].install(__isr_stub_exception_29 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[30].install(__isr_stub_exception_30 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
+        self.0[31].install(__isr_stub_exception_31 as usize as u64, cs, 0, GateType::Trap, Dpl::Kernel, Present::Present);
 
-        self.0[GENERIC_ISR_VECTOR as usize].register(__isr_stub_generic_irq_isr as usize as u64, cs, 0, GateType::Interrupt, Dpl::Kernel, Present::Present);
+        self.0[GENERIC_ISR_VECTOR as usize].install(__isr_stub_generic_irq_isr as usize as u64, cs, 0, GateType::Interrupt, Dpl::Kernel, Present::Present);
 
         log_info!("Installed ISRs successfully");
     }
@@ -180,19 +181,6 @@ impl Idt {
         }
 
         log_info!("Loaded IDT successfully");
-    }
-    pub fn read_gdtr() -> DescriptorTablePtr {
-        let gdtr = DescriptorTablePtr { limit: 0, base: 0 };
-        unsafe {
-            let ptr = ptr::from_ref(&gdtr);
-            asm!(
-                "sgdt [{}]",
-                in(reg) ptr,
-                options(nostack),
-            );
-        };
-
-        gdtr
     }
 
     /// Get the address of the IDTR, aquired by reading the `IDTR`
@@ -224,14 +212,14 @@ pub unsafe fn install_isr(
 ) -> Result<u8, ()> {
     let mut idt = IDT.lock();
 
-    let entry = idt
+    let (entry_number, entry) = idt
         .0
         .iter_mut()
         .enumerate()
         .find(|entry| entry.1.present() == Present::NotPresent as u8)
         .unwrap();
 
-    entry.1.register(
+    entry.install(
         isr_stub as usize as u64,
         segment_selector,
         ist,
@@ -240,7 +228,7 @@ pub unsafe fn install_isr(
         present,
     );
 
-    Ok(entry.0 as u8)
+    Ok(entry_number as u8)
 }
 
 unsafe extern "C" {
