@@ -1,12 +1,10 @@
 //! Support for the PCI Express bus.
 
-use core::mem::transmute;
-
 use crate::{
     acpi::mcfg::ConfigSpace,
     arch::x86_64::paging::Entry,
     mem::{
-        PhysAddr, VirtAddr,
+        PhysAddr,
         mmio::{MmioArea, Offsetable},
         vmm::{map_page, unmap_page},
     },
@@ -112,11 +110,11 @@ enum PciToCardbusHeader {
     ClassRevision = 0x08,
     /// BIST, Header type, Latency Timer, and Cache Line Size (0x0C)
     BistHeaderLatencyCache = 0x0C,
-    /// CardBus Socket/ExCa Base Address (0x10)
+    /// `CardBus` Socket/ExCa Base Address (0x10)
     CardbusSocketBase = 0x10,
     /// Secondary Status, Offset of Capabilities List (0x14)
     SecondaryStatusCapabilities = 0x14,
-    /// CardBus Latency Timer, Subordinate Bus Number, CardBus Bus Number, PCI Bus Number (0x18)
+    /// `CardBus` Latency Timer, Subordinate Bus Number, `CardBus` Bus Number, PCI Bus Number (0x18)
     BusNumbers = 0x18,
     /// Memory Base Address 0 (0x1C)
     MemoryBase0 = 0x1C,
@@ -142,9 +140,9 @@ enum PciToCardbusHeader {
     PcCardLegacyBase = 0x44,
 }
 
-/// Represents a specific PCIe device + function.
+/// Represents a specific `PCIe` device + function.
 ///
-/// NOTE: This does not represent a PCIe device in the sense of a physical device, but rather in
+/// NOTE: This does not represent a `PCIe` device in the sense of a physical device, but rather in
 /// the sense of a "device function"
 struct PcieDevice {
     config_space: MmioArea<usize, usize, u32>,
@@ -209,7 +207,8 @@ impl PcieManager {
         };
 
         // Check if the device is present
-        let vendor_id = unsafe { config_space.read(StandardHeader::DeviceVendorId as usize) & 0xffff };
+        let vendor_id =
+            unsafe { config_space.read(StandardHeader::DeviceVendorId as usize) & 0xffff };
         if vendor_id == VENDOR_ID_INVALID as u32 {
             unsafe { unmap_page(config_space.base().into()) };
             return None;
@@ -280,10 +279,10 @@ impl Offsetable for PciToCardbusHeader {
 
 impl SpinLockable for PcieManager {}
 
-// XXX: This might not actually be safe 
+// XXX: This might not actually be safe
 unsafe impl Sync for PcieDevice {}
 
-// /// List of all recognized PCIe vendor IDs.
+// /// List of all recognized `PCIe` vendor IDs.
 // ///
 // /// NOTE: This list might be incomplete, and might have some ill-formatted entries.
 // #[repr(u16)]

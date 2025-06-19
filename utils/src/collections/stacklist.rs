@@ -171,7 +171,7 @@ impl<T> StackList<T> {
     }
 
     #[inline]
-    pub fn iter_node(&self) -> IterNode<T> {
+    pub fn iter_node(&self) -> IterNode<'_, T> {
         IterNode {
             head: self.head,
             len: self.len,
@@ -180,7 +180,7 @@ impl<T> StackList<T> {
     }
 
     #[inline]
-    pub fn iter_node_mut(&mut self) -> IterNodeMut<T> {
+    pub fn iter_node_mut(&mut self) -> IterNodeMut<'_, T> {
         IterNodeMut {
             head: self.head,
             len: self.len,
@@ -189,7 +189,7 @@ impl<T> StackList<T> {
     }
 
     #[inline]
-    pub fn iter(&self) -> Iter<T> {
+    pub fn iter(&self) -> Iter<'_, T> {
         Iter {
             head: self.head,
             len: self.len,
@@ -198,7 +198,7 @@ impl<T> StackList<T> {
     }
 
     #[inline]
-    pub fn iter_mut(&mut self) -> IterMut<T> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         IterMut {
             head: self.head,
             len: self.len,

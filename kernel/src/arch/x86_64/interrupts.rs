@@ -32,7 +32,7 @@ pub struct Idt([GateDescriptor; IDT_ENTRIES_NUM]);
 /// NOTE: That's not the actual ISR, that's only stub.
 pub type IsrStub = unsafe extern "C" fn();
 
-#[bitfield]
+#[bitfield(bits = 128)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u128)]
 /// A gate descriptor instance. These are the entries of the IDT
@@ -181,7 +181,7 @@ impl Idt {
             asm! (
                 "lidt [{}]",
                 in(reg) &idtr,
-            )
+            );
         }
 
         log_info!("Loaded IDT successfully");
@@ -213,7 +213,7 @@ pub unsafe fn install_isr(
     gate_type: GateType,
     dpl: Dpl,
     present: Present,
-) -> Result<u8, ()> {
+) -> u8 {
     let mut idt = IDT.lock();
 
     let (entry_number, entry) = idt
@@ -232,7 +232,7 @@ pub unsafe fn install_isr(
         present,
     );
 
-    Ok(entry_number as u8)
+    entry_number as u8
 }
 
 unsafe extern "C" {

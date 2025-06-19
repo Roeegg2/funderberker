@@ -3,7 +3,7 @@
 use alloc::boxed::Box;
 use core::mem;
 use core::{alloc::Layout, ptr::NonNull};
-use utils::{const_max, sanity_assert};
+use utils::sanity_assert;
 
 use utils::collections::stacklist::{Node, StackList};
 
@@ -335,8 +335,7 @@ impl Drop for InternalSlabAllocator {
 
 /// Implementing `Drop` manually here since when the `StackList` field gets drop, it's popping and
 /// trying to free all the `Node`s, and that's undefined behaviour because:
-/// 1. `Drop` on `Slab` should only ever be called when `reap`ing. And when reaping, we manually
-///     `unmap` the object pages (on which `Slab` is also allocated)
+/// 1. `Drop` on `Slab` should only ever be called when `reap`ing. And when reaping, we manually `unmap` the object pages (on which `Slab` is also allocated)
 /// 2. The `Node`s here are allocated manually, so calling a traditional free on them is UB anyway
 ///
 /// NOTE: Technically it's more correct to implement the freeing behaviour here, but that would

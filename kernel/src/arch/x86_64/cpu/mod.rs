@@ -19,7 +19,7 @@ pub trait Register {
 }
 
 #[derive(Clone, Copy)]
-#[bitfield]
+#[bitfield(bits = 64)]
 #[repr(u64)]
 pub struct Rflags {
     /// Carry flag
@@ -70,7 +70,7 @@ pub struct Rflags {
 
 /// The CR0 register
 #[derive(Clone, Copy)]
-#[bitfield]
+#[bitfield(bits = 64)]
 #[repr(u64)]
 pub struct Cr0 {
     /// Protection enable
@@ -111,7 +111,7 @@ pub struct Cr0 {
 pub struct Cr2(pub u64);
 
 /// The CR3 register
-#[bitfield]
+#[bitfield(bits = 64)]
 #[repr(u64)]
 pub struct Cr3 {
     /// Reserved (must be 0)
@@ -127,7 +127,7 @@ pub struct Cr3 {
 }
 
 /// The CR4 register
-#[bitfield]
+#[bitfield(bits = 64)]
 #[repr(u64)]
 pub struct Cr4 {
     /// Virtual 8086 mode extensions
@@ -208,7 +208,7 @@ pub struct Dr3(VirtAddr);
 
 /// Debug register 6 on AMD CPUs
 #[derive(Clone, Copy)]
-#[bitfield]
+#[bitfield(bits = 64)]
 #[repr(u64)]
 pub struct AmdDr6 {
     /// Debug register 0 condition
@@ -239,7 +239,7 @@ pub struct AmdDr6 {
 
 /// Debug register 7 on AMD CPUs, 64 bit
 #[derive(Clone, Copy)]
-#[bitfield]
+#[bitfield(bits = 64)]
 #[repr(u64)]
 pub struct AmdDr7 {
     /// Local breakpoint 0 enable
@@ -565,6 +565,12 @@ impl Register for Cr4 {
         unsafe {
             asm!("mov cr4, {:r}", in(reg) transmute::<Self, u64>(self));
         }
+    }
+}
+
+impl Default for Cr3 {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

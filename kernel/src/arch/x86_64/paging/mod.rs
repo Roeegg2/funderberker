@@ -9,6 +9,8 @@ use crate::mem::{
     PhysAddr, VirtAddr,
     pmm::{self, PmmAllocator},
 };
+
+#[cfg(feature = "limine")]
 use limine::memory_map::{self, EntryType};
 use pat::check_pat_support;
 use utils::mem::memset;
@@ -546,9 +548,10 @@ fn check_pge_support() {
 
     unsafe {
         // TODO: possibly handle the case this isn't supported?
-        if __cpuid(1).edx & PGE_BIT == 0 {
-            panic!("Paging Global Enable (PGE) is not supported by the CPU");
-        }
+        assert!(
+            __cpuid(1).edx & PGE_BIT != 0,
+            "Paging Global Enable (PGE) is not supported by the CPU"
+        );
     }
 }
 
@@ -558,9 +561,10 @@ fn check_nx_support() {
     const NX_BIT: u32 = 1 << 20;
 
     unsafe {
-        if __cpuid(1).edx & NX_BIT == 0 {
-            panic!("No-Execute (NX) bit is not supported by the CPU");
-        }
+        assert!(
+            __cpuid(1).edx & NX_BIT != 0,
+            "No-Execute (NX) bit is not supported by the CPU"
+        );
     }
 }
 

@@ -20,7 +20,7 @@ pub mod paging;
 pub static CPU_VENDOR: FastLazyStatic<CpuVendor> = FastLazyStatic::new(CpuVendor::Invalid);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// The x86_64 CPU vendors Funderberker supports
+/// The `x86_64` CPU vendors Funderberker supports
 pub enum CpuVendor {
     /// We're running on an AMD CPU
     Amd,

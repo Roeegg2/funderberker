@@ -1,5 +1,7 @@
 //! A global heap allocator for the kernel. Structured as a bunch of uninitable object slab allocators
 
+use utils::sanity_assert;
+
 use super::internal::{InternalSlabAllocator, ObjectNode};
 
 use core::{
@@ -88,6 +90,8 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
 
         // Convert ptr to a NonNull one + cast, get the allocator and pass the pointer to the
         // allocator
+        sanity_assert!(ptr.is_aligned_to(layout.align()));
+        #[allow(clippy::cast_ptr_alignment)]
         if let Some(non_null_ptr) = NonNull::new(ptr.cast::<ObjectNode>())
             && let Some(allocator) = unsafe { self.0[index].get().as_mut() }
         {

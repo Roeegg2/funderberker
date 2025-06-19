@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-limine = { version = "0.4.0", optional = true }
+limine = { version = "0.5.0", optional = true }
 
 alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc"}
 
-modular-bitfield = { version = "0.11.2"}
+modular-bitfield = { version = "0.12"}
 utils = { path = "../utils" }
 macros = { path = "../macros" }
 
@@ -44,14 +44,5 @@ legacy_timers = [] # UNSUPPORTED
 # Constant scheduler
 scheduler_constant = []
 
-
 [lints.clippy]
 pedantic = "warn"
-
-[profile.dev]
-debug = true
-panic = "abort"
-
-[profile.release]
-debug = true
-panic = "abort"

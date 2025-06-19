@@ -6,8 +6,5 @@ edition = "2024"
 [lib]
 name = "utils"
 
-[profile.dev]
-debug = true
-
 [lints.clippy]
 pedantic = "warn"

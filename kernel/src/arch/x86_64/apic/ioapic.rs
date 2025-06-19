@@ -19,7 +19,7 @@ pub enum IoApicError {
     /// The GSI passed in is invalid
     InvalidGsi,
     /// IDT Error
-    IdtError(()),
+    IdtError,
 }
 
 /// An IRQ override mapping
@@ -61,7 +61,7 @@ struct IoApicReg;
 
 /// The IO APIC's redirection table entry, which configure the behaviour and mapping of the
 /// external interrupts
-#[bitfield]
+#[bitfield(bits = 64)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u64)]
 struct RedirectionEntry {
@@ -150,7 +150,7 @@ impl IoApic {
         // TODO: Return error if the offset is invalid
         unsafe {
             self.io_sel.write(offset);
-            let mut raw: u64 = self.io_win.read() as u64;
+            let mut raw: u64 = self.io_win.read().into();
             self.io_sel.write(offset + IoApicReg::red_tbl_to_index(1));
             raw |= (self.io_win.read() as u64) << 32;
 

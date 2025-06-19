@@ -19,7 +19,7 @@ pub struct FullSegmentSelector {
 }
 
 /// A segment descriptor.
-#[bitfield]
+#[bitfield(bits = 64)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u64)]
 pub struct SegmentDescriptor {
@@ -41,7 +41,7 @@ pub struct Gdt {
 }
 
 /// The basic, visible part of a segment selector.
-#[bitfield]
+#[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(u16)]
 pub struct SegmentSelector {
@@ -130,21 +130,27 @@ impl SegmentDescriptor {
     const ACCESS_DPL_1: u8 = 0b01 << 5;
     const ACCESS_P: u8 = 1 << 7; // present
 
-    const _FLAGS_RESERVED: u8 = 1 << (4 + 0);
+    const _FLAGS_RESERVED: u8 = 1 << 4;
     const FLAGS_G: u8 = 1 << (4 + 1); // granuality
     const FLAGS_DB: u8 = 1 << (4 + 2); // size. 0-> 16 bit protected mode 1-> 32 bit protected
     const FLAGS_L: u8 = 1 << (4 + 3); // segment is 64 long mode. when set, DB shouldn't be
 
     #[inline]
-    fn get_base(&self) -> u32 {
+    fn get_base(self) -> u32 {
         (u32::from(self.base_1()) << 24) | u32::from(self.base_0())
     }
 
     // TODO: Make this function const
     /// NOTE: The size of the limit is actually 20 bits, not 32
     #[inline]
-    fn get_limit(&self) -> u32 {
+    fn get_limit(self) -> u32 {
         (u32::from(self.limit_1()) << 16) | u32::from(self.limit_0())
+    }
+}
+
+impl Default for SegmentDescriptor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

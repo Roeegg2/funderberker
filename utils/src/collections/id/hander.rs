@@ -17,13 +17,19 @@ impl IdHander {
     // TODO: Remove this and use the `Default` when const default is possible
     /// Return an uninitialized `IdHander`.
     pub const fn uninit() -> Self {
-        Self { next: Id(0), max: Id(0) }
+        Self {
+            next: Id(0),
+            max: Id(0),
+        }
     }
 
     /// Creates a new `IdHander` starting from the given ID.
     #[inline]
     pub const fn new_starting_from(start_id: Id, max_id: Id) -> Self {
-        Self { next: start_id, max: max_id }
+        Self {
+            next: start_id,
+            max: max_id,
+        }
     }
 
     /// Creates a new `IdHander` starting from 0.
@@ -35,9 +41,7 @@ impl IdHander {
     /// Handout the next ID
     #[inline]
     pub fn handout(&mut self) -> Id {
-        unsafe {
-            self.handout_and_skip(1)
-        }
+        unsafe { self.handout_and_skip(1) }
     }
 
     /// Skips the next `count`
@@ -53,7 +57,10 @@ impl IdHander {
         self.next = Id(self.next.0 + count);
 
         if self.next > self.max {
-            panic!("ID allocator has exceeded the maximum ID limit of {}", self.max.0);
+            panic!(
+                "ID allocator has exceeded the maximum ID limit of {}",
+                self.max.0
+            );
         }
 
         ret

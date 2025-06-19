@@ -59,7 +59,7 @@ where
         unsafe { read_volatile(self.base.byte_add(reg.offset())) }
     }
 
-    /// Write to an MMIO register in the area reg` should have `reg.offset()` return the offset *in
+    /// Write to an MMIO register in the area reg should have `reg.offset()` return the offset *in
     /// bytes*
     #[inline]
     pub unsafe fn write(&self, reg: W, value: T) {
@@ -96,7 +96,7 @@ where
         unsafe { read_volatile(self.base) }
     }
 
-    /// Write to an MMIO register in the area reg` should have `reg.offset()` return the offset **in
+    /// Write to an MMIO register in the area reg should have `reg.offset()` return the offset **in
     /// bytes**
     #[inline]
     pub unsafe fn write(&self, value: T) {

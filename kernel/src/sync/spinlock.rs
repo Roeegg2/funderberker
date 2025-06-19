@@ -1,6 +1,6 @@
 //! A simple spinlock implementation
 
-use core::cell::{SyncUnsafeCell, UnsafeCell};
+use core::cell::SyncUnsafeCell;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
 use utils::spin_until;
@@ -53,7 +53,7 @@ where
 
     /// Spin until you can lock the spinlock, then lock it
     #[inline]
-    pub fn lock(&self) -> SpinLockGuard<T> {
+    pub fn lock(&self) -> SpinLockGuard<'_, T> {
         spin_until!(!self.lock.swap(true, Ordering::Acquire));
 
         SpinLockGuard {

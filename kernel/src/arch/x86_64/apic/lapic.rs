@@ -112,7 +112,7 @@ pub enum DeliveryStatus {
 }
 
 /// Represents the LVT register
-#[bitfield]
+#[bitfield(bits = 32)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
 pub struct LvtReg {
@@ -161,7 +161,7 @@ impl LocalApic {
         );
     }
 
-    /// Enables the local APIC in the IA32_APIC_BASE MSR, in case firmware didn't do it already
+    /// Enables the local APIC in the `IA32_APIC_BASE` MSR, in case firmware didn't do it already
     #[inline]
     fn hardware_enable() {
         const APIC_ENABLE: u32 = 1 << 11;
@@ -185,7 +185,7 @@ impl LocalApic {
 
         // Initialize the local APIC
         unsafe {
-            // Make sure the APIC enable bit on the IA32_APIC_BASE MSR is set
+            // Make sure the APIC enable bit on the `IA32_APIC_BASE` MSR is set
             Self::hardware_enable();
 
             // Configure the SIV and software enable the APIC
@@ -416,7 +416,7 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: u
     )));
 }
 
-/// Marks the matching processor's LINT as NMI with the passed flags, making the other ExtInt
+/// Marks the matching processor's LINT as NMI with the passed flags, making the other `ExtInt`
 ///
 /// SAFTEY:
 pub unsafe fn config_lints(acpi_processor_id: u32, lint: u8, flags: u16) {

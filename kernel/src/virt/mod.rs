@@ -4,7 +4,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 use core::marker::PhantomData;
-use sched::{Schedulable, Scheduler, constant::Constant};
+use sched::{Schedulable, constant::Constant};
 use svm::Svm;
 use utils::collections::id::{Id, hander::IdHander};
 
@@ -20,8 +20,6 @@ trait VirtTech {
     type VesselControlBlock: Vesselable + 'static;
 
     fn start();
-
-    fn stop();
 }
 
 trait Vesselable: SlabAllocatable + Sized {

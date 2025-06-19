@@ -2,22 +2,17 @@
 
 use core::num::NonZero;
 
+use crate::arch::{self, BASIC_PAGE_SIZE, x86_64};
+#[cfg(feature = "framebuffer")]
+use crate::dev::{framebuffer, serial};
+use crate::mem::{HHDM_OFFSET, PhysAddr, VirtAddr, pmm, vmm};
+#[cfg(feature = "framebuffer")]
+use limine::request::FramebufferRequest;
 use limine::request::{
     ExecutableAddressRequest, HhdmRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker,
     RequestsStartMarker, RsdpRequest,
 };
 use limine::{BaseRevision, memory_map, paging};
-
-#[cfg(feature = "framebuffer")]
-use limine::request::FramebufferRequest;
-
-use crate::arch::{self, BASIC_PAGE_SIZE, x86_64};
-#[cfg(feature = "framebuffer")]
-use crate::dev::framebuffer;
-use crate::dev::serial;
-use crate::mem::vmm;
-use crate::mem::{self, HHDM_OFFSET};
-use crate::mem::{PhysAddr, VirtAddr, pmm};
 
 /// Sets the base revision to the latest revision supported by the crate.
 /// See specification for further info.

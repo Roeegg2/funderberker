@@ -1,4 +1,4 @@
-//! Pat support for x86_64 paging
+//! Pat support for `x86_64` paging
 
 use core::arch::x86_64::__cpuid;
 
@@ -6,7 +6,7 @@ use crate::arch::x86_64::cpu::msr::{IntelMsr, rdmsr, wrmsr};
 
 use super::{Entry, PageSize};
 
-/// The amount of bits between each PAT entry in the IA32_PAT MSR. This is the amount of bits we
+/// The amount of bits between each PAT entry in the `IA32_PAT` MSR. This is the amount of bits we
 /// need to shift to access each PAT entry.
 const SHIFTING_SIZE: u8 = 8;
 
@@ -79,7 +79,7 @@ pub(super) fn check_pat_support() {
 }
 
 /// Set a certain PAT entry to a specific type.
-pub(super) unsafe fn set_pat_entry(entry: PatEntry, pat_type: PatType) -> Result<(), PatError> {
+pub(super) unsafe fn set_pat_entry(entry: PatEntry, pat_type: PatType) {
     // TODO: flush affected TLB entries
     // TODO: propagate the change to all CPUs
 
@@ -87,8 +87,6 @@ pub(super) unsafe fn set_pat_entry(entry: PatEntry, pat_type: PatType) -> Result
     pat &= !(0b111 << (entry as u8 * SHIFTING_SIZE));
     pat |= (pat_type as u64) << (entry as u8 * SHIFTING_SIZE);
     unsafe { wrmsr(IntelMsr::Ia32Pat, pat.into()) };
-
-    Ok(())
 }
 
 /// Get the current PAT type of a specific entry.
@@ -115,15 +113,12 @@ pub(super) fn set_page_table_entry_pat(
     page_table_entry.clear_flag(Entry::FLAG_PWT | Entry::FLAG_PCD);
 
     // Get the pat bit and clear the old one
-    let pat_bit = match page_size {
-        PageSize::Size4KB => {
-            page_table_entry.clear_flag(Entry::FLAG_4KB_PAT);
-            (pat_entry as usize & 0b1) << 7
-        }
-        _ => {
-            page_table_entry.clear_flag(Entry::FLAG_1GB_PAT);
-            (pat_entry as usize & 0b1) << 12
-        }
+    let pat_bit = if let PageSize::Size4KB = page_size {
+        page_table_entry.clear_flag(Entry::FLAG_4KB_PAT);
+        (pat_entry as usize & 0b1) << 7
+    } else {
+        page_table_entry.clear_flag(Entry::FLAG_1GB_PAT);
+        (pat_entry as usize & 0b1) << 12
     };
 
     // Get the PWT and PCD bits

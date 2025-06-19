@@ -33,8 +33,7 @@ unsafe fn register_irq(irq: u8, isr_stub: IsrStub) {
             GateType::Interrupt,
             Dpl::Kernel,
             Present::Present,
-        )
-        .unwrap();
+        );
 
         // Tell the IO APIC to map `irq` to the given `vector`
         // XXX: Change the flags here!

@@ -4,7 +4,7 @@ use core::{ptr::from_ref, slice::from_raw_parts};
 
 use utils::sanity_assert;
 
-use crate::dev::bus::pcie::{self, PcieManager};
+use crate::dev::bus::pcie;
 
 use super::{AcpiError, AcpiTable, SdtHeader};
 

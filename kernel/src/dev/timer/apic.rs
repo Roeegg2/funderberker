@@ -120,7 +120,7 @@ impl ApicTimer {
                     Duration::from_secs(5000),
                     hpet::TimerMode::OneShot,
                     AdditionalConfig {
-                        recieve_interrupts: false,
+                        receive_interrupts: false,
                         delivery_mode: DeliveryMode::Interrupt(
                             __isr_stub_generic_irq_isr,
                             TriggerMode::EdgeTriggered,

@@ -10,7 +10,7 @@ use crate::{
     mem::mmio::MmioArea,
     sync::spinlock::{SpinLock, SpinLockable},
 };
-use core::{mem::transmute, ptr, time::Duration};
+use core::{ptr, time::Duration};
 use modular_bitfield::prelude::*;
 use utils::{
     collections::id::{Id, tracker::IdTracker},
@@ -23,7 +23,7 @@ pub enum InterruptRoutingMode {
     /// Each timer should be mapped to some IRQ on which it'll trigger interrupts.
     ///
     /// NOTE: You can't just map any IRQ, a bitmap of the available IRQs for this timer can be
-    /// found on the timer's INT_ROUTE_CAP bits in the timer's configuration register
+    /// found on the timer's `INT_ROUTE_CAP` bits in the timer's configuration register
     Normal = 0,
     /// Timer 0 will trigger interrupts on IRQ0 instead of the PIC
     /// Timer 1 will trigger interrupts on IRQ8 instead of the RTC
@@ -35,7 +35,7 @@ pub enum InterruptRoutingMode {
 
 /// The delivery mode a specific timer will use
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum DeliveryMode {
     /// The timer will issue interrupts as specified by `InterruptRoutingMode`.
     ///
@@ -58,7 +58,7 @@ pub enum TriggerMode {
     /// Interrupts will be `LevelTriggered`
     ///
     /// NOTE: From experimentation I've done on various machines, using `LevelTriggered` interrupts
-    /// will not let you disable the recievings of interrupts.
+    /// will not let you disable the receiving of interrupts.
     LevelTriggered = 0b1,
 }
 
@@ -73,14 +73,15 @@ pub enum TimerMode {
     /// Once the timer is configured, it will fire periodically at the specified rate
     Periodic = 0b1,
 }
+
 /// A struct to pass in the other parameters for the timer.
 ///
 /// See `trait Timer`
 #[derive(Debug)]
 pub struct AdditionalConfig {
     /// Making this be `false` will make the HPET not trigger interrupts on the configured IRQs.
-    /// Other than that, operation is the exactly the same.
-    pub recieve_interrupts: bool,
+    /// Other than that, operation is exactly the same.
+    pub receive_interrupts: bool,
     /// The delivery mode to configure
     pub delivery_mode: DeliveryMode,
 }
@@ -92,7 +93,7 @@ struct ReadableRegs;
 struct WriteableRegs;
 
 /// The structure of the General Capabilities MMIO register
-#[bitfield]
+#[bitfield(bits = 64)]
 #[derive(Clone, Copy)]
 #[repr(u64)]
 struct GeneralCapabilities {
@@ -106,7 +107,7 @@ struct GeneralCapabilities {
 }
 
 /// The structure of the General Configurations MMIO register
-#[bitfield]
+#[bitfield(bits = 64)]
 #[derive(Clone, Copy)]
 #[repr(u64)]
 struct GeneralConfiguration {
@@ -122,7 +123,7 @@ type MainCounterValue = u64;
 type TimerComparator = u64;
 
 /// The structure of the Timer Configuration MMIO register
-#[bitfield]
+#[bitfield(bits = 64)]
 #[derive(Clone, Copy)]
 #[repr(u64)]
 struct TimerConfiguration {
@@ -143,17 +144,17 @@ struct TimerConfiguration {
 }
 
 /// FSB interrupt routing
-#[bitfield]
+#[bitfield(bits = 64)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u64)]
-struct FsbInterruptRoute {
-    /// The value that should be written when an FSB message is recieved
+pub struct FsbInterruptRoute {
+    /// The value that should be written when an FSB message is received
     fsb_int_val: B32,
     /// The physical address in memory to which the specified value should be written to
-    /// When the FSB message is recieved
+    /// when the FSB message is received
     ///
     /// XXX: I think this is physical memory
-    dsb_int_addr: B32,
+    fsb_int_addr: B32,
 }
 
 // NOTE: I could make this a ZST, but I don't think it's worth the trouble
@@ -228,16 +229,23 @@ impl Hpet {
 
     /// Converts the time to cycles.
     ///
-    /// IMPORTANT NODE: If the time is not a multiple of the main clock period, it will be rounded
+    /// IMPORTANT NOTE: If the time is not a multiple of the main clock period, it will be rounded
     /// up to the next multiple of the main clock period.
     #[inline]
     pub const fn time_to_cycles(&self, time: Duration) -> u64 {
-        let diff = (time.as_nanos() * NANO_TO_FEMTOSEC) % (self.main_clock_period as u128);
+        let time_femtosec = time.as_nanos() * NANO_TO_FEMTOSEC;
+        let remainder = time_femtosec % (self.main_clock_period as u128);
 
-        (((time.as_nanos() * NANO_TO_FEMTOSEC) + diff) / (self.main_clock_period as u128)) as u64
+        // Round up to the next multiple if there's a remainder
+        let adjusted_time = if remainder != 0 {
+            time_femtosec + (self.main_clock_period as u128 - remainder)
+        } else {
+            time_femtosec
+        };
+
+        (adjusted_time / (self.main_clock_period as u128)) as u64
     }
 
-    // TODO: Move away from transmute?
     /// Set the HPETs interrupt routing mode
     ///
     /// SAFETY: This function is unsafe because calling it not during initialization can cause UB.
@@ -245,7 +253,7 @@ impl Hpet {
     unsafe fn set_interrupt_routing(&mut self, int_routing_mode: InterruptRoutingMode) {
         // Make sure it's supported
         let capabilities: GeneralCapabilities =
-            unsafe { transmute(self.area.read(ReadableRegs::GENERAL_CAPABILITIES)) };
+            unsafe { self.area.read(ReadableRegs::GENERAL_CAPABILITIES).into() };
 
         if int_routing_mode == InterruptRoutingMode::Legacy {
             assert!(
@@ -256,7 +264,7 @@ impl Hpet {
 
         // Set the interrupt routing mode
         let mut config: GeneralConfiguration =
-            unsafe { transmute(self.area.read(ReadableRegs::GENERAL_CONFIGURATION)) };
+            unsafe { self.area.read(ReadableRegs::GENERAL_CONFIGURATION).into() };
 
         config.set_legacy_route(int_routing_mode as u8);
         unsafe {
@@ -300,7 +308,7 @@ impl Hpet {
         };
 
         let capabilities: GeneralCapabilities =
-            unsafe { transmute(hpet.area.read(ReadableRegs::GENERAL_CAPABILITIES)) };
+            unsafe { hpet.area.read(ReadableRegs::GENERAL_CAPABILITIES).into() };
 
         // Revision of 0 isn't valid
         sanity_assert!(capabilities.rev_id() != 0);
@@ -331,7 +339,7 @@ impl Hpet {
     #[inline]
     pub fn set_disabled(&mut self, state: bool) {
         let mut config: GeneralConfiguration =
-            unsafe { transmute(self.area.read(ReadableRegs::GENERAL_CONFIGURATION)) };
+            unsafe { self.area.read(ReadableRegs::GENERAL_CONFIGURATION).into() };
 
         config.set_enable((!state).into());
 
@@ -362,7 +370,7 @@ impl HpetTimer {
 
                 unsafe {
                     self.area
-                        .write(self.fsb_interrupt_route_reg_offset(), fsb_info.into())
+                        .write(self.fsb_interrupt_route_reg_offset(), fsb_info.into());
                 };
             }
             DeliveryMode::Interrupt(isr_stub, int_type) => {
@@ -386,7 +394,6 @@ impl HpetTimer {
 
                             // Try to find an ID that is both free and is marked as legal
                             let gsi = (0_u32..32_u32)
-                                .into_iter()
                                 .find(|&i| {
                                     gsi_bitmap & (1 << i) != 0 && allocate_irq_at(i as u8).is_ok()
                                 })
@@ -431,13 +438,9 @@ impl HpetTimer {
         // Checking if the timer's comparator is 64/32 bits
         ret.size_64_bits = {
             let config: TimerConfiguration =
-                unsafe { transmute(ret.area.read(ret.config_reg_offset())) };
+                unsafe { ret.area.read(ret.config_reg_offset()).into() };
 
-            if config.size_capable() == 1 {
-                true
-            } else {
-                false
-            }
+            config.size_capable() == 1
         };
 
         Ok(ret)
@@ -510,14 +513,14 @@ impl Timer for HpetTimer {
         let hpet = HPET.lock();
 
         let mut config: TimerConfiguration =
-            unsafe { transmute(self.area.read(self.config_reg_offset())) };
+            unsafe { self.area.read(self.config_reg_offset()).into() };
 
         // Make sure the timer mode is supported
         if timer_mode == TimerMode::Periodic && config.periodic_int_capable() == false.into() {
             return Err(TimerError::UnsupportedTimerMode);
         }
 
-        // TODO: Need to make sure this doens't overflow! And check for 32 bit mode
+        // TODO: Need to make sure this doesn't overflow! And check for 32 bit mode
         let cycles_delta: TimerComparator = hpet.time_to_cycles(time);
         // We want to tick for `time`. So we add the current main counter's value and write this
         // to the comparator
@@ -532,7 +535,7 @@ impl Timer for HpetTimer {
         // Make sure we aren't operating in 32 bit mode
         config.set_timer_32bit_mode(false.into());
         config.set_timer_type(timer_mode as u8);
-        config.set_int_enable(additional_config.recieve_interrupts.into());
+        config.set_int_enable(additional_config.receive_interrupts.into());
 
         match timer_mode {
             TimerMode::Periodic => {
@@ -567,17 +570,17 @@ impl Timer for HpetTimer {
     /// NOTE: In order for this timer to generate interrupts and work, you also need to make sure:
     ///     1. The HPET isn't disabled
     ///     2. Make sure interrupts aren't masked in the IF flag
-    ///     3. Timer was configured with `recieve_interrupts == true`. (Otherwise it'll work just
+    ///     3. Timer was configured with `receive_interrupts == true`. (Otherwise it'll work just
     ///        fine just won't trigger interrupts)
     fn set_disabled(&mut self, state: bool) {
         let mut config: TimerConfiguration =
-            unsafe { transmute(self.area.read(self.config_reg_offset())) };
+            unsafe { self.area.read(self.config_reg_offset()).into() };
 
         config.set_int_enable((!state).into());
 
         unsafe {
             self.area.write(self.config_reg_offset(), config.into());
-        }
+        };
     }
 }
 
@@ -587,7 +590,7 @@ impl SpinLockable for HpetTimer {
         unsafe {
             let mut hpet = HPET.lock();
             hpet.timer_ids.free(self.id).unwrap();
-        }
+        };
     }
 }
 

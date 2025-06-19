@@ -1,8 +1,6 @@
-#![feature(naked_functions)]
-
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn};
+use syn::{ItemFn, parse_macro_input};
 
 /// A macro to make a function an mock/integration testing function
 #[proc_macro_attribute]
@@ -74,16 +72,18 @@ pub fn isr(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         // The naked wrapper function with ISR assembly
-        #[naked]
+        #[unsafe(naked)]
         #[unsafe(no_mangle)]
         #fn_vis unsafe extern "C" fn #wrapper_name() {
-            core::arch::naked_asm!(
-                // Call the actual ISR
-                "call {}",
-                // Return from interrupt
-                "iretq",
-                sym #fn_name,
-            );
+            unsafe {
+                core::arch::naked_asm!(
+                    // Call the actual ISR
+                    "call {}",
+                    // Return from interrupt
+                    "iretq",
+                    sym #fn_name,
+                );
+            }
         }
     };
 

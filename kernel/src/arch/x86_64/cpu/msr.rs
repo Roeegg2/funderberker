@@ -52,6 +52,7 @@ pub struct VmCr;
 pub struct VmHsavePa;
 
 // TODO: Fix this
+#[allow(dead_code)]
 impl Efer {
     /// System call extension enable
     pub const SCE: u64 = 1 << 0;

@@ -28,7 +28,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 use core::{
-    arch::{asm, naked_asm, x86_64::__cpuid},
+    arch::x86_64::__cpuid,
     mem::transmute,
     num::NonZero,
     ops::{Deref, DerefMut},
@@ -37,7 +37,7 @@ use core::{
 use modular_bitfield::prelude::*;
 use utils::{
     collections::id::{Id, tracker::IdTracker},
-    mem::{memcpy, memset},
+    mem::memset,
     sanity_assert,
 };
 

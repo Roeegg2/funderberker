@@ -18,7 +18,7 @@ use crate::{
 use super::{PIT_IRQ, Timer, TimerError};
 
 #[derive(Clone, Copy)]
-#[bitfield]
+#[bitfield(bits = 8)]
 #[repr(u8)]
 struct Command {
     channel: B2,

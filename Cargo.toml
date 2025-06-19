@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = [
+    "kernel",
+    "utils",
+    "macros"
+]
+
+[profile.dev]
+debug = true
+panic = "abort"
+
+[profile.release]
+panic = "abort"

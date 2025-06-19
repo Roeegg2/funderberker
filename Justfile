@@ -45,14 +45,14 @@ help:
 build-kernel:
     #!/usr/bin/env bash
     if [ "{{rust-profile}}" = "debug" ]; then
-        RUSTFLAGS="{{rustflags}} -g" cargo +nightly build --manifest-path="kernel/Cargo.toml" --features {{features}} --target x86_64-unknown-none
+        RUSTFLAGS="{{rustflags}} -g" cargo build --features {{features}}
     elif [ "{{rust-profile}}" = "release" ]; then
-        RUSTFLAGS="{{rustflags}}" cargo +nightly build --manifest-path="kernel/Cargo.toml" --release --features {{features}} --target x86_64-unknown-none
+        RUSTFLAGS="{{rustflags}}" cargo build --release --features {{features}}
     else
         echo "Error: Invalid rust-profile '{{rust-profile}}'. Must be 'debug' or 'release'."
         exit 1
     fi
-    BIN=`find kernel/target/x86_64-unknown-none -type f -executable -name "kernel" | head -n 1`
+    BIN=`find target/x86_64-unknown-none -type f -executable -name "kernel" | head -n 1`
     cp $BIN {{kernel-bin}}
 
 # Build the kernel tests
@@ -60,21 +60,21 @@ build-kernel-test: clean
     #!/usr/bin/env bash
     pwd
     if [ "{{rust-profile}}" = "debug" ]; then
-        RUSTFLAGS="{{rustflags}}" cargo +nightly test --manifest-path="kernel/Cargo.toml" --features {{features}} --no-run --target x86_64-unknown-none
+        RUSTFLAGS="{{rustflags}}" cargo test -p kernel --features {{features}} --no-run --target x86_64-unknown-none
     elif [ "{{rust-profile}}" = "release" ]; then
-        RUSTFLAGS="{{rustflags}}" cargo +nightly test --manifest-path="kernel/Cargo.toml" --features {{features}} --no-run --release --target x86_64-unknown-none
+        RUSTFLAGS="{{rustflags}}" cargo test -p kernel --features {{features}} --no-run --release --target x86_64-unknown-none
     else
         echo "Error: Invalid rust-profile '{{rust-profile}}'. Must be 'debug' or 'release'."
         exit 1
     fi
-    BIN=`find kernel/target/x86_64-unknown-none -type f -executable -name "kernel-*" | head -n 1`
+    BIN=`find target/x86_64-unknown-none -type f -executable -name "kernel-*" | head -n 1`
     cp $BIN {{kernel-bin}}
 
 # Run crate tests
 crates-test:
     #!/usr/bin/env bash
     for crate in {{test-crates}}; do
-        cargo test --manifest-path="$crate/Cargo.toml"
+        cargo test -p $crate
     done
 
 build-test: build-kernel-test  _create-iso-common
@@ -167,7 +167,7 @@ clean:
     -rm -f {{kernel-bin}}
     -rm -f {{iso-file}}
     -rm -rf {{iso-root}}
-    cargo clean --manifest-path=kernel/Cargo.toml
+    cargo clean
 
 # Download UEFI firmware files
 _download-firmware:
