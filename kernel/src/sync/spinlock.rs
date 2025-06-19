@@ -8,7 +8,7 @@ use utils::spin_until;
 /// A trait for types that can be used with the spinlock
 ///
 /// SAFETY: This trait is unsafe because it CANNOT be implemented for non custom types.
-pub trait SpinLockDropable {
+pub trait SpinLockable {
     /// Additional cleanup code for the spinlock, that will be called **BEFORE** the lock is
     /// released.
     /// NOTE: There is no need to release the lock here, it will be released for you. This simply an option for when you need to
@@ -21,7 +21,7 @@ pub trait SpinLockDropable {
 #[derive(Debug)]
 pub struct SpinLock<T>
 where
-    T: SpinLockDropable,
+    T: SpinLockable,
 {
     lock: AtomicBool,
     data: SyncUnsafeCell<T>,
@@ -31,17 +31,17 @@ where
 #[derive(Debug)]
 pub struct SpinLockGuard<'a, T>
 where
-    T: SpinLockDropable,
+    T: SpinLockable,
 {
     lock: &'a SpinLock<T>,
     data: &'a mut T,
 }
 
-unsafe impl<T: Send + SpinLockDropable> Send for SpinLock<T> {}
+unsafe impl<T: Send + SpinLockable> Send for SpinLock<T> {}
 
 impl<T> SpinLock<T>
 where
-    T: SpinLockDropable,
+    T: SpinLockable,
 {
     /// Create a new spinlock with the given data
     pub const fn new(data: T) -> Self {
@@ -70,7 +70,7 @@ where
 
 impl<T> Drop for SpinLockGuard<'_, T>
 where
-    T: SpinLockDropable,
+    T: SpinLockable,
 {
     fn drop(&mut self) {
         unsafe {
@@ -85,7 +85,7 @@ where
 
 impl<T> Deref for SpinLockGuard<'_, T>
 where
-    T: SpinLockDropable,
+    T: SpinLockable,
 {
     type Target = T;
     fn deref(&self) -> &Self::Target {
@@ -95,25 +95,25 @@ where
 
 impl<T> DerefMut for SpinLockGuard<'_, T>
 where
-    T: SpinLockDropable,
+    T: SpinLockable,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data
     }
 }
 
-// ---- IMPLEMENTING SpinLockDropable for some common primitive types ----
+// ---- IMPLEMENTING SpinLockable for some common primitive types ----
 
-impl SpinLockDropable for () {}
-impl SpinLockDropable for i8 {}
-impl SpinLockDropable for i16 {}
-impl SpinLockDropable for i32 {}
-impl SpinLockDropable for i64 {}
-impl SpinLockDropable for i128 {}
-impl SpinLockDropable for u8 {}
-impl SpinLockDropable for u16 {}
-impl SpinLockDropable for u32 {}
-impl SpinLockDropable for u64 {}
-impl SpinLockDropable for u128 {}
-impl SpinLockDropable for isize {}
-impl SpinLockDropable for usize {}
+impl SpinLockable for () {}
+impl SpinLockable for i8 {}
+impl SpinLockable for i16 {}
+impl SpinLockable for i32 {}
+impl SpinLockable for i64 {}
+impl SpinLockable for i128 {}
+impl SpinLockable for u8 {}
+impl SpinLockable for u16 {}
+impl SpinLockable for u32 {}
+impl SpinLockable for u64 {}
+impl SpinLockable for u128 {}
+impl SpinLockable for isize {}
+impl SpinLockable for usize {}

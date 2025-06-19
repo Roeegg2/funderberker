@@ -3,7 +3,7 @@
 use alloc::boxed::Box;
 use utils::sanity_assert;
 
-use crate::sync::spinlock::SpinLockDropable;
+use crate::sync::spinlock::SpinLockable;
 
 use super::{Schedulable, Scheduler};
 
@@ -68,4 +68,4 @@ where
 unsafe impl<T> Sync for Constant<T> where T: Schedulable {}
 unsafe impl<T> Send for Constant<T> where T: Schedulable {}
 
-impl<T> SpinLockDropable for Constant<T> where T: Schedulable {}
+impl<T> SpinLockable for Constant<T> where T: Schedulable {}

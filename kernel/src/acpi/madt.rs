@@ -161,8 +161,10 @@ pub(super) struct Madt {
     flags: u32,
 }
 
-impl AcpiTable for Madt {
-    const SIGNATURE: &'static [u8; 4] = b"APIC";
+/// Iterator over the entries in the MADT
+struct Iter {
+    ptr: *const EntryHeader,
+    len: usize,
 }
 
 impl Madt {
@@ -257,10 +259,8 @@ impl Madt {
     }
 }
 
-/// Iterator over the entries in the MADT
-struct Iter {
-    ptr: *const EntryHeader,
-    len: usize,
+impl AcpiTable for Madt {
+    const SIGNATURE: &'static [u8; 4] = b"APIC";
 }
 
 impl Iterator for Iter {

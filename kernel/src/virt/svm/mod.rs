@@ -1,20 +1,45 @@
-use super::{mem::{create_guest_address_space, new_guest_page_table}, Vesselable, VirtTech};
+use super::{
+    Vesselable, VirtTech,
+    mem::{create_guest_address_space, new_guest_page_table},
+};
 use crate::{
     arch::{
+        BASIC_PAGE_SIZE,
         x86_64::{
-self, cpu::{msr::{rdmsr, wrmsr, AmdMsr, Efer, MsrData}, read_rsp, AmdDr6, AmdDr7, Cr0, Cr2, Cr3, Cr4, Register, Rflags}, event::__isr_stub_generic_irq_isr, gdt::{Cs, Ds, Es, FullSegmentSelector, Gdt, Ss}, interrupts::Idt, paging::{Entry, PageSize}
-        }, BASIC_PAGE_SIZE
+            self,
+            cpu::{
+                AmdDr6, AmdDr7, Cr0, Cr2, Cr3, Cr4, Register, Rflags,
+                msr::{AmdMsr, Efer, MsrData, rdmsr, wrmsr},
+                read_rsp,
+            },
+            event::__isr_stub_generic_irq_isr,
+            gdt::{Cs, Ds, Es, FullSegmentSelector, Gdt, Ss},
+            interrupts::Idt,
+            paging::{Entry, PageSize},
+        },
     },
     mem::{
-        pmm::{self, PmmAllocator}, slab::{SlabAllocatable, SlabAllocator}, vmm::{map_page, map_page_to, translate}, PhysAddr, VirtAddr
-    }, sync::spinlock::SpinLock,
+        PhysAddr, VirtAddr,
+        pmm::{self, PmmAllocator},
+        slab::{SlabAllocatable, SlabAllocator},
+        vmm::{map_page, map_page_to, translate},
+    },
+    sync::spinlock::SpinLock,
 };
 use alloc::boxed::Box;
-use modular_bitfield::prelude::*;
 use core::{
-    arch::{asm, naked_asm, x86_64::__cpuid}, mem::transmute, num::NonZero, ops::{Deref, DerefMut}, ptr
+    arch::{asm, naked_asm, x86_64::__cpuid},
+    mem::transmute,
+    num::NonZero,
+    ops::{Deref, DerefMut},
+    ptr,
 };
-use utils::{collections::id::{tracker::IdTracker, Id}, mem::{memcpy, memset}, sanity_assert};
+use modular_bitfield::prelude::*;
+use utils::{
+    collections::id::{Id, tracker::IdTracker},
+    mem::{memcpy, memset},
+    sanity_assert,
+};
 
 mod cpu;
 
@@ -493,27 +518,27 @@ impl Svm {
         // to unmapping it!
         //
         // NOTE: IIRC this should be called on each processor!
-    
+
         // Allocate the physical page for the host state area.
         // We do this seperatly and not using `allocate_pages` because we need to use both the physical
         // address and the pointer, so it's faster doing that seperatly
         let host_state_page = pmm::get()
             .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
             .unwrap();
-    
+
         // Getting rid of stale data
         unsafe {
             // Map the physical page so we can write to it
             let host_state_ptr: *mut u32 = map_page(host_state_page, Entry::FLAG_RW).into();
-    
+
             memset(host_state_ptr.cast::<u8>(), 0x0, BASIC_PAGE_SIZE);
         };
-    
+
         unsafe {
             // Breaking the physical address of the page into parts, so we can write it to the MSR
             let low = (host_state_page.0 & 0xffff_ffff) as u32;
             let high = ((host_state_page.0 >> 32) & 0xffff_ffff) as u32;
-    
+
             // Set the host state save area
             wrmsr(AmdMsr::VmHsavePa, MsrData { low, high });
         };
@@ -523,20 +548,20 @@ impl Svm {
     fn enable() {
         Self::check_support();
         Self::check_firmware_disabled();
-    
+
         unsafe {
             let mut data: u64 = rdmsr(AmdMsr::Efer).into();
             data |= Efer::SVM; // Set the SVM enable bit in EFER
             wrmsr(AmdMsr::Efer, data.into());
         }
-    
+
         log_info!("Enabled SVM sucessfully");
     }
 
     /// Make sure SVM is supported on this CPU
     fn check_support() {
         const SVM_SUPPORT_ECX_BIT: u32 = 1 << 2;
-    
+
         unsafe {
             assert!(
                 __cpuid(0x8000_0001).ecx & SVM_SUPPORT_ECX_BIT != 0,
@@ -561,7 +586,9 @@ impl Svm {
                 );
             };
 
-            panic!("SVM is disabled by firmware but unlockable with key. Sadly Funderberker doesn't support this yet");
+            panic!(
+                "SVM is disabled by firmware but unlockable with key. Sadly Funderberker doesn't support this yet"
+            );
         }
     }
 
@@ -572,14 +599,11 @@ impl Svm {
         let start_id = Id(1); // ASID 0 is reserved for the host, so we start from 1
         // NOTE: Adding 1 here since the max ASID is inclusive, so we need to add 1 to the end of
         // the range
-        let end_id = unsafe {
-            Id(__cpuid(0x8000_000a).ebx as usize + 1)
-        };
+        let end_id = unsafe { Id(__cpuid(0x8000_000a).ebx as usize + 1) };
 
         *allocator = IdTracker::new(start_id..end_id)
     }
 }
-
 
 impl Vmcb {
     /// Creates a new VMCB.
@@ -594,32 +618,71 @@ impl Vmcb {
     /// Sanity checking the guest state of the VMCB after it has been initialized.
     #[inline]
     fn sanity_check_guest_state(&self) {
-        sanity_assert!(!(self.state_save.efer & Efer::SVM == 0), "SVM is not enabled in EFER");
-        sanity_assert!(!(self.state_save.cr0.cd() == 0 && self.state_save.cr0.nw() != 0), "CR0.CD is set but CR0.NW is not");
-        sanity_assert!(!(self.state_save.cr0.reserved_mbz_3() != 0), "CR0 has reserved bits set");
-        sanity_assert!(!(self.state_save.cr3.reserved_mbz_0() != 0 || self.state_save.cr3.reserved_mbz_1() != 0), "CR3 has reserved bits set");
-        sanity_assert!(!(self.state_save.cr4.reserved_mbz_0() != 0 || self.state_save.cr4.reserved_mbz_1() != 0 || self.state_save.cr4.reserved_mbz_2() != 0), "CR4 has reserved bits set");
-        sanity_assert!(!(self.state_save.dr6.reserved_mbz_1() != 0), "DR6 has last reserved bits set");
-        sanity_assert!(!(self.state_save.dr7.reserved_mbz_1() != 0), "DR6 has last reserved bits set");
-        sanity_assert!(!(self.state_save.efer & !Efer::ALL != 0), "EFER has reserved bits set");
-        sanity_assert!(!(self.state_save.efer & Efer::LMA != 0 && self.state_save.cr0.pg() != 0 && self.state_save.cr4.pae() == 0), 
-            "EFER.LMA is set but CR0.PG is set and CR4.PAE is not set");
-        sanity_assert!(!(self.state_save.efer & Efer::LMA != 0 && self.state_save.cr0.pg() != 0 && self.state_save.cr0.pe() == 0), 
-            "EFER.LMA is set but CR0.PG is set and CR4.PAE is not set");
+        sanity_assert!(
+            !(self.state_save.efer & Efer::SVM == 0),
+            "SVM is not enabled in EFER"
+        );
+        sanity_assert!(
+            !(self.state_save.cr0.cd() == 0 && self.state_save.cr0.nw() != 0),
+            "CR0.CD is set but CR0.NW is not"
+        );
+        sanity_assert!(
+            !(self.state_save.cr0.reserved_mbz_3() != 0),
+            "CR0 has reserved bits set"
+        );
+        sanity_assert!(
+            !(self.state_save.cr3.reserved_mbz_0() != 0
+                || self.state_save.cr3.reserved_mbz_1() != 0),
+            "CR3 has reserved bits set"
+        );
+        sanity_assert!(
+            !(self.state_save.cr4.reserved_mbz_0() != 0
+                || self.state_save.cr4.reserved_mbz_1() != 0
+                || self.state_save.cr4.reserved_mbz_2() != 0),
+            "CR4 has reserved bits set"
+        );
+        sanity_assert!(
+            !(self.state_save.dr6.reserved_mbz_1() != 0),
+            "DR6 has last reserved bits set"
+        );
+        sanity_assert!(
+            !(self.state_save.dr7.reserved_mbz_1() != 0),
+            "DR6 has last reserved bits set"
+        );
+        sanity_assert!(
+            !(self.state_save.efer & !Efer::ALL != 0),
+            "EFER has reserved bits set"
+        );
+        sanity_assert!(
+            !(self.state_save.efer & Efer::LMA != 0
+                && self.state_save.cr0.pg() != 0
+                && self.state_save.cr4.pae() == 0),
+            "EFER.LMA is set but CR0.PG is set and CR4.PAE is not set"
+        );
+        sanity_assert!(
+            !(self.state_save.efer & Efer::LMA != 0
+                && self.state_save.cr0.pg() != 0
+                && self.state_save.cr0.pe() == 0),
+            "EFER.LMA is set but CR0.PG is set and CR4.PAE is not set"
+        );
         // TODO: EFER.LME, CR0.PG, CR4.PAE, CS.L, and CS.D are all non-zero.
         // sanity_assert!(!(self.state_save.efer & Efer::LME == 0 && self.state_save.cr0.pg() != 0 && self.state_save.cr4.pae() != 0 &&
-        //     self.state_save.cs.limit != 0 && self.state_save.cs.selector. != 0), 
+        //     self.state_save.cs.limit != 0 && self.state_save.cs.selector. != 0),
         //     "EFER.LME is not set but CR0.PG, CR4.PAE, CS.L, and CS.D are all non-zero");
-        sanity_assert!(!(self.control.intercepts.vmrun() == 0), "VMRUN intercept is not set in the control area");
+        sanity_assert!(
+            !(self.control.intercepts.vmrun() == 0),
+            "VMRUN intercept is not set in the control area"
+        );
         // TODO: check msr and ioio
         // TODO: illegal event injection
         sanity_assert!(!(self.control.guest_asid == 0), "Guest ASID is zero");
         // TODO: S_CET reserved bits
-        sanity_assert!(!(self.state_save.cr4.cet() != 0 && self.state_save.cr0.wp() == 0), 
-            "CR4.CET is set but CR0.WP is not set");
+        sanity_assert!(
+            !(self.state_save.cr4.cet() != 0 && self.state_save.cr0.wp() == 0),
+            "CR4.CET is set but CR0.WP is not set"
+        );
         // TODO: U_SET and combination checking
         // TODO: U_SET reserved bits
-
 
         // TODO: Processor should always support long mode
     }
@@ -673,7 +736,7 @@ impl Vmcb {
             let ptr: *mut Gdt = virt_addr.into();
             unsafe { ptr.as_mut().unwrap() }
         };
-        
+
         unsafe {
             // let phys_page = pmm::get()
             //     .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
@@ -705,7 +768,9 @@ impl Vmcb {
             self.control.intercepts.set_vmrun(1);
             self.control.intercepts.set_cpuid(1);
             self.control.intercepts.set_hlt(1);
-            self.control.intercepts.set_exceptions(Intercepts::ALL_EXCEPTIONS);
+            self.control
+                .intercepts
+                .set_exceptions(Intercepts::ALL_EXCEPTIONS);
             self.control.guest_asid = ASID_ALLOCATOR.lock().allocate().unwrap().0 as u32;
 
             // self.setup_nested_paging();
@@ -721,7 +786,10 @@ impl Vmcb {
             return;
         }
 
-        todo!("Recieved interrupt during VMEXIT, but not implemented yet {:x}", self.control.exitintinfo.vector());
+        todo!(
+            "Recieved interrupt during VMEXIT, but not implemented yet {:x}",
+            self.control.exitintinfo.vector()
+        );
     }
 
     /// Handles the VMEXIT when testing the intercepts.
@@ -730,7 +798,11 @@ impl Vmcb {
         let exit_code = self.control.exitcode;
 
         self.handle_intercept_during_int();
-        assert_eq!(exit_code, expceted_exit_code, "Expected exit code {:?}, got {:?}", expceted_exit_code, exit_code);
+        assert_eq!(
+            exit_code, expceted_exit_code,
+            "Expected exit code {:?}, got {:?}",
+            expceted_exit_code, exit_code
+        );
     }
 
     // TODO: get rid of this function
@@ -759,10 +831,10 @@ impl Vmcb {
         // 5. clears v_irq, v_intr_masking and tsc offset
         // 6. reloads processor state with the saved host state from before VMRUN
         // ... and oither things
-        
+
         // TODO: Check Fn8000_000A_EDX[NRIPS] for nrip support
         // TODO: Check exitintinfo to see if was in the middle of int/exception handling
-        
+
         let exit_code = self.control.exitcode;
         log_info!("VMEXIT with exitcode: {:?}", exit_code);
 
@@ -771,10 +843,10 @@ impl Vmcb {
         match exit_code {
             InterceptCode::Cpuid => {
                 // println!("CPUID intercept triggered");
-            },
+            }
             InterceptCode::Hlt => {
                 println!("HLT intercept triggered");
-            },
+            }
             InterceptCode::Vmrun | InterceptCode::Vmload | InterceptCode::Vmsave => {
                 log_err!("Nested virtualization is not supported yet.");
             }
@@ -793,7 +865,7 @@ impl VirtTech for Svm {
         Self::enable();
         Self::init_asid_allocator();
         Self::init_host_state();
-        
+
         log_info!("Started SVM operation successfully");
     }
 
@@ -842,8 +914,8 @@ mod tests {
     use crate::arch::x86_64::paging::PageSize;
 
     use super::*;
+    use core::mem::{offset_of, size_of};
     use macros::test_fn;
-    use core::mem::{size_of, offset_of};
 
     #[test_fn]
     fn test_cpuid_intercept() {
@@ -854,7 +926,11 @@ mod tests {
             }
         }
 
-        let mut vmcb = Vmcb::new(translate(VirtAddr(to_run as usize), PageSize::Size4KB).unwrap().0);
+        let mut vmcb = Vmcb::new(
+            translate(VirtAddr(to_run as usize), PageSize::Size4KB)
+                .unwrap()
+                .0,
+        );
         vmcb.run_test(InterceptCode::Cpuid);
     }
 
@@ -887,4 +963,3 @@ mod tests {
         assert_eq!(size_of::<u64>(), 8); // base
     }
 }
-

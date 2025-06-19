@@ -1,8 +1,12 @@
 //! Everything IDT and interrupts
 
 use crate::{
-    arch::x86_64::{cpu::{self, Register}, event::GENERIC_ISR_VECTOR, gdt::Cs},
-    sync::spinlock::{SpinLock, SpinLockDropable},
+    arch::x86_64::{
+        cpu::{self, Register},
+        event::GENERIC_ISR_VECTOR,
+        gdt::Cs,
+    },
+    sync::spinlock::{SpinLock, SpinLockable},
 };
 use core::{
     arch::asm,
@@ -268,4 +272,4 @@ unsafe extern "C" {
     fn __isr_stub_generic_irq_isr();
 }
 
-impl SpinLockDropable for Idt {}
+impl SpinLockable for Idt {}

@@ -51,7 +51,7 @@ pub struct Efer;
 pub struct VmCr;
 pub struct VmHsavePa;
 
-// TODO: Fix this 
+// TODO: Fix this
 impl Efer {
     /// System call extension enable
     pub const SCE: u64 = 1 << 0;
@@ -109,10 +109,7 @@ pub unsafe fn rdmsr(msr: impl Msr) -> MsrData {
         );
     };
 
-    MsrData {
-        low,
-        high,
-    }
+    MsrData { low, high }
 }
 
 /// Write a value to a model specific register (MSR)

@@ -1,16 +1,11 @@
 //! A simple slab allocator implementation
 
-use core::{
-    alloc::Layout,
-    cell::SyncUnsafeCell,
-    marker::PhantomData,
-    ptr::NonNull,
-};
+use core::{alloc::Layout, cell::SyncUnsafeCell, marker::PhantomData, ptr::NonNull};
 
 use alloc::alloc::{AllocError, Allocator};
 use internal::{InternalSlabAllocator, ObjectNode};
 
-use crate::sync::spinlock::SpinLockDropable;
+use crate::sync::spinlock::SpinLockable;
 
 // TODO: Actually call 'initializer' of the SlabAllocatable trait
 
@@ -86,4 +81,4 @@ where
 
 unsafe impl<T> Sync for SlabAllocator<T> where T: SlabAllocatable + Send {}
 
-impl<T> SpinLockDropable for SlabAllocator<T> where T: SlabAllocatable + Send {}
+impl<T> SpinLockable for SlabAllocator<T> where T: SlabAllocatable + Send {}

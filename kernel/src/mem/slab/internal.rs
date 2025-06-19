@@ -72,8 +72,7 @@ impl InternalSlabAllocator {
         assert!(obj_layout.align() <= BASIC_PAGE_SIZE);
 
         // The minimum amount of pages that we need to allocate to fit at least one object
-        let min_pages_per_slab =
-            usize::div_ceil(obj_layout.size(), BASIC_PAGE_SIZE);
+        let min_pages_per_slab = usize::div_ceil(obj_layout.size(), BASIC_PAGE_SIZE);
 
         // Calculate the remainder if we were to allocate `pages_per_slab` pages
         let r = (min_pages_per_slab * BASIC_PAGE_SIZE) % obj_layout.size();
@@ -89,8 +88,7 @@ impl InternalSlabAllocator {
     /// Calculates the amount of objects with `obj_layout` that can fit in a slab
     const fn obj_per_slab(obj_layout: Layout, pages_per_slab: usize) -> usize {
         // The amount of objects that can fit in a slab
-        (pages_per_slab * BASIC_PAGE_SIZE - Self::EMBEDDED_SLAB_NODE_SIZE)
-            / obj_layout.size()
+        (pages_per_slab * BASIC_PAGE_SIZE - Self::EMBEDDED_SLAB_NODE_SIZE) / obj_layout.size()
     }
 
     /// Creates a new slab allocator with the given object layout
@@ -223,9 +221,12 @@ impl InternalSlabAllocator {
         // XXX: Make the slab node be at the end and the objects at the beginning of the buffer
 
         unsafe {
-            let offset = objs_ptr.byte_add(self.obj_layout.size() * self.obj_per_slab)
+            let offset = objs_ptr
+                .byte_add(self.obj_layout.size() * self.obj_per_slab)
                 .align_offset(align_of::<Node<Slab>>());
-            let slab_node_ptr = objs_ptr.byte_add(self.obj_layout.size() * self.obj_per_slab).byte_add(offset)
+            let slab_node_ptr = objs_ptr
+                .byte_add(self.obj_layout.size() * self.obj_per_slab)
+                .byte_add(offset)
                 .cast::<Node<Slab>>();
 
             // Sanity check to make sure there is enough space on the buffer for the slab node
@@ -235,7 +236,11 @@ impl InternalSlabAllocator {
 
             NonNull::write(
                 slab_node_ptr,
-                Node::<Slab>::new(Slab::new(objs_ptr, self.obj_per_slab, self.obj_layout.size())),
+                Node::<Slab>::new(Slab::new(
+                    objs_ptr,
+                    self.obj_per_slab,
+                    self.obj_layout.size(),
+                )),
             );
 
             self.free_slabs.push_node(slab_node_ptr);
@@ -254,7 +259,8 @@ impl Slab {
         obj_per_slab: usize,
         obj_padded_size: usize,
     ) -> bool {
-        self.buff_ptr <= ptr && ptr < unsafe { self.buff_ptr.byte_add(obj_per_slab * obj_padded_size) }
+        self.buff_ptr <= ptr
+            && ptr < unsafe { self.buff_ptr.byte_add(obj_per_slab * obj_padded_size) }
     }
 
     /// Constructs a new slab with the given parameters.

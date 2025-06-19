@@ -12,7 +12,7 @@ use crate::{
         interrupts,
     },
     dev::register_irq,
-    sync::spinlock::{SpinLock, SpinLockDropable},
+    sync::spinlock::{SpinLock, SpinLockable},
 };
 
 use super::{PIT_IRQ, Timer, TimerError};
@@ -181,7 +181,7 @@ fn pit_isr() {
     lapic.signal_eoi();
 }
 
-impl SpinLockDropable for Pit {
+impl SpinLockable for Pit {
     fn custom_unlock(&mut self) {
         self.set_disabled(true);
     }

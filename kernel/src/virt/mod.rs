@@ -1,6 +1,6 @@
 use crate::{
     mem::slab::{SlabAllocatable, SlabAllocator},
-    sync::spinlock::{SpinLock, SpinLockDropable},
+    sync::spinlock::{SpinLock, SpinLockable},
 };
 use alloc::boxed::Box;
 use core::marker::PhantomData;
@@ -8,9 +8,9 @@ use sched::{Schedulable, Scheduler, constant::Constant};
 use svm::Svm;
 use utils::collections::id::{Id, hander::IdHander};
 
+mod mem;
 mod sched;
 mod svm;
-mod mem;
 
 static SCHEDULER: SpinLock<Constant<Vessel<Svm>>> = SpinLock::new(Constant::new_const());
 
@@ -77,4 +77,4 @@ where
     }
 }
 
-impl SpinLockDropable for IdHander {}
+impl SpinLockable for IdHander {}

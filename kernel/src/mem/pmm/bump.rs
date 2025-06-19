@@ -6,7 +6,7 @@ use core::slice::from_raw_parts_mut;
 use limine::memory_map;
 
 use crate::boot::limine::get_page_count_from_mem_map;
-use crate::sync::spinlock::SpinLockDropable;
+use crate::sync::spinlock::SpinLockable;
 use crate::{arch::BASIC_PAGE_SIZE, sync::spinlock::SpinLock};
 
 use super::{PhysAddr, PmmAllocator, PmmError};
@@ -228,7 +228,7 @@ impl PmmAllocator for BumpAllocator<'_> {
 unsafe impl Send for BumpAllocator<'_> {}
 unsafe impl Sync for BumpAllocator<'_> {}
 
-impl SpinLockDropable for BumpAllocator<'_> {}
+impl SpinLockable for BumpAllocator<'_> {}
 
 #[cfg(test)]
 mod tests {

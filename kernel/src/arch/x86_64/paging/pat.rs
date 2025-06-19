@@ -2,7 +2,7 @@
 
 use core::arch::x86_64::__cpuid;
 
-use crate::arch::x86_64::cpu::msr::{rdmsr, wrmsr, IntelMsr};
+use crate::arch::x86_64::cpu::msr::{IntelMsr, rdmsr, wrmsr};
 
 use super::{Entry, PageSize};
 
@@ -11,14 +11,14 @@ use super::{Entry, PageSize};
 const SHIFTING_SIZE: u8 = 8;
 
 const DEFAULT_PAT_STATUS: [PatType; 8] = [
-    PatType::WriteBack, // PAT0
+    PatType::WriteBack,    // PAT0
     PatType::WriteThrough, // PAT1
-    PatType::Uncached, // PAT2
-    PatType::Uncacheable, // PAT3
-    PatType::WriteBack, // PAT4
+    PatType::Uncached,     // PAT2
+    PatType::Uncacheable,  // PAT3
+    PatType::WriteBack,    // PAT4
     PatType::WriteThrough, // PAT5
-    PatType::Uncached, // PAT6
-    PatType::Uncacheable, // PAT7
+    PatType::Uncached,     // PAT6
+    PatType::Uncacheable,  // PAT7
 ];
 
 /// Possible errors that can occur when working with PAT
@@ -49,7 +49,6 @@ pub(super) enum PatType {
     /// UC- type.
     /// Similar to UC but can be overridden by MTRRs to allow caching (e.g., WB or WT).
     Uncached = 0b111,
-
     // The rest is reserved
 }
 
@@ -97,7 +96,9 @@ pub(super) fn get_pat_entry(entry: PatEntry) -> PatType {
     // If PAT is unavailable, we assume the default PAT status
     let pat: u64 = unsafe { rdmsr(IntelMsr::Ia32Pat).into() };
 
-    ((pat >> (entry as u8 * SHIFTING_SIZE) & 0b111) as u8).try_into().unwrap()
+    ((pat >> (entry as u8 * SHIFTING_SIZE) & 0b111) as u8)
+        .try_into()
+        .unwrap()
 }
 
 /// Set the PAT entry for a page table entry.
@@ -105,19 +106,24 @@ pub(super) fn get_pat_entry(entry: PatEntry) -> PatType {
 /// NOTE: It is assumed that `page_table_entry` is the "mapping" entry for the page (i.e. the last
 /// entry in the page table hierarchy).
 /// This function is not defined for other entries.
-pub(super) fn set_page_table_entry_pat(page_table_entry: &mut Entry, page_size: PageSize, pat_entry: PatEntry) {
+pub(super) fn set_page_table_entry_pat(
+    page_table_entry: &mut Entry,
+    page_size: PageSize,
+    pat_entry: PatEntry,
+) {
     // Clear the bits
     page_table_entry.clear_flag(Entry::FLAG_PWT | Entry::FLAG_PCD);
 
     // Get the pat bit and clear the old one
     let pat_bit = match page_size {
-        PageSize::Size4KB => { 
-            page_table_entry.clear_flag(Entry::FLAG_4KB_PAT); 
+        PageSize::Size4KB => {
+            page_table_entry.clear_flag(Entry::FLAG_4KB_PAT);
             (pat_entry as usize & 0b1) << 7
-        },
-        _ => {page_table_entry.clear_flag(Entry::FLAG_1GB_PAT);
+        }
+        _ => {
+            page_table_entry.clear_flag(Entry::FLAG_1GB_PAT);
             (pat_entry as usize & 0b1) << 12
-        },
+        }
     };
 
     // Get the PWT and PCD bits
@@ -144,4 +150,4 @@ impl TryFrom<u8> for PatType {
     }
 }
 
-// impl SpinLockDropable for Option<PatStatus> {}
+// impl SpinLockable for Option<PatStatus> {}

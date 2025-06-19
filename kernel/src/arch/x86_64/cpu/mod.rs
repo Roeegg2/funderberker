@@ -290,7 +290,6 @@ pub struct AmdDr7 {
     pub reserved_mbz_2: B32,
 }
 
-
 /// Wrapper for the 'outb' instruction, accessing a `u32` port
 #[allow(unused)]
 #[inline]
@@ -373,7 +372,7 @@ pub fn read_rsp() -> usize {
     unsafe {
         asm!("mov {:r}, rsp", out(reg) rsp);
     }
-    
+
     rsp as usize
 }
 
@@ -390,7 +389,7 @@ impl Register for Dr0 {
         unsafe {
             asm!("mov {:r}, dr0", out(reg) value);
         }
-        
+
         Dr0(VirtAddr(value as usize))
     }
 
@@ -407,7 +406,7 @@ impl Register for Dr1 {
         unsafe {
             asm!("mov {:r}, dr1", out(reg) value);
         }
-        
+
         Dr1(VirtAddr(value as usize))
     }
 
@@ -424,7 +423,7 @@ impl Register for Dr2 {
         unsafe {
             asm!("mov {:r}, dr2", out(reg) value);
         }
-        
+
         Dr2(VirtAddr(value as usize))
     }
 
@@ -441,7 +440,7 @@ impl Register for Dr3 {
         unsafe {
             asm!("mov {:r}, dr3", out(reg) value);
         }
-        
+
         Dr3(VirtAddr(value as usize))
     }
 
@@ -458,7 +457,7 @@ impl Register for AmdDr6 {
         unsafe {
             asm!("mov {:r}, dr6", out(reg) value);
         }
-        
+
         AmdDr6::from_bytes(value.to_le_bytes())
     }
 
@@ -474,7 +473,7 @@ impl Register for AmdDr7 {
         unsafe {
             asm!("mov {:r}, dr7", out(reg) value);
         }
-        
+
         AmdDr7::from_bytes(value.to_le_bytes())
     }
 
@@ -491,7 +490,7 @@ impl Register for Rflags {
         unsafe {
             asm!("pushfq", "pop {:r}", out(reg) rflags);
         }
-        
+
         rflags.into()
     }
 
@@ -508,7 +507,7 @@ impl Register for Cr0 {
         unsafe {
             asm!("mov {:r}, cr0", out(reg) value);
         }
-        
+
         value.into()
     }
 
@@ -525,7 +524,7 @@ impl Register for Cr2 {
         unsafe {
             asm!("mov {:r}, cr2", out(reg) value);
         }
-        
+
         Cr2(value)
     }
 
@@ -541,7 +540,7 @@ impl Register for Cr3 {
         unsafe {
             asm!("mov {:r}, cr3", out(reg) value);
         }
-        
+
         value.into()
     }
 
@@ -558,7 +557,7 @@ impl Register for Cr4 {
         unsafe {
             asm!("mov {:r}, cr4", out(reg) value);
         }
-        
+
         value.into()
     }
 

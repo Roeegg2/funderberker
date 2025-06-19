@@ -3,8 +3,8 @@ use core::fmt::Debug;
 use core::num::NonZero;
 use core::ops::{Deref, DerefMut};
 
-use crate::arch::x86_64::cpu::{Cr3, Register};
 use crate::arch::BASIC_PAGE_SIZE;
+use crate::arch::x86_64::cpu::{Cr3, Register};
 use crate::mem::{
     PhysAddr, VirtAddr,
     pmm::{self, PmmAllocator},
@@ -14,8 +14,8 @@ use pat::check_pat_support;
 use utils::mem::memset;
 use utils::sanity_assert;
 
-use super::cpu::msr::{rdmsr, wrmsr, AmdMsr, Efer};
 use super::cpu::Cr4;
+use super::cpu::msr::{AmdMsr, Efer, rdmsr, wrmsr};
 
 mod pat;
 
@@ -90,8 +90,7 @@ impl Entry {
     /// Ignored bits (`9-11`) on AMD:
     /// Ignored bits (`9-10`) on Intel:
     pub const RESERVED: usize = 1 << 9;
-    /// HLAT paging bit (`12` Intel only):
-    #[cfg(feature = "intel")]
+    /// HLAT paging bit (`12` Intel ONLY!!):
     pub const HLAT: usize = 1 << 11;
     /// PAT bit (`12`) (on PDPE!)
     pub const FLAG_1GB_PAT: usize = 1 << 12;
@@ -378,7 +377,7 @@ impl PageTable {
         flags: usize,
     ) {
         // TODO: Change me to the actual flags we can set and the ones we can't
-        assert!(flags & !0b111 == 0, "Invalid flags");
+        // assert!(flags & !0b111 == 0, "Invalid flags");
 
         // Get the parent page table
         let table = self.get_create_table_range(base_addr, page_size);
@@ -452,9 +451,7 @@ impl PageSize {
 
 /// Get the top level paging table PML4/PML5 (depending on the paging level)
 pub fn get_pml() -> &'static mut PageTable {
-    let phys_addr = unsafe {
-        PhysAddr((Cr3::read().top_pml() << 12) as usize)
-    };
+    let phys_addr = unsafe { PhysAddr((Cr3::read().top_pml() << 12) as usize) };
 
     let ptr: *mut PageTable = phys_addr.add_hhdm_offset().into();
 
@@ -542,7 +539,6 @@ pub unsafe fn init_from_limine(
     log_info!("Paging system initialized successfully");
 }
 
-
 /// Check if the CPU supports Paging Global Enable (PGE).
 #[inline]
 fn check_pge_support() {
@@ -592,7 +588,6 @@ unsafe fn finalize_init(pml_phys_addr: PhysAddr) {
         cr4.set_pge(1);
         cr4.write();
 
-
         // Set the CR3 register to the new PML
         let mut cr3 = Cr3::read();
         cr3.set_top_pml(pml_phys_addr.0 as u64 >> 12);
@@ -614,6 +609,6 @@ impl DerefMut for PageTable {
     }
 }
 
-// possibly TODO: 
+// possibly TODO:
 // PCIDs
 // SMEP/SMAP

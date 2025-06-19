@@ -6,6 +6,7 @@ use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt};
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 use crate::acpi::hpet::Hpet;
 use crate::{
+    acpi::mcfg::Mcfg,
     arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
     mem::{PhysAddr, vmm::map_page},
 };
@@ -43,6 +44,10 @@ impl Xsdt {
                 Hpet::SIGNATURE => {
                     let hpet = unsafe { entry.cast::<Hpet>().as_ref().unwrap() };
                     hpet.setup_hpet()?;
+                }
+                Mcfg::SIGNATURE => {
+                    let mcfg = unsafe { entry.cast::<Mcfg>().as_ref().unwrap() };
+                    mcfg.parse()?;
                 }
                 _ => continue,
                 // _ => {

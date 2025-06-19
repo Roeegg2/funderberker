@@ -8,7 +8,7 @@ use crate::{
         interrupts::{self, RTC_IRQ},
     },
     dev::cmos::{self, CmosIndex, NmiStatus},
-    sync::spinlock::{SpinLock, SpinLockDropable},
+    sync::spinlock::{SpinLock, SpinLockable},
 };
 
 pub static RTC: SpinLock<Rtc> = SpinLock::new(Rtc {});
@@ -61,7 +61,7 @@ impl Rtc {
     }
 }
 
-impl SpinLockDropable for Rtc {
+impl SpinLockable for Rtc {
     fn custom_unlock(&mut self) {
         println!("RTC: Unlocking RTC");
         // self.set_disabled(true);

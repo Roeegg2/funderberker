@@ -8,7 +8,7 @@ use crate::{
     },
     dev::register_irq,
     mem::mmio::MmioArea,
-    sync::spinlock::{SpinLock, SpinLockDropable},
+    sync::spinlock::{SpinLock, SpinLockable},
 };
 use core::{mem::transmute, ptr, time::Duration};
 use modular_bitfield::prelude::*;
@@ -581,7 +581,7 @@ impl Timer for HpetTimer {
     }
 }
 
-impl SpinLockDropable for HpetTimer {
+impl SpinLockable for HpetTimer {
     fn custom_unlock(&mut self) {
         self.set_disabled(true);
         unsafe {
@@ -597,4 +597,4 @@ unsafe impl Sync for Hpet {}
 unsafe impl Send for HpetTimer {}
 unsafe impl Sync for HpetTimer {}
 
-impl SpinLockDropable for Hpet {}
+impl SpinLockable for Hpet {}

@@ -2,7 +2,10 @@
 
 use macros::isr;
 
-use crate::arch::x86_64::{apic::lapic::LocalApic, cpu::{Cr2, Register}};
+use crate::arch::x86_64::{
+    apic::lapic::LocalApic,
+    cpu::{Cr2, Register},
+};
 
 pub const GENERIC_ISR_VECTOR: u8 = 255;
 
@@ -74,7 +77,7 @@ fn exception_14() {
     panic!(
         "Exception: {} at address: {:#x}",
         EXCEPTION_MESSAGES[14],
-        unsafe {Cr2::read().0},
+        unsafe { Cr2::read().0 },
     );
 }
 

@@ -4,13 +4,17 @@ use core::{arch::x86_64::__cpuid_count, cell::SyncUnsafeCell, mem::transmute};
 
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use crate::{
-    arch::x86_64::{cpu::msr::{rdmsr, wrmsr, IntelMsr}, 
-        paging::Entry},
+    arch::x86_64::{
+        cpu::msr::{IntelMsr, rdmsr, wrmsr},
+        paging::Entry,
+    },
     dev::timer::apic::{TimerDivisor, TimerMode},
     mem::{
-        mmio::{MmioArea, Offsetable}, vmm::map_page, PhysAddr
+        PhysAddr,
+        mmio::{MmioArea, Offsetable},
+        vmm::map_page,
     },
-    sync::spinlock::{SpinLock, SpinLockDropable, SpinLockGuard},
+    sync::spinlock::{SpinLock, SpinLockGuard, SpinLockable},
 };
 use alloc::vec::Vec;
 use modular_bitfield::prelude::*;
@@ -491,4 +495,4 @@ impl Default for LvtReg {
 unsafe impl Send for LocalApic {}
 unsafe impl Sync for LocalApic {}
 
-impl SpinLockDropable for LocalApic {}
+impl SpinLockable for LocalApic {}

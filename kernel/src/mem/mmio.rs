@@ -1,6 +1,9 @@
 //! Wrappers for safer and easier handling of MMIO
 
-use core::marker;
+use core::{
+    marker::PhantomData,
+    ptr::{read_volatile, write_volatile},
+};
 
 /// A trait for types that can be used as MMIO register offsets
 ///
@@ -28,9 +31,9 @@ where
     W: Offsetable,
     T: Copy + Sized,
 {
+    _writable: PhantomData<W>,
+    _readable: PhantomData<R>,
     base: *mut T,
-    _writable: marker::PhantomData<W>,
-    _readable: marker::PhantomData<R>,
 }
 
 impl<R, W, T> MmioArea<R, W, T>
@@ -44,8 +47,8 @@ where
     pub const fn new(base: *mut T) -> Self {
         Self {
             base,
-            _writable: marker::PhantomData,
-            _readable: marker::PhantomData,
+            _writable: PhantomData,
+            _readable: PhantomData,
         }
     }
 
@@ -53,14 +56,14 @@ where
     /// bytes*
     #[inline]
     pub unsafe fn read(&self, reg: R) -> T {
-        unsafe { core::ptr::read_volatile(self.base.byte_add(reg.offset())) }
+        unsafe { read_volatile(self.base.byte_add(reg.offset())) }
     }
 
     /// Write to an MMIO register in the area reg` should have `reg.offset()` return the offset *in
     /// bytes*
     #[inline]
     pub unsafe fn write(&self, reg: W, value: T) {
-        unsafe { core::ptr::write_volatile(self.base.byte_add(reg.offset()), value) }
+        unsafe { write_volatile(self.base.byte_add(reg.offset()), value) }
     }
 
     /// Override the base address of the MMIO area
@@ -90,14 +93,14 @@ where
     /// bytes**
     #[inline]
     pub unsafe fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.base) }
+        unsafe { read_volatile(self.base) }
     }
 
     /// Write to an MMIO register in the area reg` should have `reg.offset()` return the offset **in
     /// bytes**
     #[inline]
     pub unsafe fn write(&self, value: T) {
-        unsafe { core::ptr::write_volatile(self.base, value) }
+        unsafe { write_volatile(self.base, value) }
     }
 }
 

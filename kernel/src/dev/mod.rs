@@ -1,12 +1,16 @@
 //! Various drivers and driver interfaces
 
 use crate::arch::x86_64::{
-    apic::ioapic::{self, map_irq_to_vector}, cpu::Register, gdt::Cs, interrupts::{self, Dpl, GateType, IsrStub, Present}
+    apic::ioapic::{self, map_irq_to_vector},
+    cpu::Register,
+    gdt::Cs,
+    interrupts::{self, Dpl, GateType, IsrStub, Present},
 };
 
 pub mod clock;
 // #[cfg(feature = "legacy_timers")]
 // pub mod cmos;
+pub mod bus;
 #[cfg(feature = "framebuffer")]
 pub mod framebuffer;
 #[cfg(feature = "serial")]

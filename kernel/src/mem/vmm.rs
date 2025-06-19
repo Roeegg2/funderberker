@@ -6,7 +6,7 @@ use crate::{
         BASIC_PAGE_SIZE,
         x86_64::paging::{self, PageSize},
     },
-    sync::spinlock::{SpinLock, SpinLockDropable},
+    sync::spinlock::{SpinLock, SpinLockable},
 };
 use utils::collections::id::Id;
 use utils::collections::id::hander::IdHander;
@@ -50,9 +50,7 @@ impl VirtualAddressAllocator {
 
     #[inline]
     fn handout(&mut self, count: usize) -> VirtAddr {
-        let page_id = unsafe {
-            self.0.handout_and_skip(count)
-        };
+        let page_id = unsafe { self.0.handout_and_skip(count) };
 
         VirtAddr(page_id.0 * BASIC_PAGE_SIZE)
     }
@@ -66,25 +64,6 @@ pub fn init_from_limine(mem_map: &[&memory_map::Entry]) {
 
     let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
     *vaa = VirtualAddressAllocator::new(addr);
-}
-
-/// Map the given physical address to some virtual address
-///
-/// NOTE: This doesn't allocate a page from the PMM, it just maps the given physical address to
-/// some virtual address.
-/// If you want to allocate a page, use `allocate_pages` instead.
-pub unsafe fn map_page(phys_addr: PhysAddr, flags: usize) -> VirtAddr {
-    let virt_addr = {
-        let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
-        vaa.handout(1)
-    };
-
-    let pml = paging::get_pml();
-    unsafe {
-        pml.map(virt_addr, phys_addr, PageSize::Size4KB, flags);
-    }
-
-    virt_addr
 }
 
 /// Map the given physical address to the given virtual address
@@ -105,6 +84,25 @@ pub unsafe fn map_page_to(phys_addr: PhysAddr, virt_addr: VirtAddr, flags: usize
     unsafe {
         pml.map(virt_addr, phys_addr, PageSize::Size4KB, flags);
     }
+}
+
+/// Map the given physical address to some virtual address
+///
+/// NOTE: This doesn't allocate a page from the PMM, it just maps the given physical address to
+/// some virtual address.
+/// If you want to allocate a page, use `allocate_pages` instead.
+pub unsafe fn map_page(phys_addr: PhysAddr, flags: usize) -> VirtAddr {
+    let virt_addr = {
+        let mut vaa = VIRTUAL_ADDRESS_ALLOCATOR.lock();
+        vaa.handout(1)
+    };
+
+    let pml = paging::get_pml();
+    unsafe {
+        pml.map(virt_addr, phys_addr, PageSize::Size4KB, flags);
+    }
+
+    virt_addr
 }
 
 /// Allocate `count` virtually contiguous block of 4KB pages
@@ -141,6 +139,18 @@ pub unsafe fn free_pages(base_addr: VirtAddr, count: usize) {
     }
 }
 
+pub unsafe fn unmap_page(base_addr: VirtAddr) {
+    assert!(
+        base_addr.0 % BASIC_PAGE_SIZE == 0,
+        "Base address wanted to unmap isn't page aligned"
+    );
+
+    let pml = paging::get_pml();
+    unsafe {
+        pml.unmap(base_addr, 1, PageSize::Size4KB);
+    }
+}
+
 /// Returns the physical address mapped to the given virtual address.
 ///
 /// If the virtual address isn't mapped, `None` is returned
@@ -150,9 +160,8 @@ pub fn translate(base_addr: VirtAddr, page_size: PageSize) -> Option<PhysAddr> {
     // XXX: This might cause problem when using 2MB or 1GB pages
     let offset = base_addr.0 % page_size.size();
 
-    pml.translate(base_addr - offset).map(|phys_addr| {
-        PhysAddr(phys_addr.0 + offset)
-    })
+    pml.translate(base_addr - offset)
+        .map(|phys_addr| PhysAddr(phys_addr.0 + offset))
 }
 
-impl SpinLockDropable for VirtualAddressAllocator {}
+impl SpinLockable for VirtualAddressAllocator {}

@@ -118,8 +118,7 @@ _media:
 # Helper recipe for running QEMU
 _run-qemu: _download-firmware
     qemu-system-x86_64 \
-        -enable-kvm \
-        -cpu host \
+        -machine q35 \
         -vga virtio \
         -nodefaults \
         -serial stdio \
@@ -133,6 +132,7 @@ _run-qemu: _download-firmware
 # Add `-s -S` for debugging with GDB
 _run-qemu-debug: _download-firmware
     qemu-system-x86_64 \
+        -machine q35 \
         -vga virtio \
         -nodefaults \
         -serial stdio \

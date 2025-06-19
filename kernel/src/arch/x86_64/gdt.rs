@@ -6,7 +6,7 @@ use core::{arch::asm, mem::transmute, ops::Index, ptr};
 
 use modular_bitfield::prelude::*;
 
-use super::{cpu::Register, DescriptorTablePtr};
+use super::{DescriptorTablePtr, cpu::Register};
 
 /// The "full" form of a segment selector (i.e. the actual selector + the hidden cached information)
 #[derive(Default)]

@@ -6,7 +6,7 @@ use crate::arch::x86_64::paging::Entry;
 use crate::mem::PhysAddr;
 use crate::mem::mmio::MmioCell;
 use crate::mem::vmm::map_page;
-use crate::sync::spinlock::{SpinLock, SpinLockDropable};
+use crate::sync::spinlock::{SpinLock, SpinLockable};
 use alloc::vec::Vec;
 use core::cell::SyncUnsafeCell;
 use modular_bitfield::prelude::*;
@@ -379,7 +379,7 @@ pub unsafe fn set_disabled(irq: u8, status: bool) -> Result<(), IoApicError> {
 unsafe impl Send for IoApic {}
 unsafe impl Sync for IoApic {}
 
-impl SpinLockDropable for IoApic {}
+impl SpinLockable for IoApic {}
 
 // TODO: Move this some place else
-impl SpinLockDropable for IdTracker {}
+impl SpinLockable for IdTracker {}

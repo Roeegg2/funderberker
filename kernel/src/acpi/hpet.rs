@@ -1,22 +1,11 @@
 //! Parser for the HPET table
 
-use super::{AcpiError, AcpiTable, SdtHeader};
+use super::{AcpiError, AcpiTable, Gas, SdtHeader};
 use crate::{
     arch::x86_64::paging::Entry,
     dev::timer::hpet::{self, InterruptRoutingMode},
     mem::{PhysAddr, vmm::map_page},
 };
-
-/// The ACPI GAS (Generic Address Structure)
-#[repr(C, packed)]
-#[derive(Debug)]
-struct Gas {
-    space_id: u8,
-    register_bit_width: u8,
-    register_bit_offset: u8,
-    _reserved: u8,
-    addr: u64,
-}
 
 /// The HPET table structure
 #[repr(C)]

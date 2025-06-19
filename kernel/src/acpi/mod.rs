@@ -1,15 +1,18 @@
 //! ACPI table parser
 
+use core::{ptr::from_ref, slice::from_raw_parts};
+
 use rsdp::Rsdp2;
 
 use crate::{
-    arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
+    arch::BASIC_PAGE_SIZE,
     mem::{PhysAddr, vmm::map_page},
 };
 
 #[cfg(all(target_arch = "x86_64", feature = "hpet"))]
 mod hpet;
 mod madt;
+pub mod mcfg;
 mod rsdp;
 mod xsdt;
 
@@ -18,6 +21,17 @@ mod xsdt;
 pub enum AcpiError {
     /// The checksum of the table is invalid
     InvalidChecksum,
+}
+
+/// The ACPI GAS (Generic Address Structure)
+#[repr(C, packed)]
+#[derive(Debug)]
+struct Gas {
+    space_id: u8,
+    register_bit_width: u8,
+    register_bit_offset: u8,
+    _reserved: u8,
+    addr: u64,
 }
 
 /// The header that comes before (almost) all ACPI table
@@ -40,9 +54,9 @@ impl SdtHeader {
     #[inline]
     fn entry_count<T>(&self) -> usize {
         // Total length (including header) - header size gives us the total size of the entries
-        let bytes_count = self.length as usize - core::mem::size_of::<SdtHeader>();
+        let bytes_count = self.length as usize - size_of::<SdtHeader>();
         // Should be aligned, but just making sure :)
-        utils::sanity_assert!(bytes_count % core::mem::size_of::<T>() == 0);
+        utils::sanity_assert!(bytes_count % size_of::<T>() == 0);
 
         // Byte count to entry count
         bytes_count / core::mem::size_of::<T>()
@@ -50,14 +64,9 @@ impl SdtHeader {
 
     /// Validate the checksum of the table
     fn validate_checksum(&self) -> Result<(), AcpiError> {
-        let sum = unsafe {
-            core::slice::from_raw_parts(
-                core::ptr::from_ref(self).cast::<u8>(),
-                self.length as usize,
-            )
-        }
-        .iter()
-        .fold(0, |acc, &x| acc + x as usize);
+        let sum = unsafe { from_raw_parts(from_ref(self).cast::<u8>(), self.length as usize) }
+            .iter()
+            .fold(0, |acc, &x| acc + x as usize);
 
         if sum % 0x100 != 0 {
             return Err(AcpiError::InvalidChecksum);

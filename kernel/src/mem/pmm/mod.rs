@@ -2,7 +2,7 @@
 
 use core::num::NonZero;
 
-use crate::sync::spinlock::{SpinLockDropable, SpinLockGuard};
+use crate::sync::spinlock::{SpinLockGuard, SpinLockable};
 
 use super::PhysAddr;
 
@@ -50,7 +50,7 @@ pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
     };
 }
 
-pub trait PmmAllocator: SpinLockDropable {
+pub trait PmmAllocator: SpinLockable {
     /// Tries to allocates a **physically** contiguious block of pages of size `page_count`
     /// which satisfy the passed `alignment` page alignment.
     /// If allocation if successfull, the physical address of the start of the block is returned.

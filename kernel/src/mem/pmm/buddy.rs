@@ -10,7 +10,7 @@ use crate::{
     arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
     boot::limine::get_page_count_from_mem_map,
     mem::{PhysAddr, vmm::allocate_pages},
-    sync::spinlock::{SpinLock, SpinLockDropable},
+    sync::spinlock::{SpinLock, SpinLockable},
 };
 
 use super::{PmmAllocator, PmmError};
@@ -502,7 +502,7 @@ impl BuddyAllocator<'_> {
 unsafe impl Send for BuddyAllocator<'_> {}
 unsafe impl Sync for BuddyAllocator<'_> {}
 
-impl SpinLockDropable for BuddyAllocator<'_> {}
+impl SpinLockable for BuddyAllocator<'_> {}
 
 #[cfg(test)]
 mod tests {
