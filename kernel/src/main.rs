@@ -17,6 +17,8 @@
 
 use core::arch::asm;
 
+use dev::bus::pcie;
+
 mod boot;
 #[macro_use]
 #[cfg(any(feature = "serial", feature = "framebuffer"))]
@@ -25,7 +27,7 @@ mod acpi;
 mod arch;
 mod dev;
 mod mem;
-// mod virt;
+mod virt;
 #[macro_use]
 mod sync;
 #[cfg(test)]
@@ -33,7 +35,9 @@ mod test;
 
 /// After all early booting stuff have been sorted out, it's time to start Funderberker main operation!
 pub fn funderberker_main() -> ! {
-    // virt::start();
+    let pcie_manager = pcie::PCIE_MANAGER.lock();
+    pcie_manager.load_device_drivers();
+    virt::start();
 
     #[cfg(test)]
     test_main();

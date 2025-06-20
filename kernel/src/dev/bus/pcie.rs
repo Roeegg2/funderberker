@@ -16,12 +16,6 @@ pub static PCIE_MANAGER: SpinLock<PcieManager> = SpinLock::new(PcieManager::new(
 
 const VENDOR_ID_INVALID: u16 = 0xFFFF;
 
-// enum HeaderType {
-//     Standard = 0,
-//     PciToPciBridge = 1,
-//     PciToCardbus = 2,
-// }
-
 /// PCI Configuration Space Register Offsets for Type 0 Header
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,22 +138,25 @@ enum PciToCardbusHeader {
 ///
 /// NOTE: This does not represent a `PCIe` device in the sense of a physical device, but rather in
 /// the sense of a "device function"
-struct PcieDevice {
+pub struct PcieDevice {
     config_space: MmioArea<usize, usize, u32>,
 }
 
+/// A manager for all the `PCIe` devices in the system.
 pub struct PcieManager {
     devices: Vec<PcieDevice>,
 }
 
 impl PcieManager {
+    /// Create a new `PcieManager`.
     const fn new() -> Self {
         Self {
             devices: Vec::new(),
         }
     }
 
-    fn discover_devices(&mut self, bus: u8, device: u8, segment_group: &ConfigSpace) {
+    /// Discover all device functions under the given `bus`, `device`, and `segment_group`.
+    fn discover_device_functions(&mut self, bus: u8, device: u8, segment_group: &ConfigSpace) {
         if let Some(config_space) = self.check_device(bus, device, 0, segment_group.base_address) {
             self.devices.push(PcieDevice::new(config_space));
 
@@ -187,6 +184,7 @@ impl PcieManager {
         }
     }
 
+    /// Check if the given device associated with the given bus, device, and function is present.
     fn check_device(
         &self,
         bus: u8,
@@ -217,15 +215,35 @@ impl PcieManager {
         Some(config_space)
     }
 
+    /// Method 1 of discovering PCIe devices: brute force scan the entire `PCIe` space for each segment group
     pub fn brute_force_discover(&mut self, segment_groups: &[ConfigSpace]) {
-        println!("Segment groups: {:?}", segment_groups);
         for segment_group in segment_groups.iter() {
             for bus in segment_group.start_bus_number..=segment_group.end_bus_number {
                 for device in 0..=31 {
-                    self.discover_devices(bus, device, segment_group);
+                    self.discover_device_functions(bus, device, segment_group);
                 }
             }
         }
+    }
+
+    pub fn load_device_drivers(&self) {
+        for device in self.devices.iter() {
+            let (class_code, subclass, prog_if) = unsafe {
+                (
+                    device.config_space.read(StandardHeader::ClassRevision as usize) >> 24,
+                    (device.config_space.read(StandardHeader::ClassRevision as usize) >> 16) & 0xff,
+                    (device.config_space.read(StandardHeader::ClassRevision as usize) >> 8) & 0xff,
+                )
+            };
+
+            match (class_code, subclass, prog_if) {
+                (0x1, 0x8, 0x2) => {
+                    log_info!("Found NVMe");
+                },
+                _ => (),
+            }
+        }
+
     }
 }
 
@@ -252,7 +270,6 @@ impl PcieDevice {
 
 impl Drop for PcieDevice {
     fn drop(&mut self) {
-        // need to unmap
         unsafe {
             unmap_page(self.config_space.base().into());
         };
@@ -281,15 +298,3 @@ impl SpinLockable for PcieManager {}
 
 // XXX: This might not actually be safe
 unsafe impl Sync for PcieDevice {}
-
-// /// List of all recognized `PCIe` vendor IDs.
-// ///
-// /// NOTE: This list might be incomplete, and might have some ill-formatted entries.
-// #[repr(u16)]
-// #[derive(Debug, Clone, Copy, PartialEq)]
-// enum VendorId {
-//     Invalid = 0xffff,
-//
-//     Intel = 0x8086,
-//
-// }

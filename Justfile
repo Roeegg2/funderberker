@@ -45,9 +45,9 @@ help:
 build-kernel:
     #!/usr/bin/env bash
     if [ "{{rust-profile}}" = "debug" ]; then
-        RUSTFLAGS="{{rustflags}} -g" cargo build --features {{features}}
+        RUSTFLAGS="{{rustflags}} -g" cargo build --features {{features}} --target x86_64-unknown-none
     elif [ "{{rust-profile}}" = "release" ]; then
-        RUSTFLAGS="{{rustflags}}" cargo build --release --features {{features}}
+        RUSTFLAGS="{{rustflags}}" cargo build --release --features {{features}} --target x86_64-unknown-none
     else
         echo "Error: Invalid rust-profile '{{rust-profile}}'. Must be 'debug' or 'release'."
         exit 1
@@ -56,7 +56,7 @@ build-kernel:
     cp $BIN {{kernel-bin}}
 
 # Build the kernel tests
-build-kernel-test: clean
+build-kernel-test:
     #!/usr/bin/env bash
     pwd
     if [ "{{rust-profile}}" = "debug" ]; then
@@ -77,7 +77,7 @@ crates-test:
         cargo test -p $crate
     done
 
-build-test: build-kernel-test  _create-iso-common
+build-test: build-kernel-test _create-iso-common
 
 # Build everything
 build: build-kernel _create-iso-common
@@ -94,11 +94,11 @@ run: build
 debug: build-test
     @just _run-qemu-debug
 
-# Write a test compiled ISO to a USB device
-media-test: build-test _media
-
 # Write the compiled ISO to a USB device
 media: build _media
+
+# Write a test compiled ISO to a USB device
+media-test: build-test _media
 
 # Helper recipe for writing ISO to USB device
 _media:
@@ -123,6 +123,8 @@ _run-qemu: _download-firmware
         -nodefaults \
         -serial stdio \
         -no-reboot \
+        -device nvme,drive=nvme-drive,serial=deadbeef \
+        -drive file=nvme.img,if=none,id=nvme-drive,format=raw \
         -drive if=pflash,unit=0,format=raw,file={{ovmf-code}},readonly=on \
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \
         -cdrom {{iso-file}}

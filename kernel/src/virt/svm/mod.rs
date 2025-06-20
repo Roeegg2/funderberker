@@ -29,6 +29,7 @@ use crate::{
 use alloc::boxed::Box;
 use core::{
     arch::x86_64::__cpuid,
+    arch::asm,
     mem::transmute,
     num::NonZero,
     ops::{Deref, DerefMut},
@@ -691,11 +692,12 @@ impl Vmcb {
     #[inline]
     fn check_nested_paging_support() {
         const NESTED_PAGING_BIT: u32 = 1 << 0;
+
         unsafe {
-            // TODO: Possibly run without nested pagiong?
-            if __cpuid(0x8000_000a).edx & NESTED_PAGING_BIT == 0 {
-                panic!("Nested paging is not supported on this processor");
-            }
+            assert!(
+                __cpuid(0x8000_000a).edx & NESTED_PAGING_BIT != 0,
+                "Nested paging is not supported on this processor"
+            );
         }
     }
 
@@ -842,7 +844,7 @@ impl Vmcb {
 
         match exit_code {
             InterceptCode::Cpuid => {
-                // println!("CPUID intercept triggered");
+                println!("CPUID intercept triggered");
             }
             InterceptCode::Hlt => {
                 println!("HLT intercept triggered");
@@ -868,8 +870,6 @@ impl VirtTech for Svm {
 
         log_info!("Started SVM operation successfully");
     }
-
-    fn stop() {}
 }
 
 impl Vesselable for Vmcb {

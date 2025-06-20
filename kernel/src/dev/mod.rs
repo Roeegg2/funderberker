@@ -16,6 +16,7 @@ pub mod framebuffer;
 #[cfg(feature = "serial")]
 pub mod serial;
 pub mod timer;
+pub mod storage;
 
 // TODO: Return an error instead of panicking here
 /// A wrapper for easier installing of IRQ ISRs
