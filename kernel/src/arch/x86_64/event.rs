@@ -1,5 +1,6 @@
 //! Various `x86_64` specific events handling
 
+use logger::*;
 use macros::isr;
 
 use crate::arch::x86_64::{

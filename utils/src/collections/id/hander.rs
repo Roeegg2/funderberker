@@ -1,5 +1,7 @@
 //! Simple wrapper for an ID bump allocator
 
+use crate::sync::spinlock::SpinLockable;
+
 use super::Id;
 
 /// A simple ID allocator that just hands out IDs from a virtually infinite pool, not requiring a
@@ -72,3 +74,5 @@ impl IdHander {
         self.next
     }
 }
+
+impl SpinLockable for IdHander {}

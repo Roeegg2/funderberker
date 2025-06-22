@@ -3,9 +3,7 @@
 //! `NOTE:` `core::arch::x86_64` already implements `__cpuid`, `rdtsc` and many others, so use them when needed
 
 use modular_bitfield::prelude::*;
-
-use crate::mem::VirtAddr;
-
+use utils::mem::VirtAddr;
 use core::{arch::asm, mem::transmute};
 
 pub mod msr;

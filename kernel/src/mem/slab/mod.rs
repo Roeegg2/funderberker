@@ -5,7 +5,7 @@ use core::{alloc::Layout, cell::SyncUnsafeCell, marker::PhantomData, ptr::NonNul
 use alloc::alloc::{AllocError, Allocator};
 use internal::{InternalSlabAllocator, ObjectNode};
 
-use crate::sync::spinlock::SpinLockable;
+use utils::sync::spinlock::SpinLockable;
 
 // TODO: Actually call 'initializer' of the SlabAllocatable trait
 

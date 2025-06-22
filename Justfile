@@ -52,7 +52,7 @@ build-kernel:
         echo "Error: Invalid rust-profile '{{rust-profile}}'. Must be 'debug' or 'release'."
         exit 1
     fi
-    BIN=`find target/x86_64-unknown-none -type f -executable -name "kernel" | head -n 1`
+    BIN=`find target/x86_64-unknown-none -type f -executable -name "boot" | head -n 1`
     cp $BIN {{kernel-bin}}
 
 # Build the kernel tests
@@ -67,7 +67,7 @@ build-kernel-test:
         echo "Error: Invalid rust-profile '{{rust-profile}}'. Must be 'debug' or 'release'."
         exit 1
     fi
-    BIN=`find target/x86_64-unknown-none -type f -executable -name "kernel-*" | head -n 1`
+    BIN=`find target/x86_64-unknown-none -type f -executable -name "boot*" | head -n 1`
     cp $BIN {{kernel-bin}}
 
 # Run crate tests
@@ -91,7 +91,7 @@ run: build
     @just _run-qemu
 
 # Run with debugging enabled
-debug: build-test
+debug: build
     @just _run-qemu-debug
 
 # Write the compiled ISO to a USB device

@@ -1,18 +1,15 @@
 //! Virtual memory manager for handing out virtual pages
 
-use crate::mem::HHDM_OFFSET;
-use crate::{
+use crate::
     arch::{
         BASIC_PAGE_SIZE,
         x86_64::paging::{self, PageSize},
-    },
-    sync::spinlock::{SpinLock, SpinLockable},
+    };
+use logger::*;
+use utils::{
+    collections::id::{hander::IdHander, Id}, mem::{PhysAddr, VirtAddr, HHDM_OFFSET}, sanity_assert, sync::spinlock::{SpinLock, SpinLockable}
 };
-use utils::collections::id::Id;
-use utils::collections::id::hander::IdHander;
-use utils::sanity_assert;
 
-use super::{PhysAddr, VirtAddr};
 #[cfg(feature = "limine")]
 use limine::memory_map;
 

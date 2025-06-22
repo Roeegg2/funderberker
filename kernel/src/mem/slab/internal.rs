@@ -1,15 +1,14 @@
 //! "Backend" of the slab allocator
 
 use alloc::boxed::Box;
-use core::mem;
-use core::{alloc::Layout, ptr::NonNull};
-use utils::sanity_assert;
+use core::{mem, alloc::Layout, ptr::NonNull};
+use utils::{
+    sanity_assert,
+    collections::stacklist::{Node, StackList},
+    mem::VirtAddr,
+};
 
-use utils::collections::stacklist::{Node, StackList};
-
-use crate::arch::BASIC_PAGE_SIZE;
-use crate::arch::x86_64::paging::Entry;
-use crate::mem::VirtAddr;
+use crate::arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry};
 use crate::mem::vmm::{allocate_pages, free_pages};
 
 /// A node that holds a pointer to an object.

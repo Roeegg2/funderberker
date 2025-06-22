@@ -4,6 +4,7 @@
 #![feature(sync_unsafe_cell)]
 
 pub mod collections;
+pub mod sync;
 pub mod mem;
 
 #[cfg(not(test))]
@@ -42,6 +43,8 @@ macro_rules! spin_until {
     };
 }
 
+/// For assertions that are so obvious, they should never fail in production code.
+/// These assertions are only checked in debug builds.
 #[macro_export]
 macro_rules! sanity_assert {
     ($cond:expr) => {

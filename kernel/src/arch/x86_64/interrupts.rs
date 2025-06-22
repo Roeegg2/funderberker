@@ -1,12 +1,11 @@
 //! Everything IDT and interrupts
 
-use crate::{
-    arch::x86_64::{
+use logger::*;
+use utils::sync::spinlock::{SpinLock, SpinLockable};
+use crate::arch::x86_64::{
         cpu::{self, Register},
         event::GENERIC_ISR_VECTOR,
         gdt::Cs,
-    },
-    sync::spinlock::{SpinLock, SpinLockable},
 };
 use core::{
     arch::asm,
@@ -15,7 +14,7 @@ use core::{
 };
 use modular_bitfield::prelude::*;
 
-use super::{DescriptorTablePtr, gdt::SegmentSelector};
+use super::{apic::ioapic::{self, map_irq_to_vector, set_disabled}, gdt::SegmentSelector, DescriptorTablePtr};
 
 /// The number of entries in the IDT
 const IDT_ENTRIES_NUM: usize = 256;
@@ -234,6 +233,38 @@ pub unsafe fn install_isr(
 
     entry_number as u8
 }
+
+// TODO: Return an error instead of panicking here
+/// A wrapper for easier installing of IRQ ISRs
+pub unsafe fn register_irq(irq: u8, isr_stub: IsrStub) {
+    unsafe {
+        // Make sure the interrupt is masked off before we do any fiddiling with the
+        // IO APIC and IDT
+        ioapic::set_disabled(irq, true).unwrap();
+
+        // Install the new ISR
+        let vector = install_isr(
+            isr_stub,
+            Cs::read().0,
+            0,
+            GateType::Interrupt,
+            Dpl::Kernel,
+            Present::Present,
+        );
+
+        // Tell the IO APIC to map `irq` to the given `vector`
+        // XXX: Change the flags here!
+        map_irq_to_vector(vector, irq).unwrap();
+
+        // Now we can unmask the IRQ in the IO APIC
+        //
+        // NOTE: No interrupt should be triggered yet, since the timer is still
+        // disabled internally.
+        set_disabled(irq, false).unwrap();
+    };
+}
+
+// TODO: unregister_isr
 
 unsafe extern "C" {
     fn __isr_stub_exception_0();

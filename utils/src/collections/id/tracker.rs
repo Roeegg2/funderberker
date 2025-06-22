@@ -1,6 +1,6 @@
 use core::ops::Range;
 
-use crate::collections::bitmap::Bitmap;
+use crate::{collections::bitmap::Bitmap, sync::spinlock::SpinLockable};
 
 use super::Id;
 
@@ -99,6 +99,8 @@ impl IdTracker {
     // pub fn grow_pool();
     // pub fn shrink_pool();
 }
+
+impl SpinLockable for IdTracker {}
 
 #[cfg(test)]
 mod tests {

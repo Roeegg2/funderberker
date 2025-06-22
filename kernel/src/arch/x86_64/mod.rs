@@ -2,7 +2,12 @@
 
 use core::arch::x86_64::__cpuid_count;
 
-use crate::mem::VirtAddr;
+#[cfg(feature = "limine")]
+use limine::memory_map;
+
+use logger::*;
+use utils::mem::VirtAddr;
+use utils::mem::PhysAddr;
 
 use super::Architecture;
 use interrupts::Idt;
@@ -47,6 +52,18 @@ impl Architecture for X86_64 {
         Idt::init();
 
         find_cpu_vendor();
+    }
+
+    #[cfg(feature = "limine")]
+    unsafe fn init_paging_from_limine(
+        mem_map: &[&memory_map::Entry],
+        kernel_virt: VirtAddr,
+        kernel_phys: PhysAddr,
+    ) {
+
+        unsafe {
+            paging::init_from_limine(mem_map, kernel_virt, kernel_phys);
+        }
     }
 }
 

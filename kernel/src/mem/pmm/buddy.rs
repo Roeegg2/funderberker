@@ -3,16 +3,17 @@
 use core::{num::NonZero, ptr::NonNull, slice::from_raw_parts_mut};
 
 use alloc::boxed::Box;
+#[cfg(feature = "limine")]
 use limine::memory_map::EntryType;
-use utils::collections::stacklist::{Node, StackList};
-
-use crate::{
-    arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
-    boot::limine::get_page_count_from_mem_map,
-    mem::{PhysAddr, vmm::allocate_pages},
+use utils::{
+    collections::stacklist::{Node, StackList},
+    mem::PhysAddr,
     sync::spinlock::{SpinLock, SpinLockable},
 };
-
+use crate::{
+    arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
+    mem::vmm::allocate_pages,
+};
 use super::{PmmAllocator, PmmError};
 
 /// Singleton instance of the buddy allocator
@@ -119,9 +120,11 @@ impl PmmAllocator for BuddyAllocator<'_> {
         Ok(())
     }
 
+    #[cfg(feature = "limine")]
     unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
-        let total_page_count = get_page_count_from_mem_map(mem_map);
+        use super::get_page_count_from_mem_map;
 
+        let total_page_count = get_page_count_from_mem_map(mem_map);
         let mut allocator = BUDDY_ALLOCATOR.lock();
 
         let (freelist_entry_addr, entries_page_count) =

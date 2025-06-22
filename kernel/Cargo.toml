@@ -4,45 +4,25 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-limine = { version = "0.5.0", optional = true }
-
 alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc"}
-
-modular-bitfield = { version = "0.12"}
-utils = { path = "../utils" }
-macros = { path = "../macros" }
+modular-bitfield = { version = "0.12" }
+utils = { version = "0.1.0", path = "../utils" }
+limine = { version = "0.5.0", optional = true }
+logger = { version = "0.1.0", path = "../logger" }
+macros = { version = "0.1.0", path = "../macros" }
 
 [features]
-default = ["limine", "framebuffer", "serial", "paging_4", "pmm_buddy", "mp", "hpet", "scheduler_constant"]
+default = ["limine", "pmm_buddy", "paging_4", "framebuffer"]
 
-# Booting method
-limine = ["dep:limine"]
-
-# Logging methods
-serial = []
 framebuffer = []
 
-# Paging modes. Only one can be enabled (TODO: Remove this limitation)
-paging_4 = []
-paging_5 = [] # UNTESTED
+limine = ["dep:limine"]
 
-# PMM page allocator algorithm. Only one can be enabled
 pmm_bump = []
 pmm_buddy = []
 
-# Multiprocessing feature
-mp = []
-
-# HPET support.
-hpet = []
-# Enable this if you want support for PIT and RTC.
-# Most (if not all) modern systems have a HPET built in them with legacy support, so this is usually not needed 
-# (more so, there's a trend in newer CPUs to exclude support for PIT and RTC, so you might have to keep this disabled)
-legacy_timers = [] # UNSUPPORTED
-
-# Possible schedulers
-# Constant scheduler
-scheduler_constant = []
+paging_5 = []
+paging_4 = []
 
 [lints.clippy]
 pedantic = "warn"

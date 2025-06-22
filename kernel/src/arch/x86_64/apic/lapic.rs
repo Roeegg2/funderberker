@@ -3,18 +3,18 @@
 use core::{arch::x86_64::__cpuid_count, cell::SyncUnsafeCell, mem::transmute};
 
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
-use crate::{
-    arch::x86_64::{
-        cpu::msr::{IntelMsr, rdmsr, wrmsr},
-        paging::Entry,
-    },
-    dev::timer::apic::{TimerDivisor, TimerMode},
-    mem::{
+use logger::*;
+use utils::mem::{
         PhysAddr,
         mmio::{MmioArea, Offsetable},
-        vmm::map_page,
-    },
-    sync::spinlock::{SpinLock, SpinLockGuard, SpinLockable},
+};
+use utils::sync::spinlock::{SpinLock, SpinLockGuard, SpinLockable};
+use crate::{
+    arch::x86_64::{
+        cpu::msr::{rdmsr, wrmsr, IntelMsr},
+        paging::Entry,
+    }, mem::vmm::map_page,
+    // dev::timer::apic::{TimerDivisor, TimerMode},
 };
 use alloc::vec::Vec;
 use modular_bitfield::prelude::*;
@@ -93,6 +93,41 @@ pub enum ReadableRegs {
     TimerInitialCount = 0x380,
     TimerCurrentCount = 0x390,
     TimerDivideConfig = 0x3e0,
+}
+
+/// The possible divider values for the APIC timer
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum TimerDivisor {
+    /// Divide by 2
+    Div2 = 0b000,
+    /// Divide by 4
+    Div4 = 0b001,
+    /// Divide by 8
+    Div8 = 0b010,
+    /// Divide by 16
+    Div16 = 0b011,
+    /// Divide by 32
+    Div32 = 0b100,
+    /// Divide by 64
+    Div64 = 0b101,
+    /// Divide by 128
+    Div128 = 0b110,
+    /// Divide by 1
+    Div1 = 0b111,
+}
+
+/// The local APICs possible timer modes
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TimerMode {
+    /// The timer will tick the specified amount and then stop
+    OneShot = 0b0,
+    /// The timer will tick the specified amount regularly
+    Periodic = 0b1,
+    /// The timer will tick until the specified amount matches the current TSC value
+    Tsc = 0b10,
+    /// Reserved
+    _Reserved = 0b11,
 }
 
 /// Represents the flags of the local APIC
@@ -278,7 +313,7 @@ impl LocalApic {
     }
 
     /// Configure the timer
-    pub fn configure_timer(&self, cycle_count: u32, timer_mode: TimerMode) {
+    pub fn config_timer(&self, cycle_count: u32, timer_mode: TimerMode) {
         // Set the timer to be periodic
         let mut lvtt: LvtReg = unsafe { self.area.read(ReadableRegs::LvtTimer).into() };
         // This field is reserved on all LVT registers except for the timer

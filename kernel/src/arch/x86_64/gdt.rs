@@ -34,7 +34,6 @@ pub struct SegmentDescriptor {
 // TODO: Add TSS here as well
 /// The GDT
 ///
-#[cfg(feature = "limine")]
 #[repr(C, packed)]
 pub struct Gdt {
     segments: [SegmentDescriptor; 6],

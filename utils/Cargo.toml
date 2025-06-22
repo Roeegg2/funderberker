@@ -8,3 +8,6 @@ name = "utils"
 
 [lints.clippy]
 pedantic = "warn"
+
+[dependencies]
+logger = { version = "0.1.0", path = "../logger" }

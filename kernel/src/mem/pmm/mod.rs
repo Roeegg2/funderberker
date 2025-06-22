@@ -1,10 +1,11 @@
 //! Physical Memory Manager (PMM) module
 
+#[cfg(feature = "limine")]
+use limine::memory_map;
+
 use core::num::NonZero;
-
-use crate::sync::spinlock::{SpinLockGuard, SpinLockable};
-
-use super::PhysAddr;
+use utils::sync::spinlock::{SpinLockGuard, SpinLockable};
+use utils::mem::PhysAddr;
 
 #[cfg(feature = "pmm_buddy")]
 mod buddy;
@@ -78,4 +79,27 @@ pub trait PmmAllocator: SpinLockable {
     /// Initilizes the PMM when using Limine using limine's memory map.
     #[cfg(feature = "limine")]
     unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]);
+}
+
+/// Get the maximum addressable page count from the memory map.
+/// This is done by finding the last memory map entry that is usable and calculating the page count
+#[cfg(feature = "limine")]
+fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> NonZero<usize> {
+    use crate::arch::BASIC_PAGE_SIZE;
+
+    let last_descr = mem_map
+        .iter()
+        .rev()
+        .find(|&entry| {
+            matches!(
+                entry.entry_type,
+                limine::memory_map::EntryType::USABLE
+                    | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+                    | limine::memory_map::EntryType::ACPI_RECLAIMABLE
+                    | limine::memory_map::EntryType::EXECUTABLE_AND_MODULES
+            )
+        })
+        .unwrap();
+
+    NonZero::new((last_descr.base + last_descr.length) as usize / BASIC_PAGE_SIZE).unwrap()
 }

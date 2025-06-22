@@ -1,17 +1,14 @@
 //! Interface and driver for the IO APIC
 
 use super::{DeliveryMode, Destination};
-use crate::arch::x86_64::cpu::outb_8;
-use crate::arch::x86_64::paging::Entry;
-use crate::mem::PhysAddr;
-use crate::mem::mmio::MmioCell;
+use crate::arch::x86_64::{cpu::outb_8, paging::Entry};
 use crate::mem::vmm::map_page;
-use crate::sync::spinlock::{SpinLock, SpinLockable};
+use utils::mem::{PhysAddr, mmio::MmioCell};
+use utils::sync::spinlock::{SpinLock, SpinLockable};
 use alloc::vec::Vec;
 use core::cell::SyncUnsafeCell;
 use modular_bitfield::prelude::*;
-use utils::collections::id::Id;
-use utils::collections::id::tracker::{IdTracker, IdTrackerError};
+use utils::collections::id::{Id, tracker::{IdTracker, IdTrackerError}};
 
 /// Errors the IO APIC might encounter
 #[derive(Debug, Copy, Clone)]
@@ -380,6 +377,3 @@ unsafe impl Send for IoApic {}
 unsafe impl Sync for IoApic {}
 
 impl SpinLockable for IoApic {}
-
-// TODO: Move this some place else
-impl SpinLockable for IdTracker {}

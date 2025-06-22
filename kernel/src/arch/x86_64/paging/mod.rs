@@ -3,11 +3,10 @@ use core::fmt::Debug;
 use core::num::NonZero;
 use core::ops::{Deref, DerefMut};
 
-use crate::arch::BASIC_PAGE_SIZE;
-use crate::arch::x86_64::cpu::{Cr3, Register};
-use crate::mem::{
+use crate::arch::{x86_64::cpu::{Cr3, Register}, BASIC_PAGE_SIZE};
+use crate::mem::pmm::{self, PmmAllocator};
+use utils::mem::{
     PhysAddr, VirtAddr,
-    pmm::{self, PmmAllocator},
 };
 
 #[cfg(feature = "limine")]
@@ -20,6 +19,11 @@ use super::cpu::Cr4;
 use super::cpu::msr::{AmdMsr, Efer, rdmsr, wrmsr};
 
 mod pat;
+
+/// A manager for the paging system, which holds a reference to the top level page table
+struct PagingManager {
+    pml: &'static mut PageTable,
+}
 
 /// The number of entries per page table
 pub const ENTRIES_PER_TABLE: usize = 512;
@@ -262,7 +266,7 @@ impl PageTable {
         for level in
             (PageSize::Size4KB.bottom_paging_level()..=PageSize::Max.bottom_paging_level()).rev()
         {
-            let i = virt_addr.next_level_index(level);
+            let i = next_level_index(virt_addr, level);
 
             if table[i].is_flag_set(Entry::FLAG_LAST_ENTRY) {
                 return Some(&mut table[i]);
@@ -285,7 +289,7 @@ impl PageTable {
         page_size: PageSize,
     ) -> &mut PageTable {
         {
-            let start = base_addr.next_level_index(page_size.bottom_paging_level());
+            let start = next_level_index(base_addr, page_size.bottom_paging_level());
             let end = start + (page_size as usize);
             assert!(end <= ENTRIES_PER_TABLE, "Range out of bounds");
         }
@@ -297,7 +301,7 @@ impl PageTable {
         for level in
             (page_size.bottom_paging_level() + 1..=PageSize::Max.bottom_paging_level()).rev()
         {
-            let i = base_addr.next_level_index(level);
+            let i = next_level_index(base_addr, level);
             if !table[i].is_flag_set(Entry::FLAG_P) {
                 table[i].set_addr(PageTable::new().1);
                 table[i].set_flag(Entry::FLAG_P);
@@ -319,7 +323,7 @@ impl PageTable {
         page_size: PageSize,
     ) -> Option<&mut PageTable> {
         {
-            let start = base_addr.next_level_index(page_size.bottom_paging_level());
+            let start = next_level_index(base_addr, page_size.bottom_paging_level());
             let end = start + (page_size as usize);
             assert!(end <= ENTRIES_PER_TABLE, "Range out of bounds");
         }
@@ -328,7 +332,7 @@ impl PageTable {
         for level in
             (page_size.bottom_paging_level() + 1..=PageSize::Max.bottom_paging_level()).rev()
         {
-            let i = base_addr.next_level_index(level);
+            let i = next_level_index(base_addr, level);
             if !table[i].is_flag_set(Entry::FLAG_P) {
                 return None;
             }
@@ -364,7 +368,7 @@ impl PageTable {
         let table = self.get_create_table_range(base_addr, page_size);
 
         // Find out how much to skiop how much to take
-        let to_skip = base_addr.next_level_index(page_size.bottom_paging_level());
+        let to_skip = next_level_index(base_addr, page_size.bottom_paging_level());
         for entry in table.iter_mut().skip(to_skip).take(count) {
             entry.take(flags, page_size);
         }
@@ -385,7 +389,7 @@ impl PageTable {
         let table = self.get_create_table_range(base_addr, page_size);
 
         // Extract the index to the entry
-        let i = base_addr.next_level_index(page_size.bottom_paging_level());
+        let i = next_level_index(base_addr, page_size.bottom_paging_level());
         // Map the entry
         unsafe { table[i].map(phys_addr, flags, page_size) };
     }
@@ -395,7 +399,7 @@ impl PageTable {
     pub unsafe fn unmap(&mut self, base_addr: VirtAddr, count: usize, page_size: PageSize) {
         let table = self.get_table_range(base_addr, page_size).unwrap();
 
-        let to_skip = base_addr.next_level_index(page_size.bottom_paging_level());
+        let to_skip = next_level_index(base_addr, page_size.bottom_paging_level());
 
         assert!(512 - to_skip >= count, "Freeing the requested page count starting this address will exceed this parent table and thus not possible.
             You should instead call the function individually for each parent page table");
@@ -481,14 +485,22 @@ fn map_with_hhdm_offset(
     }
 }
 
-/// Initialize the paging subsystem when booting from Limine
+#[inline]
+const fn next_level_index(addr: VirtAddr, level: usize) -> usize {
+    assert!(level < 5);
+
+    (addr.0 >> (PageSize::Size4KB.offset_bit_count() + (level * 9))) & 0b1_1111_1111
+}
+
 #[cfg(feature = "limine")]
-pub unsafe fn init_from_limine(
+pub(super) unsafe fn init_from_limine(
     mem_map: &[&memory_map::Entry],
     kernel_virt: VirtAddr,
     kernel_phys: PhysAddr,
 ) {
     // TODO: CPUID check as well
+
+    use logger::*;
     #[cfg(feature = "paging_5")]
     if read_cr!(cr4) & (1 << 12) != 0 {
         panic!("5 level paging requested, but not supported");

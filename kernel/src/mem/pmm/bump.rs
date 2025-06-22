@@ -12,7 +12,6 @@ use crate::{arch::BASIC_PAGE_SIZE, sync::spinlock::SpinLock};
 use super::{PhysAddr, PmmAllocator, PmmError};
 use utils::collections::static_bitmap::StaticBitmap;
 
-// TODO: Definitely use an UnsafeCell with some locking mechanism here
 /// Singleton instance of the bump allocator
 pub(super) static BUMP_ALLOCATOR: SpinLock<BumpAllocator> =
     SpinLock::new(BumpAllocator(StaticBitmap::uninit()));

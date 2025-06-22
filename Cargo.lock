@@ -9,10 +9,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
+name = "boot"
+version = "0.1.0"
+dependencies = [
+ "drivers",
+ "hypervisor",
+ "kernel",
+ "limine",
+ "logger",
+ "utils",
+]
+
+[[package]]
+name = "drivers"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "logger",
+ "modular-bitfield",
+ "utils",
+]
+
+[[package]]
+name = "hypervisor"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "logger",
+ "modular-bitfield",
+ "scheduler",
+ "utils",
+]
+
+[[package]]
 name = "kernel"
 version = "0.1.0"
 dependencies = [
  "limine",
+ "logger",
  "macros",
  "modular-bitfield",
  "rustc-std-workspace-alloc",
@@ -26,6 +60,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af6d2ee42712e7bd2c787365cd1dab06ef59a61becbf87bec7b32b970bd2594b"
 dependencies = [
  "bitflags",
+]
+
+[[package]]
+name = "logger"
+version = "0.1.0"
+dependencies = [
+ "limine",
 ]
 
 [[package]]
@@ -82,6 +123,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9d441c3b2ebf55cebf796bfdc265d67fa09db17b7bb6bd4be75c509e1e8fec3"
 
 [[package]]
+name = "scheduler"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "logger",
+ "utils",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -107,3 +157,6 @@ checksum = "5a5f39404a5da50712a4c1eecf25e90dd62b613502b7e925fd4e4d19b5c96512"
 [[package]]
 name = "utils"
 version = "0.1.0"
+dependencies = [
+ "logger",
+]

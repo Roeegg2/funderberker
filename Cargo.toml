@@ -1,9 +1,14 @@
 [workspace]
 resolver = "3"
 members = [
-    "kernel",
     "utils",
-    "macros"
+    "macros",
+    "drivers",
+    "scheduler", 
+    "hypervisor",
+    "boot",
+    "kernel", 
+    "logger",
 ]
 
 [profile.dev]
@@ -12,3 +17,4 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
