@@ -2,9 +2,13 @@
 
 use core::arch::x86_64::__cpuid;
 
-use crate::arch::x86_64::cpu::msr::{IntelMsr, rdmsr, wrmsr};
+use crate::{
+    paging::Flags,
+    x86_64::X86_64,
+    x86_64::cpu::msr::{IntelMsr, rdmsr, wrmsr},
+};
 
-use super::{Entry, PageSize};
+use super::PageSize;
 
 /// The amount of bits between each PAT entry in the `IA32_PAT` MSR. This is the amount of bits we
 /// need to shift to access each PAT entry.
@@ -21,16 +25,10 @@ const DEFAULT_PAT_STATUS: [PatType; 8] = [
     PatType::Uncacheable,  // PAT7
 ];
 
-/// Possible errors that can occur when working with PAT
-pub(super) enum PatError {
-    /// The PAT feature is not supported by the CPU.
-    Unsupported,
-}
-
 /// All the possible types of memory each PAT entry can represent.
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-pub(super) enum PatType {
+pub enum PatType {
     /// UC type.
     /// No caching; all accesses go directly to main memory
     Uncacheable = 0b00,
@@ -53,6 +51,9 @@ pub(super) enum PatType {
 }
 
 /// All the available entries in the PAT
+///
+/// Check `DEFAULT_PAT_STATUS` for the default PAT status of each entry.
+/// They aren't changed by the kernel.
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub(super) enum PatEntry {
@@ -66,67 +67,68 @@ pub(super) enum PatEntry {
     Pat7 = 0b111,
 }
 
-/// Check if PAT is supported by this CPU.
-pub(super) fn check_pat_support() {
-    const PAT_BIT: u32 = 1 << 16;
-    unsafe {
-        if __cpuid(1).edx & PAT_BIT != 0 {
-            // read PAT status
-            // sanity_cehck it with DEFAULT_PAT_STATUS
-            // change PAT_STATUS to Some(DEFAULT_PAT_STATUS)
-        }
+impl PatEntry {
+    /// Set a certain PAT entry to a specific type.
+    pub(super) unsafe fn set(entry: PatEntry, pat_type: PatType) {
+        // TODO: flush affected TLB entries
+        // TODO: propagate the change to all CPUs
+
+        let mut pat: u64 = unsafe { rdmsr(IntelMsr::Ia32Pat).into() };
+
+        pat &= !(0b111 << (entry as u8 * SHIFTING_SIZE));
+        pat |= (pat_type as u64) << (entry as u8 * SHIFTING_SIZE);
+
+        unsafe { wrmsr(IntelMsr::Ia32Pat, pat.into()) };
+    }
+
+    /// Get the current PAT type of a specific entry.
+    pub(super) fn get_type(self) -> PatType {
+        // If PAT is unavailable, we assume the default PAT status
+        let pat: u64 = unsafe { rdmsr(IntelMsr::Ia32Pat).into() };
+
+        ((pat >> (self as u8 * SHIFTING_SIZE) & 0b111) as u8)
+            .try_into()
+            .unwrap()
     }
 }
 
-/// Set a certain PAT entry to a specific type.
-pub(super) unsafe fn set_pat_entry(entry: PatEntry, pat_type: PatType) {
-    // TODO: flush affected TLB entries
-    // TODO: propagate the change to all CPUs
+/// Setup the PAT entries as we want them to be.
+pub(super) unsafe fn setup_pat() {
+    check_pat_support();
 
-    let mut pat: u64 = unsafe { rdmsr(IntelMsr::Ia32Pat).into() };
-    pat &= !(0b111 << (entry as u8 * SHIFTING_SIZE));
-    pat |= (pat_type as u64) << (entry as u8 * SHIFTING_SIZE);
-    unsafe { wrmsr(IntelMsr::Ia32Pat, pat.into()) };
+    unsafe {
+        PatEntry::set(PatEntry::Pat0, PatType::WriteBack);
+        PatEntry::set(PatEntry::Pat1, PatType::WriteThrough);
+        PatEntry::set(PatEntry::Pat2, PatType::Uncached);
+        PatEntry::set(PatEntry::Pat3, PatType::Uncacheable);
+        PatEntry::set(PatEntry::Pat4, PatType::WriteCombining);
+        PatEntry::set(PatEntry::Pat5, PatType::WriteProtected);
+    }
 }
 
-/// Get the current PAT type of a specific entry.
-pub(super) fn get_pat_entry(entry: PatEntry) -> PatType {
-    // If PAT is unavailable, we assume the default PAT status
-    let pat: u64 = unsafe { rdmsr(IntelMsr::Ia32Pat).into() };
+/// Check if PAT is supported by this CPU.
+fn check_pat_support() {
+    const PAT_BIT: u32 = 1 << 16;
 
-    ((pat >> (entry as u8 * SHIFTING_SIZE) & 0b111) as u8)
-        .try_into()
-        .unwrap()
+    unsafe {
+        assert!(
+            __cpuid(1).edx & PAT_BIT != 0,
+            "PAT is not supported by this CPU"
+        );
+    }
 }
 
-pub(super) const fn 
-/// Set the PAT entry for a page table entry.
-///
-/// NOTE: It is assumed that `page_table_entry` is the "mapping" entry for the page (i.e. the last
-/// entry in the page table hierarchy).
-/// This function is not defined for other entries.
-pub(super) fn set_page_table_entry_pat(
-    page_table_entry: &mut Entry,
-    page_size: PageSize<X86_64>,
-    pat_entry: PatEntry,
-) {
-    // Clear the bits
-    page_table_entry.clear_flag(Entry::FLAG_PWT | Entry::FLAG_PCD);
-
-    // Get the pat bit and clear the old one
-    let pat_bit = if let PageSize::Size4KB = page_size {
-        page_table_entry.clear_flag(Entry::FLAG_4KB_PAT);
-        (pat_entry as usize & 0b1) << 7
-    } else {
-        page_table_entry.clear_flag(Entry::FLAG_1GB_PAT);
-        (pat_entry as usize & 0b1) << 12
-    };
-
-    // Get the PWT and PCD bits
-    let pwt_bit = (pat_entry as u8 & 0b1 << 3) as usize;
-    let pcd_bit = (pat_entry as u8 & 0b1 << 4) as usize;
-
-    page_table_entry.set_flag(pat_bit | pwt_bit | pcd_bit);
+impl Into<PatEntry> for PatType {
+    fn into(self) -> PatEntry {
+        match self {
+            PatType::WriteBack => PatEntry::Pat0,
+            PatType::WriteThrough => PatEntry::Pat1,
+            PatType::Uncached => PatEntry::Pat2,
+            PatType::Uncacheable => PatEntry::Pat3,
+            PatType::WriteCombining => PatEntry::Pat4,
+            PatType::WriteProtected => PatEntry::Pat5,
+        }
+    }
 }
 
 impl TryFrom<u8> for PatType {
@@ -145,5 +147,3 @@ impl TryFrom<u8> for PatType {
         }
     }
 }
-
-// impl SpinLockable for Option<PatStatus> {}

@@ -1,7 +1,6 @@
 //! A simple slab allocator implementation
 
-#![no_std]
-
+#![cfg_attr(not(test), no_std)]
 #![feature(sync_unsafe_cell)]
 #![feature(allocator_api)]
 #![feature(pointer_is_aligned_to)]

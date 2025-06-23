@@ -1,8 +1,8 @@
 //! Everything needed to boot the kernel with Limine.
 
+use crate::{acpi, funderberker_start};
 use arch::vaa;
 use logger::*;
-use crate::{acpi, funderberker_start};
 use utils::mem::{HHDM_OFFSET, PhysAddr, VirtAddr};
 
 #[cfg(feature = "framebuffer")]
@@ -52,7 +52,6 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
     // All limine requests must also be referenced in a called function, otherwise they may be
@@ -60,7 +59,11 @@ unsafe extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     logger::Writer::init_from_limine(
-        FRAMEBUFFER_REQUEST.get_response().unwrap().framebuffers().next(),
+        FRAMEBUFFER_REQUEST
+            .get_response()
+            .unwrap()
+            .framebuffers()
+            .next(),
     );
 
     let hhdm = HHDM_REQUEST
@@ -89,12 +92,13 @@ unsafe extern "C" fn kmain() -> ! {
         .expect("Can't get Limine RSDP feature");
 
     vaa::init_from_limine(mem_map.entries());
-    unsafe { pmm::init_from_limine(mem_map.entries()) };
+    let used_by_pmm = unsafe { pmm::init_from_limine(mem_map.entries()) };
     unsafe {
         arch::init_paging_from_limine(
             mem_map.entries(),
             VirtAddr(kernel_addr.virtual_base() as usize),
             PhysAddr(kernel_addr.physical_base() as usize),
+            used_by_pmm,
         );
     };
 

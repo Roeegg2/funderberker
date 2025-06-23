@@ -1,6 +1,9 @@
 use core::marker::PhantomData;
 
-use crate::{paging::{Flags, PageSize}, x86_64::X86_64};
+use crate::{
+    paging::{Flags, PageSize},
+    x86_64::X86_64,
+};
 
 #[cfg(feature = "paging_4")]
 pub(super) const MAX_BOTTOM_PAGING_LEVEL: usize = 3;
@@ -71,5 +74,11 @@ impl PageSize<X86_64> {
             Self::SIZE_2MB | Self::SIZE_1GB => 12,
             _ => unreachable!(),
         }
+    }
+}
+
+impl PartialEq for PageSize<X86_64> {
+    fn eq(&self, other: &Self) -> bool {
+        self.size == other.size
     }
 }

@@ -1,16 +1,15 @@
 #![no_std]
-
 #![feature(allocator_api)]
 
 extern crate alloc;
 
-use slab::{SlabAllocatable, SlabAllocator};
-use utils::sync::spinlock::SpinLock;
 use alloc::boxed::Box;
 use core::marker::PhantomData;
 use scheduler::{Schedulable, constant::Constant};
+use slab::{SlabAllocatable, SlabAllocator};
 use svm::Svm;
 use utils::collections::id::{Id, hander::IdHander};
+use utils::sync::spinlock::SpinLock;
 
 mod svm;
 

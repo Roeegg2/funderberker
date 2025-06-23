@@ -4,8 +4,8 @@
 #![feature(sync_unsafe_cell)]
 
 pub mod collections;
-pub mod sync;
 pub mod mem;
+pub mod sync;
 
 #[cfg(not(test))]
 extern crate alloc;

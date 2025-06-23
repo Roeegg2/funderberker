@@ -10,7 +10,6 @@ use core::{
     ptr::{NonNull, null_mut},
 };
 
-
 /// A global heap allocator for the kernel. Structured as a bunch of uninitable object slab
 /// allocators
 #[derive(Debug)]

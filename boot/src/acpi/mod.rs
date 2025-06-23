@@ -1,9 +1,12 @@
 //! ACPI table parser
 
+use arch::{
+    BASIC_PAGE_SIZE, map_page,
+    paging::{Flags, PageSize},
+};
 use core::{ptr::from_ref, slice::from_raw_parts};
-use arch::{map_page, paging::{Flags, PageSize}, BASIC_PAGE_SIZE};
-use rsdp::Rsdp2;
 use logger::*;
+use rsdp::Rsdp2;
 use utils::{mem::PhysAddr, sanity_assert};
 
 mod hpet;
@@ -85,7 +88,8 @@ pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
 
     let rsdp = unsafe {
         let diff = rsdp_addr.0 % BASIC_PAGE_SIZE;
-        let ptr: *const Rsdp2 = (map_page(rsdp_addr - diff, Flags::new(), PageSize::size_4kb()).unwrap() + diff).into();
+        let ptr: *const Rsdp2 =
+            (map_page(rsdp_addr - diff, Flags::new(), PageSize::size_4kb()).unwrap() + diff).into();
         ptr.as_ref().unwrap()
     };
 

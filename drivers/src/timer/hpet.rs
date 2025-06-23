@@ -2,15 +2,15 @@
 
 use super::{PIT_IRQ, RTC_IRQ, Timer, TimerError};
 use arch::x86_64::{
-        apic::ioapic::{self, allocate_irq_at, gsi_to_irq},
-        interrupts::{IsrStub, register_irq},
+    apic::ioapic::{self, allocate_irq_at, gsi_to_irq},
+    interrupts::{IsrStub, register_irq},
 };
 use core::{ptr, time::Duration};
 use modular_bitfield::prelude::*;
 use utils::{
     collections::id::{Id, tracker::IdTracker},
-    sanity_assert,
     mem::mmio::MmioArea,
+    sanity_assert,
     sync::spinlock::{SpinLock, SpinLockable},
 };
 

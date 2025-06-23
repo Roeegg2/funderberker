@@ -1,22 +1,30 @@
-use super::{
-    Vesselable, VirtTech,
-};
+use super::{Vesselable, VirtTech};
 
-use arch::{allocate_pages, paging::{Flags, PageSize}, translate, x86_64::{cpu::{msr::{rdmsr, wrmsr, AmdMsr, Efer, MsrData}, read_rsp, AmdDr6, AmdDr7, Cr0, Cr2, Cr3, Cr4, Register, Rflags}, gdt::{Cs, Ds, Es, FullSegmentSelector, Gdt, Ss}, interrupts::Idt, X86_64}, BASIC_PAGE_SIZE};
+use arch::{
+    BASIC_PAGE_SIZE, allocate_pages,
+    paging::{Flags, PageSize},
+    translate,
+    x86_64::{
+        X86_64,
+        cpu::{
+            AmdDr6, AmdDr7, Cr0, Cr2, Cr3, Cr4, Register, Rflags,
+            msr::{AmdMsr, Efer, MsrData, rdmsr, wrmsr},
+            read_rsp,
+        },
+        gdt::{Cs, Ds, Es, FullSegmentSelector, Gdt, Ss},
+        interrupts::Idt,
+    },
+};
 use logger::*;
 use slab::{SlabAllocatable, SlabAllocator};
-use utils::{
-    mem::VirtAddr,
-    sync::spinlock::SpinLock,
-};
+use utils::{mem::VirtAddr, sync::spinlock::SpinLock};
 
 use alloc::boxed::Box;
 use core::{
     arch::x86_64::__cpuid,
     mem::transmute,
     ops::{Deref, DerefMut},
-    ptr,
-    todo,
+    ptr, todo,
 };
 use modular_bitfield::prelude::*;
 use utils::{
@@ -504,8 +512,9 @@ impl Svm {
         // NOTE: IIRC this should be called on each processor!
 
         // Getting rid of stale data
-        let host_state_page = allocate_pages(1, Flags::new().set_read_write(true), PageSize::size_4kb())
-            .expect("Failed to allocate host state page");
+        let host_state_page =
+            allocate_pages(1, Flags::new().set_read_write(true), PageSize::size_4kb())
+                .expect("Failed to allocate host state page");
 
         unsafe {
             // Map the physical page so we can write to it

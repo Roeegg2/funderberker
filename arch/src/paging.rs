@@ -1,14 +1,19 @@
-
 use core::marker::PhantomData;
 
 use crate::Arch;
 
-pub struct Flags<A> where A: Arch {
+pub struct Flags<A>
+where
+    A: Arch,
+{
     pub(super) data: usize,
     pub(super) _arch: PhantomData<A>,
 }
 
-pub struct PageSize<A> where A: Arch {
+pub struct PageSize<A>
+where
+    A: Arch,
+{
     pub(super) size: usize,
     pub(super) _arch: PhantomData<A>,
 }
@@ -21,7 +26,10 @@ pub enum PagingError {
     InvalidAddress,
 }
 
-impl<A> PageSize<A> where A: Arch {
+impl<A> PageSize<A>
+where
+    A: Arch,
+{
     #[inline]
     pub const fn size(self) -> usize {
         self.size
@@ -38,7 +46,10 @@ impl<A> PageSize<A> where A: Arch {
     }
 }
 
-impl<A> Clone for Flags<A> where A: Arch {
+impl<A> Clone for Flags<A>
+where
+    A: Arch,
+{
     fn clone(&self) -> Self {
         Flags {
             data: self.data,
@@ -49,7 +60,10 @@ impl<A> Clone for Flags<A> where A: Arch {
 
 impl<A> Copy for Flags<A> where A: Arch {}
 
-impl<A> Clone for PageSize<A> where A: Arch {
+impl<A> Clone for PageSize<A>
+where
+    A: Arch,
+{
     fn clone(&self) -> Self {
         PageSize {
             size: self.size,

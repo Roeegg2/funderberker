@@ -1,16 +1,21 @@
 //! Support for the PCI Express bus.
 
-use arch::{map_page, paging::{Flags, PageSize}, unmap_page};
+use arch::{
+    map_page,
+    paging::{Flags, PageSize},
+    unmap_page,
+    x86_64::paging::pat::PatType,
+};
 // use crate::acpi::mcfg::ConfigSpace;
+use alloc::vec::Vec;
 use logger::*;
 use utils::{
-    sync::spinlock::{SpinLock, SpinLockable},
     mem::{
         PhysAddr,
         mmio::{MmioArea, Offsetable},
     },
+    sync::spinlock::{SpinLock, SpinLockable},
 };
-use alloc::vec::Vec;
 
 pub static PCIE_MANAGER: SpinLock<PcieManager> = SpinLock::new(PcieManager::new());
 
@@ -215,9 +220,12 @@ impl PcieManager {
             let virt_addr = unsafe {
                 map_page(
                     phys_addr,
-                    Flags::new().set_read_write(true).set_write_through(true).set_cache_disable(true),
+                    Flags::new()
+                        .set_read_write(true)
+                        .set_pat(PatType::WriteThrough, PageSize::size_4kb()),
                     PageSize::size_4kb(),
-                ).unwrap()
+                )
+                .unwrap()
             };
 
             MmioArea::new(virt_addr.into())
@@ -250,20 +258,30 @@ impl PcieManager {
         for device in self.devices.iter() {
             let (class_code, subclass, prog_if) = unsafe {
                 (
-                    device.config_space.read(StandardHeader::ClassRevision as usize) >> 24,
-                    (device.config_space.read(StandardHeader::ClassRevision as usize) >> 16) & 0xff,
-                    (device.config_space.read(StandardHeader::ClassRevision as usize) >> 8) & 0xff,
+                    device
+                        .config_space
+                        .read(StandardHeader::ClassRevision as usize)
+                        >> 24,
+                    (device
+                        .config_space
+                        .read(StandardHeader::ClassRevision as usize)
+                        >> 16)
+                        & 0xff,
+                    (device
+                        .config_space
+                        .read(StandardHeader::ClassRevision as usize)
+                        >> 8)
+                        & 0xff,
                 )
             };
 
             match (class_code, subclass, prog_if) {
                 (0x1, 0x8, 0x2) => {
                     log_info!("Found NVMe");
-                },
+                }
                 _ => (),
             }
         }
-
     }
 }
 
@@ -291,7 +309,8 @@ impl PcieDevice {
 impl Drop for PcieDevice {
     fn drop(&mut self) {
         unsafe {
-            unmap_page(self.config_space.base().into(), PageSize::size_4kb()).expect("Failed to unmap PCIe device config space");
+            unmap_page(self.config_space.base().into(), PageSize::size_4kb())
+                .expect("Failed to unmap PCIe device config space");
         };
     }
 }

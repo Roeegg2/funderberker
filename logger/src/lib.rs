@@ -2,9 +2,9 @@
 
 #![no_std]
 
+use core::fmt::Write;
 #[cfg(feature = "limine")]
 use limine::framebuffer::Framebuffer;
-use core::fmt::Write;
 
 #[cfg(feature = "framebuffer")]
 mod framebuffer;
@@ -57,7 +57,6 @@ macro_rules! log_warn {
 impl Writer {
     #[cfg(feature = "limine")]
     pub fn init_from_limine(fb: Option<Framebuffer<'static>>) {
-
         #[cfg(feature = "serial")]
         {
             #[allow(static_mut_refs)]

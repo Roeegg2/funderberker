@@ -1,5 +1,10 @@
 use logger::*;
-use utils::{collections::id::{hander::IdHander, Id}, mem::{VirtAddr, HHDM_OFFSET}, sanity_assert, sync::spinlock::{SpinLock, SpinLockable}};
+use utils::{
+    collections::id::{Id, hander::IdHander},
+    mem::{HHDM_OFFSET, VirtAddr},
+    sanity_assert,
+    sync::spinlock::{SpinLock, SpinLockable},
+};
 
 use crate::BASIC_PAGE_SIZE;
 
@@ -37,24 +42,22 @@ impl VirtualAddressAllocator {
     #[inline]
     const fn uninit() -> Self {
         Self {
-            hander: IdHander::new(Id(0)),
+            hander: IdHander::new(Id(1000)),
         }
     }
 
     #[inline]
     pub(super) fn handout(&mut self, count: usize, page_alignment: usize) -> VirtAddr {
         let next = self.hander.peek_next().0;
-        let skip = (next as * const ()).align_offset(page_alignment);
+        let skip = (next as *const ()).align_offset(page_alignment);
 
         let page_id = unsafe {
             self.hander.skip(skip);
             self.hander.handout_and_skip(count)
         };
 
-
         VirtAddr(page_id.0 * BASIC_PAGE_SIZE)
     }
-
 }
 
 #[cfg(feature = "limine")]

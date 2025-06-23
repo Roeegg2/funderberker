@@ -1,6 +1,11 @@
 use core::marker::PhantomData;
 
-use crate::{paging::Flags, x86_64::X86_64};
+use crate::{
+    paging::{Flags, PageSize},
+    x86_64::X86_64,
+};
+
+use super::pat::{PatEntry, PatType};
 
 impl Flags<X86_64> {
     /// Keep all flags as off
@@ -20,10 +25,14 @@ impl Flags<X86_64> {
     /// Page-level write-through bit (`3`):
     /// - If `1` the page is write-through
     /// - If `0` the page is write-back
+    ///
+    /// Also PAT bit 0
     pub(super) const FLAG_PWT: usize = 1 << 3;
     /// Page-level cache disable bit (`4`):
     /// - If `1` the page is not cacheable
     /// - If `0` the page is cacheable
+    ///
+    /// Also PAT bit 1
     pub(super) const FLAG_PCD: usize = 1 << 4;
     /// Accessed bit (`5`):
     /// - If `1` the page has been accessed (read from or written to)
@@ -46,9 +55,9 @@ impl Flags<X86_64> {
     pub(super) const RESERVED: usize = 1 << 9;
     /// HLAT paging bit (`12` Intel ONLY!!):
     pub(super) const HLAT: usize = 1 << 11;
-    /// PAT bit (`12`) (on PDPE!)
-    pub(super) const FLAG_1GB_PAT: usize = 1 << 12;
-    /// PAT bit (`7`) (on PTE!)
+    /// PAT bit 3 (on PDPE!)
+    pub(super) const FLAG_BIG_PAGES_PAT: usize = 1 << 12;
+    /// PAT bit 3 (on PTE!)
     pub(super) const FLAG_4KB_PAT: usize = 1 << 7;
     /// Execute disable bit (`63`):
     /// - If `1` the page is not executable
@@ -78,7 +87,7 @@ impl Flags<X86_64> {
     pub(super) const fn data(self) -> usize {
         self.data
     }
-    
+
     #[inline]
     const fn get(self, data: usize) -> bool {
         (self.data & data) != 0
@@ -104,6 +113,18 @@ impl Flags<X86_64> {
     }
 
     #[inline]
+    pub fn set_pat(self, pat_type: PatType, page_size: PageSize<X86_64>) -> Self {
+        let pat: PatEntry = pat_type.into();
+        if page_size == PageSize::size_4kb() {
+            self.set_pat_4kb((pat as usize & 0b100) != 0)
+        } else {
+            self.set_pat_big_pages((pat as usize & 0b100) != 0)
+        }
+        .set_pwt((pat as usize & 0b010) != 0)
+        .set_pcd((pat as usize & 0b001) != 0)
+    }
+
+    #[inline]
     pub(super) const fn set_present(self, status: bool) -> Self {
         self.set(Self::FLAG_P, status)
     }
@@ -119,13 +140,23 @@ impl Flags<X86_64> {
     }
 
     #[inline]
-    pub const fn set_write_through(self, status: bool) -> Self {
+    pub(super) const fn set_pwt(self, status: bool) -> Self {
         self.set(Self::FLAG_PWT, status)
     }
 
     #[inline]
-    pub const fn set_cache_disable(self, status: bool) -> Self {
+    pub(super) const fn set_pcd(self, status: bool) -> Self {
         self.set(Self::FLAG_PCD, status)
+    }
+
+    #[inline]
+    pub(super) const fn set_pat_big_pages(self, status: bool) -> Self {
+        self.set(Self::FLAG_BIG_PAGES_PAT, status)
+    }
+
+    #[inline]
+    pub(super) const fn set_pat_4kb(self, status: bool) -> Self {
+        self.set(Self::FLAG_4KB_PAT, status)
     }
 
     #[inline]

@@ -17,7 +17,6 @@ pub(super) struct Mcfg {
     _reserved: u64,
 }
 
-
 impl Mcfg {
     /// The MCFG doesn't explicitly list the number of entries, so we need to manually calculate it
     #[inline]

@@ -2,13 +2,16 @@
 //!
 //! Each core on the system has it's own timer, so no syncronization is needed
 
-use logger::*;
-use core::{arch::x86_64::__cpuid_count, hint, time::Duration};
-use arch::x86_64::{apic::lapic::{LocalApic, TimerDivisor, TimerMode}, event::__isr_stub_generic_irq_isr};
 use super::{
     Timer, TimerError,
     hpet::{self, AdditionalConfig, DeliveryMode, HPET, HpetTimer, TriggerMode},
 };
+use arch::x86_64::{
+    apic::lapic::{LocalApic, TimerDivisor, TimerMode},
+    event::__isr_stub_generic_irq_isr,
+};
+use core::{arch::x86_64::__cpuid_count, hint, time::Duration};
+use logger::*;
 
 // TODO: Remove having a APIC field, we should just have a global static
 

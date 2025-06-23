@@ -1,5 +1,5 @@
 # Configuration variables
-test-crates := "utils"
+test-crates := "utils drivers hypervisor logger pmm scheduler slab macros arch"
 rust-profile := "debug"
 
 # Directory and file paths

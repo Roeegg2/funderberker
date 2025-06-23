@@ -1,19 +1,18 @@
 #![no_std]
 #![no_main]
-
 #![feature(pointer_is_aligned_to)]
 
 // TODO: Some boot sanity checks to make sure basic features that are expected are available on
 // this CPU.
 
-use logger::*;
-use slab::heap::KernelHeapAllocator;
-use core::panic::PanicInfo;
 use core::arch::asm;
 use core::format_args;
+use core::panic::PanicInfo;
+use logger::*;
+use slab::heap::KernelHeapAllocator;
 
-mod boot;
 mod acpi;
+mod boot;
 
 /// The global instance of the kernel heap allocator
 #[global_allocator]
@@ -41,4 +40,3 @@ pub fn rust_panic(info: &PanicInfo) -> ! {
 
     hcf();
 }
-

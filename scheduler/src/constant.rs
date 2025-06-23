@@ -1,9 +1,9 @@
 //! Simple scheduler which runs a single constant vessel
 
-use logger::*;
-use alloc::boxed::Box;
-use utils::{sanity_assert, sync::spinlock::SpinLockable};
 use super::{Schedulable, Scheduler};
+use alloc::boxed::Box;
+use logger::*;
+use utils::{sanity_assert, sync::spinlock::SpinLockable};
 
 /// The parameters required to create a new `Constant` scheduler.
 pub type ParametersForNew<T> = Option<Box<T>>;

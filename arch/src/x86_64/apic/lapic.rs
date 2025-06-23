@@ -2,13 +2,17 @@
 
 use core::{arch::x86_64::__cpuid_count, cell::SyncUnsafeCell, mem::transmute};
 
-use crate::{map_page, paging::{Flags, PageSize}, x86_64::cpu::msr::{rdmsr, wrmsr, IntelMsr}};
+use crate::{
+    map_page,
+    paging::{Flags, PageSize},
+    x86_64::cpu::msr::{IntelMsr, rdmsr, wrmsr},
+};
 
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
 use logger::*;
 use utils::mem::{
-        PhysAddr,
-        mmio::{MmioArea, Offsetable},
+    PhysAddr,
+    mmio::{MmioArea, Offsetable},
 };
 use utils::sync::spinlock::{SpinLock, SpinLockGuard, SpinLockable};
 
@@ -436,7 +440,14 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: u
 
     // SAFETY: This should be OK since we're mapping a physical address that is marked as
     // reserved, so the kernel shouldn't be tracking it
-    let virt_addr = unsafe { map_page(base, Flags::new().set_read_write(true), PageSize::size_4kb()).unwrap() };
+    let virt_addr = unsafe {
+        map_page(
+            base,
+            Flags::new().set_read_write(true),
+            PageSize::size_4kb(),
+        )
+        .unwrap()
+    };
 
     let lapics = unsafe { LOCAL_APICS.get().as_mut().unwrap() };
 

@@ -1,22 +1,18 @@
 //! Mem related usefull wrappers and utility functions
 
-use logger::*;
 use crate::collections::fast_lazy_static::FastLazyStatic;
 use core::{
-    fmt::{Debug, Formatter, self}, 
-    ptr::{read_volatile, write_volatile},
+    fmt::{self, Debug, Formatter},
     ops::{Add, Sub},
     ptr::NonNull,
+    ptr::{read_volatile, write_volatile},
 };
+use logger::*;
 
 pub mod mmio;
 
-// TODO: Make this uninit instead of 0?
-// TODO: Make this a SetOnce
-/// An temporary invalid HHDM offset that will be changed once the HHDM offset is set
-const INVALID_HHDM_OFFSET: usize = 0xFFFF_FFFF_FFFF_FFFF;
-
-pub static HHDM_OFFSET: FastLazyStatic<usize> = FastLazyStatic::new(INVALID_HHDM_OFFSET);
+/// We set this to 0x0, since in testing we don't want to use HHDM offset
+pub static HHDM_OFFSET: FastLazyStatic<usize> = FastLazyStatic::new(0x0);
 
 /// A physical address
 #[repr(transparent)]

@@ -1,12 +1,15 @@
 //! "Backend" of the slab allocator
 
 use alloc::boxed::Box;
-use arch::{allocate_pages, free_pages, paging::{Flags, PageSize}, BASIC_PAGE_SIZE};
-use core::{mem, alloc::Layout, ptr::NonNull};
+use arch::{
+    BASIC_PAGE_SIZE, allocate_pages, free_pages,
+    paging::{Flags, PageSize},
+};
+use core::{alloc::Layout, mem, ptr::NonNull};
 use utils::{
-    sanity_assert,
     collections::stacklist::{Node, StackList},
     mem::VirtAddr,
+    sanity_assert,
 };
 
 /// A node that holds a pointer to an object.
@@ -199,7 +202,7 @@ impl InternalSlabAllocator {
             let offset = slab.buff_ptr.addr().get() % BASIC_PAGE_SIZE;
             let addr = VirtAddr(slab.buff_ptr.addr().get() - offset);
             unsafe {
-                free_pages(addr, self.pages_per_slab, PageSize::size_4kb());
+                free_pages(addr, self.pages_per_slab, PageSize::size_4kb()).unwrap();
             };
 
             // IMPORTANT!!! We don't want to call the destructor on the slab, since it's already
@@ -211,9 +214,14 @@ impl InternalSlabAllocator {
     /// Grows the cache by allocating a new slab and adding it to the free slabs list.
     pub(super) fn cache_grow(&mut self) -> Result<(), SlabError> {
         // Allocate the pages for the buffer + the `Node<Slab>` struct
-        let objs_ptr: NonNull<()> = allocate_pages(self.pages_per_slab, Flags::new().set_read_write(true), PageSize::size_4kb()).unwrap()
-            .try_into()
-            .map_err(|()| SlabError::PageAllocationError)?;
+        let objs_ptr: NonNull<()> = allocate_pages(
+            self.pages_per_slab,
+            Flags::new().set_read_write(true),
+            PageSize::size_4kb(),
+        )
+        .unwrap()
+        .try_into()
+        .map_err(|()| SlabError::PageAllocationError)?;
 
         // XXX: Make the slab node be at the end and the objects at the beginning of the buffer
 
@@ -344,181 +352,539 @@ impl Drop for Slab {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use alloc::vec;
-//     use alloc::{format, vec::Vec};
-//     use macros::test_fn;
-//
-//     use super::*;
-//     use core::alloc::Layout;
-//
-//     #[test_fn]
-//     fn test_slab_alloc_free_small_objects() {
-//         let layout = Layout::from_size_align(16, 4).unwrap();
-//         let mut allocator = InternalSlabAllocator::new(layout);
-//
-//         // Allocate 10 objects
-//         let mut pointers = vec![];
-//         for _ in 0..10 {
-//             let ptr = allocator.allocate().expect("Allocation failed");
-//             assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
-//             pointers.push(ptr);
-//         }
-//
-//         // Free in reverse order
-//         for ptr in pointers.iter().rev() {
-//             unsafe {
-//                 allocator
-//                     .free(ptr.cast::<ObjectNode>())
-//                     .expect("Free failed");
-//             }
-//         }
-//
-//         // Allocate again to ensure slab reuse
-//         let ptr = allocator.allocate().expect("Allocation after free failed");
-//         unsafe {
-//             allocator
-//                 .free(ptr.cast::<ObjectNode>())
-//                 .expect("Free failed");
-//         };
-//     }
-//
-//     #[test_fn]
-//     fn test_slab_alloc_free_large_objects() {
-//         let layout = Layout::from_size_align(512, 16).unwrap();
-//         let mut allocator = InternalSlabAllocator::new(layout);
-//
-//         // Allocate 5 large objects
-//         let mut pointers = vec![];
-//         for _ in 0..5 {
-//             let ptr = allocator.allocate().expect("Allocation failed");
-//             assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
-//             pointers.push(ptr);
-//         }
-//
-//         // Free in random order
-//         let free_order = [2, 0, 4, 1, 3];
-//         for &i in &free_order {
-//             unsafe {
-//                 allocator
-//                     .free(pointers[i].cast::<ObjectNode>())
-//                     .expect("Free failed");
-//             };
-//         }
-//
-//         // Allocate one more to test partial slab
-//         let ptr = allocator.allocate().expect("Allocation after free failed");
-//         unsafe {
-//             allocator
-//                 .free(ptr.cast::<ObjectNode>())
-//                 .expect("Free failed");
-//         };
-//     }
-//
-//     #[test_fn]
-//     fn test_slab_mixed_layout_sizes() {
-//         // Define test layouts for small, medium, and large allocations
-//         let layouts = [
-//             Layout::from_size_align(8, 4).expect("Invalid small layout"),
-//             Layout::from_size_align(64, 8).expect("Invalid medium layout"),
-//             Layout::from_size_align(256, 16).expect("Invalid large layout"),
-//         ];
-//
-//         for layout in layouts {
-//             let mut allocator = InternalSlabAllocator::new(layout);
-//             let mut pointers = Vec::with_capacity(12); // Pre-allocate for 8 + 4 pointers
-//
-//             for i in 0..8 {
-//                 let ptr = allocator
-//                     .allocate()
-//                     .expect(&format!("Allocation {} failed for layout {:?}", i, layout));
-//                 assert!(
-//                     ptr.is_aligned_to(layout.align()),
-//                     "Pointer {} not aligned to {} for layout {:?}",
-//                     i,
-//                     layout.align(),
-//                     layout
-//                 );
-//                 pointers.push(ptr);
-//             }
-//
-//             // Step 2: Free every other object (indices 0, 2, 4, 6)
-//             for (i, ptr) in pointers.iter().enumerate().step_by(2) {
-//                 unsafe {
-//                     allocator.free(ptr.cast::<ObjectNode>()).expect(&format!(
-//                         "Free failed for pointer {} in layout {:?}",
-//                         i, layout
-//                     ));
-//                 }
-//             }
-//
-//             // Step 3: Allocate 4 more objects and verify alignment
-//             let mut new_pointers = Vec::with_capacity(4);
-//             for i in 0..4 {
-//                 let ptr = allocator.allocate().expect(&format!(
-//                     "Allocation {} after partial free failed for layout {:?}",
-//                     i, layout
-//                 ));
-//                 assert!(
-//                     ptr.is_aligned_to(layout.align()),
-//                     "Pointer {} after partial free not aligned to {} for layout {:?}",
-//                     i,
-//                     layout.align(),
-//                     layout
-//                 );
-//                 new_pointers.push(ptr);
-//             }
-//
-//             // Step 4: Free every other object (indices 0, 2, 4, 6)
-//             for (i, ptr) in pointers.iter().enumerate().skip(1).step_by(2) {
-//                 unsafe {
-//                     allocator.free(ptr.cast::<ObjectNode>()).expect(&format!(
-//                         "Free failed for pointer {} in layout {:?}",
-//                         i, layout
-//                     ));
-//                 }
-//             }
-//
-//             // Step 5: Free the 4 other allocated pointers
-//             for (i, ptr) in new_pointers.iter().enumerate() {
-//                 unsafe {
-//                     allocator.free(ptr.cast::<ObjectNode>()).expect(&format!(
-//                         "Free failed for pointer {} in layout {:?}",
-//                         i, layout
-//                     ));
-//                 }
-//             }
-//         }
-//     }
-//
-//     #[test_fn]
-//     fn test_slab_fill_slab_and_free() {
-//         let layout = Layout::from_size_align(32, 8).unwrap();
-//         let mut allocator = InternalSlabAllocator::new(layout);
-//
-//         // Fill the slab completely
-//         let obj_per_slab = allocator.obj_per_slab;
-//         let mut pointers = vec![];
-//         for _ in 0..obj_per_slab {
-//             let ptr = allocator.allocate().expect("Allocation failed");
-//             assert!(ptr.is_aligned_to(layout.align()), "Pointer not aligned");
-//             pointers.push(ptr);
-//         }
-//
-//         // Allocate one more to trigger cache growth
-//         let extra_ptr = allocator
-//             .allocate()
-//             .expect("Allocation after full slab failed");
-//         pointers.push(extra_ptr);
-//
-//         // Free in forward order
-//         for ptr in pointers {
-//             unsafe {
-//                 allocator
-//                     .free(ptr.cast::<ObjectNode>())
-//                     .expect("Free failed");
-//             }
-//         }
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec::Vec;
+    use core::alloc::Layout;
+    use core::ptr::NonNull;
+    use std::collections::HashSet;
+
+    // Helper function to create a test layout
+    fn test_layout(size: usize, align: usize) -> Layout {
+        Layout::from_size_align(size, align).unwrap()
+    }
+
+    // Helper function to allocate and track pointers
+    fn allocate_multiple(
+        allocator: &mut InternalSlabAllocator,
+        count: usize,
+    ) -> Result<Vec<NonNull<()>>, SlabError> {
+        let mut ptrs = Vec::new();
+        for _ in 0..count {
+            ptrs.push(allocator.allocate()?);
+        }
+        Ok(ptrs)
+    }
+
+    #[test]
+    fn test_new_allocator_creation() {
+        // Test creating allocators with different layouts
+        let layouts = [
+            test_layout(8, 8),
+            test_layout(16, 8),
+            test_layout(32, 16),
+            test_layout(64, 32),
+            test_layout(128, 64),
+            test_layout(256, 128),
+            test_layout(512, 256),
+            test_layout(1024, 512),
+        ];
+
+        for layout in layouts.iter() {
+            let allocator = InternalSlabAllocator::new(*layout);
+            assert_eq!(allocator.obj_layout, layout.pad_to_align());
+            assert!(allocator.pages_per_slab > 0);
+            assert!(allocator.obj_per_slab > 0);
+        }
+    }
+
+    #[test]
+    fn test_pages_per_slab_calculation() {
+        // Test various object sizes and their page requirements
+        let test_cases = [
+            (8, 8),    // Small objects
+            (64, 64),  // Medium objects
+            (512, 512), // Large objects
+            (2048, 1024), // Very large objects
+            (4096, 4096), // Page-sized objects
+        ];
+
+        for (size, align) in test_cases.iter() {
+            let layout = test_layout(*size, *align);
+            let pages = InternalSlabAllocator::pages_per_slab(layout);
+            assert!(pages > 0, "Pages per slab should be positive for size {}", size);
+            
+            // Verify we can fit at least one object
+            let total_size = pages * BASIC_PAGE_SIZE;
+            assert!(
+                total_size >= size + InternalSlabAllocator::EMBEDDED_SLAB_NODE_SIZE,
+                "Should have space for at least one object and slab node"
+            );
+        }
+    }
+
+    #[test]
+    fn test_obj_per_slab_calculation() {
+        let layout = test_layout(64, 64);
+        let pages = InternalSlabAllocator::pages_per_slab(layout);
+        let objs = InternalSlabAllocator::obj_per_slab(layout, pages);
+        
+        assert!(objs > 0, "Should be able to fit at least one object");
+        
+        // Verify the calculation makes sense
+        let total_space = pages * BASIC_PAGE_SIZE - InternalSlabAllocator::EMBEDDED_SLAB_NODE_SIZE;
+        let expected_objs = total_space / layout.size();
+        assert_eq!(objs, expected_objs);
+    }
+
+    #[test]
+    fn test_basic_allocation_and_free() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        
+        // Allocate a single object
+        let ptr = allocator.allocate().unwrap();
+        
+        // Free the object
+        unsafe {
+            allocator.free(ptr.cast()).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_multiple_allocations() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(32, 32));
+        let count = 10;
+        
+        let ptrs = allocate_multiple(&mut allocator, count).unwrap();
+        
+        // Verify all pointers are unique and properly aligned
+        let mut unique_addrs = HashSet::new();
+        for ptr in &ptrs {
+            assert!(ptr.as_ptr().is_aligned_to(32));
+            assert!(unique_addrs.insert(ptr.as_ptr() as usize), "Duplicate pointer detected");
+        }
+        
+        // Free all objects
+        for ptr in ptrs {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_fill_entire_slab() {
+        let layout = test_layout(64, 64);
+        let mut allocator = InternalSlabAllocator::new(layout);
+        let obj_per_slab = allocator.obj_per_slab;
+        
+        // Allocate exactly the number of objects that fit in one slab
+        let ptrs = allocate_multiple(&mut allocator, obj_per_slab)
+            .unwrap();
+        
+        assert_eq!(ptrs.len(), obj_per_slab);
+        
+        // Free all objects
+        for ptr in ptrs {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_cache_grow_on_overflow() {
+        let layout = test_layout(128, 128);
+        let mut allocator = InternalSlabAllocator::new(layout);
+        let obj_per_slab = allocator.obj_per_slab;
+        
+        // Allocate more objects than fit in one slab to trigger cache growth
+        let total_objects = obj_per_slab * 2 + 5;
+        let ptrs = allocate_multiple(&mut allocator, total_objects)
+            .unwrap();
+        
+        assert_eq!(ptrs.len(), total_objects);
+        
+        // Free all objects
+        for ptr in ptrs {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_random_allocation_pattern() {
+        use std::collections::VecDeque;
+        
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        let mut allocated_ptrs = VecDeque::new();
+        
+        // Simulate random allocation/deallocation pattern
+        for i in 0..100 {
+            if i % 3 == 0 && !allocated_ptrs.is_empty() {
+                // Free a random object
+                let ptr: NonNull<()> = allocated_ptrs.pop_front().unwrap();
+                unsafe {
+                    allocator.free(ptr.cast()).unwrap();
+                }
+            } else {
+                // Allocate a new object
+                let ptr = allocator.allocate().unwrap();
+                allocated_ptrs.push_back(ptr);
+            }
+        }
+        
+        // Free remaining objects
+        while let Some(ptr) = allocated_ptrs.pop_front() {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_different_object_sizes() {
+        let sizes = [8, 16, 32, 64, 128, 256, 512, 1024];
+        
+        for size in sizes.iter() {
+            let layout = test_layout(*size, *size);
+            let mut allocator = InternalSlabAllocator::new(layout);
+            
+            // Allocate some objects
+            let ptrs = allocate_multiple(&mut allocator, 5)
+                .unwrap();
+            
+            // Verify alignment
+            for ptr in &ptrs {
+                assert!(ptr.as_ptr().is_aligned_to(*size));
+            }
+            
+            // Free objects
+            for ptr in ptrs {
+                unsafe {
+                    allocator.free(ptr.cast()).unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_bad_ptr_alignment_error() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        
+        // Create a misaligned pointer
+        let misaligned_ptr = NonNull::new(0x1001 as *mut ObjectNode).unwrap(); // Not 64-byte aligned
+        
+        unsafe {
+            let result = allocator.free(misaligned_ptr);
+            assert!(matches!(result, Err(SlabError::BadPtrAlignment)));
+        }
+    }
+
+    #[test]
+    fn test_bad_ptr_range_error() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        
+        // Create a pointer that's aligned but not from our allocator
+        let external_ptr = NonNull::new(0x10000 as *mut ObjectNode).unwrap(); // Properly aligned but external
+        
+        unsafe {
+            let result = allocator.free(external_ptr);
+            assert!(matches!(result, Err(SlabError::BadPtrRange)));
+        }
+    }
+
+    #[test]
+    fn test_double_free_error() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        
+        // Allocate an object
+        let ptr = allocator.allocate().unwrap();
+        
+        // Free it once (should succeed)
+        unsafe {
+            allocator.free(ptr.cast()).unwrap();
+        }
+        
+        // Try to free it again (should fail)
+        unsafe {
+            let result = allocator.free(ptr.cast());
+            assert!(matches!(result, Err(SlabError::DoubleFree)));
+        }
+    }
+
+    #[test]
+    fn test_slab_transitions() {
+        let layout = test_layout(64, 64);
+        let mut allocator = InternalSlabAllocator::new(layout);
+        let obj_per_slab = allocator.obj_per_slab;
+        
+        // Initially all lists should be empty
+        assert!(allocator.free_slabs.is_empty());
+        assert!(allocator.partial_slabs.is_empty());
+        assert!(allocator.full_slabs.is_empty());
+        
+        // Allocate one object (should create a slab and move it to partial)
+        let ptr1 = allocator.allocate().unwrap();
+        assert!(allocator.free_slabs.is_empty());
+        assert!(!allocator.partial_slabs.is_empty());
+        assert!(allocator.full_slabs.is_empty());
+        
+        // Fill the rest of the slab (should move it to full)
+        let mut ptrs = vec![ptr1];
+        for _ in 1..obj_per_slab {
+            ptrs.push(allocator.allocate().unwrap());
+        }
+        assert!(allocator.free_slabs.is_empty());
+        assert!(allocator.partial_slabs.is_empty());
+        assert!(!allocator.full_slabs.is_empty());
+        
+        // Free one object (should move slab back to partial)
+        unsafe {
+            allocator.free(ptrs.pop().unwrap().cast()).unwrap();
+        }
+        assert!(allocator.free_slabs.is_empty());
+        assert!(!allocator.partial_slabs.is_empty());
+        assert!(allocator.full_slabs.is_empty());
+        
+        // Free all remaining objects (should move slab to free)
+        while let Some(ptr) = ptrs.pop() {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+        assert!(!allocator.free_slabs.is_empty());
+        assert!(allocator.partial_slabs.is_empty());
+        assert!(allocator.full_slabs.is_empty());
+    }
+
+    #[test]
+    fn test_cache_grow_functionality() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        
+        // Initially no slabs
+        assert!(allocator.free_slabs.is_empty());
+        
+        // Manually trigger cache growth
+        allocator.cache_grow().unwrap();
+        
+        // Should now have one free slab
+        assert!(!allocator.free_slabs.is_empty());
+        assert_eq!(allocator.free_slabs.len(), 1);
+    }
+
+    #[test]
+    fn test_reap_functionality() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        
+        // Create some slabs by allocating and then freeing everything
+        let obj_per_slab = allocator.obj_per_slab;
+        let ptrs = allocate_multiple(&mut allocator, obj_per_slab * 3)
+            .expect("Should allocate multiple slabs");
+        
+        // Free everything to get multiple free slabs
+        for ptr in ptrs {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+        
+        // Should have free slabs now
+        let free_slabs_count = allocator.free_slabs.len();
+        assert!(free_slabs_count > 0);
+        
+        // Reap should free all free slabs
+        allocator.reap();
+        assert!(allocator.free_slabs.is_empty());
+    }
+
+    #[test]
+    fn test_slab_is_in_range() {
+        let layout = test_layout(64, 64);
+        let mut allocator = InternalSlabAllocator::new(layout);
+        
+        // Allocate an object to create a slab
+        let ptr = allocator.allocate().unwrap();
+        
+        // The pointer should be in range of the slab that allocated it
+        // We can't directly test this without accessing private fields,
+        // so we test indirectly by ensuring free works
+        unsafe {
+            allocator.free(ptr.cast()).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_mixed_size_stress_test() {
+        // Test with different alignments and sizes
+        let test_cases = [
+            (8, 8),
+            (16, 16), 
+            (32, 32),
+            (64, 64),
+            (128, 128),
+        ];
+        
+        for (size, align) in test_cases.iter() {
+            let mut allocator = InternalSlabAllocator::new(test_layout(*size, *align));
+            let mut allocated = Vec::new();
+            
+            // Allocate many objects
+            for _ in 0..50 {
+                let ptr = allocator.allocate().unwrap();
+                allocated.push(ptr);
+            }
+            
+            // Free every other object
+            let mut to_free = Vec::new();
+            for (i, ptr) in allocated.iter().enumerate() {
+                if i % 2 == 0 {
+                    to_free.push(*ptr);
+                }
+            }
+            
+            for ptr in to_free {
+                unsafe {
+                    allocator.free(ptr.cast()).unwrap();
+                }
+            }
+            
+            // Allocate more objects in the gaps
+            for _ in 0..25 {
+                let ptr = allocator.allocate().unwrap();
+                allocated.push(ptr);
+            }
+            
+            // Free everything
+            for ptr in allocated {
+                unsafe {
+                    allocator.free(ptr.cast()).unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_memory_layout_consistency() {
+        let layout = test_layout(128, 128);
+        let mut allocator = InternalSlabAllocator::new(layout);
+        
+        // Allocate several objects
+        let ptrs = allocate_multiple(&mut allocator, 10).unwrap();
+        
+        // Check that objects are properly spaced
+        let mut addresses: Vec<usize> = ptrs.iter().map(|p| p.as_ptr() as usize).collect();
+        addresses.sort();
+        
+        // Adjacent objects should be at least obj_layout.size() apart
+        for window in addresses.windows(2) {
+            let diff = window[1] - window[0];
+            assert!(diff >= layout.size(), "Objects not properly spaced: diff={}, size={}", diff, layout.size());
+        }
+        
+        // Free all objects
+        for ptr in ptrs {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_allocator_drop_with_free_slabs() {
+        let layout = test_layout(64, 64);
+        let mut allocator = InternalSlabAllocator::new(layout);
+        
+        // Allocate and free some objects to create free slabs
+        let ptrs = allocate_multiple(&mut allocator, 10).unwrap();
+        for ptr in ptrs {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+        
+        // Allocator should drop cleanly even with free slabs
+        drop(allocator);
+    }
+
+    #[test]
+    #[should_panic(expected = "Freeing a used slab")]
+    fn test_allocator_drop_with_allocated_objects_panics() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        
+        // Allocate an object but don't free it
+        let _ptr = allocator.allocate().unwrap();
+        
+        // This should panic when the allocator is dropped
+        drop(allocator);
+    }
+
+    #[test]
+    fn test_edge_case_large_objects() {
+        // Test with objects that are close to page size
+        let layout = test_layout(3072, 1024); // 3KB objects
+        let mut allocator = InternalSlabAllocator::new(layout);
+        
+        // Should still be able to allocate at least one object
+        let ptr = allocator.allocate().unwrap();
+        
+        unsafe {
+            allocator.free(ptr.cast()).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_alignment_requirements() {
+        let alignments = [8, 16, 32, 64, 128, 256, 512, 1024];
+        
+        for align in alignments.iter() {
+            let layout = test_layout(*align * 2, *align); // Size is 2x alignment
+            let mut allocator = InternalSlabAllocator::new(layout);
+            
+            let ptr = allocator.allocate().unwrap();
+            assert!(ptr.as_ptr().is_aligned_to(*align), "Incorrect alignment for {}", align);
+            
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_fragmentation_and_coalescing() {
+        let mut allocator = InternalSlabAllocator::new(test_layout(64, 64));
+        let obj_per_slab = allocator.obj_per_slab;
+        
+        // Allocate two full slabs worth of objects
+        let ptrs = allocate_multiple(&mut allocator, obj_per_slab * 2)
+            .unwrap();
+        
+        // Free every other object to create fragmentation
+        let mut freed_ptrs = Vec::new();
+        let mut kept_ptrs = Vec::new();
+        
+        for (i, ptr) in ptrs.into_iter().enumerate() {
+            if i % 2 == 0 {
+                freed_ptrs.push(ptr);
+                unsafe {
+                    allocator.free(ptr.cast()).unwrap();
+                }
+            } else {
+                kept_ptrs.push(ptr);
+            }
+        }
+        
+        // Allocate again - should reuse the freed slots
+        let new_ptrs = allocate_multiple(&mut allocator, freed_ptrs.len())
+            .unwrap();
+        
+        // Clean up
+        for ptr in kept_ptrs.into_iter().chain(new_ptrs.into_iter()) {
+            unsafe {
+                allocator.free(ptr.cast()).unwrap();
+            }
+        }
+    }
+}

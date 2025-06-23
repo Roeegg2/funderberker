@@ -1,9 +1,12 @@
 //! Parser for the XSDT table
 
-use arch::{map_page, paging::{Flags, PageSize}, BASIC_PAGE_SIZE};
-use logger::*;
+use super::{AcpiError, AcpiTable, SdtHeader, hpet::Hpet, madt::Madt, mcfg::Mcfg};
+use arch::{
+    BASIC_PAGE_SIZE, map_page,
+    paging::{Flags, PageSize},
+};
 use core::ptr::from_ref;
-use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt, mcfg::Mcfg, hpet::Hpet};
+use logger::*;
 use utils::mem::PhysAddr;
 
 /// The XSDT

@@ -76,7 +76,6 @@ impl SerialPort {
     }
 }
 
-
 impl SerialWriter {
     /// Initilize each of the enabled serial ports. If an error occured, mark them as unwriteable
     #[inline]

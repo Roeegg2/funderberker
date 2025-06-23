@@ -1,20 +1,19 @@
 //! (Will be) safe, general arch abstractions so kernel doesn't need to deal with all the nitty gritty
 
 #![no_std]
-
 #![feature(sync_unsafe_cell)]
 
 #[cfg(feature = "limine")]
 use limine::memory_map;
 use paging::{Flags, PageSize, PagingError};
 use pmm::PmmAllocator;
-use utils::mem::{VirtAddr, PhysAddr};
+use utils::mem::{PhysAddr, VirtAddr};
 use vaa::VAA;
 
-#[cfg(target_arch = "x86_64")]
-pub mod x86_64;
 pub mod paging;
 pub mod vaa;
+#[cfg(target_arch = "x86_64")]
+pub mod x86_64;
 
 #[cfg(target_arch = "x86_64")]
 pub const BASIC_PAGE_SIZE: usize = x86_64::X86_64::BASIC_PAGE_SIZE.size();
@@ -34,16 +33,18 @@ pub trait Arch: Sized {
         mem_map: &[&memory_map::Entry],
         kernel_virt: VirtAddr,
         kernel_phys: PhysAddr,
+        used_by_pmm: &memory_map::Entry,
     );
 
     unsafe fn map_page_to(
-            phys_addr: PhysAddr,
-            virt_addr: VirtAddr,
-            flags: Flags<Self>,
-            page_size: PageSize<Self>,
-        ) -> Result<(), PagingError>;
+        phys_addr: PhysAddr,
+        virt_addr: VirtAddr,
+        flags: Flags<Self>,
+        page_size: PageSize<Self>,
+    ) -> Result<(), PagingError>;
 
-    unsafe fn unmap_page(virt_addr: VirtAddr, page_size: PageSize<Self>) -> Result<(), PagingError>;
+    unsafe fn unmap_page(virt_addr: VirtAddr, page_size: PageSize<Self>)
+    -> Result<(), PagingError>;
 
     fn translate(virt_addr: VirtAddr) -> Option<PhysAddr>;
 }
@@ -63,10 +64,11 @@ pub unsafe fn init_paging_from_limine(
     mem_map: &[&memory_map::Entry],
     kernel_virt: VirtAddr,
     kernel_phys: PhysAddr,
+    used_by_pmm: &memory_map::Entry,
 ) {
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        x86_64::X86_64::init_paging_from_limine(mem_map, kernel_virt, kernel_phys);
+        x86_64::X86_64::init_paging_from_limine(mem_map, kernel_virt, kernel_phys, used_by_pmm);
     }
 }
 
@@ -77,20 +79,19 @@ pub unsafe fn map_page_to<A: Arch>(
     flags: Flags<A>,
     page_size: PageSize<A>,
 ) -> Result<(), PagingError> {
-    unsafe {
-        A::map_page_to(phys_addr, virt_addr, flags, page_size)
-    }
+    unsafe { A::map_page_to(phys_addr, virt_addr, flags, page_size) }
 }
 
 pub unsafe fn map_page<A: Arch>(
     phys_addr: PhysAddr,
     flags: Flags<A>,
-    page_size: PageSize<A>) -> Result<VirtAddr, PagingError> {
+    page_size: PageSize<A>,
+) -> Result<VirtAddr, PagingError> {
     let virt_addr = {
         let mut vaa = VAA.lock();
         vaa.handout(1, page_size.alignment())
     };
-    
+
     unsafe {
         A::map_page_to(phys_addr, virt_addr, flags, page_size)?;
     };
@@ -103,9 +104,7 @@ pub unsafe fn unmap_page<A: Arch>(
     virt_addr: VirtAddr,
     page_size: PageSize<A>,
 ) -> Result<(), PagingError> {
-    unsafe {
-        A::unmap_page(virt_addr, page_size)
-    }
+    unsafe { A::unmap_page(virt_addr, page_size) }
 }
 
 pub fn allocate_pages<A: Arch>(
@@ -131,7 +130,6 @@ pub fn allocate_pages<A: Arch>(
     Ok(base_virt_addr)
 }
 
-
 pub unsafe fn free_pages<A: Arch>(
     virt_addr: VirtAddr,
     count: usize,
@@ -144,9 +142,9 @@ pub unsafe fn free_pages<A: Arch>(
         unsafe {
             A::unmap_page(addr, page_size)?;
 
-            pmm::get().free(phys_addr, page_size.to_default_page_count())
+            pmm::get()
+                .free(phys_addr, page_size.to_default_page_count())
                 .map_err(|_| PagingError::PageNotPresent)?;
-
         };
     }
 

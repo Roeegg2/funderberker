@@ -1,9 +1,12 @@
 //! Parser for the RSDP table
 
 use super::{AcpiError, SdtHeader, xsdt::Xsdt};
-use arch::{map_page, paging::{Flags, PageSize}, BASIC_PAGE_SIZE};
-use utils::mem::PhysAddr;
+use arch::{
+    BASIC_PAGE_SIZE, map_page,
+    paging::{Flags, PageSize},
+};
 use core::ptr;
+use utils::mem::PhysAddr;
 
 /// The RSDP (a pointer to the XSDT)
 #[repr(C, packed)]

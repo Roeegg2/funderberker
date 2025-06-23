@@ -1,8 +1,16 @@
 //! Parser for the MADT table
 
-use arch::{map_page, paging::{Flags, PageSize}, x86_64::apic::{ioapic::{self, init_irq_allocator, IoApic}, lapic, DeliveryMode}};
-use logger::*;
 use super::{AcpiError, AcpiTable, SdtHeader};
+use arch::{
+    map_page,
+    paging::{Flags, PageSize},
+    x86_64::apic::{
+        DeliveryMode,
+        ioapic::{self, IoApic, init_irq_allocator},
+        lapic,
+    },
+};
+use logger::*;
 use utils::mem::PhysAddr;
 
 /// A ZST struct for the possible entry types in the MADT
@@ -227,7 +235,8 @@ impl Madt {
                         PhysAddr(entry.local_apic_phys_addr as usize),
                         Flags::new().set_read_write(true),
                         PageSize::size_4kb(),
-                    ).unwrap()
+                    )
+                    .unwrap()
                     .into();
                     lapic::override_base(ptr);
                 },

@@ -1,20 +1,24 @@
 //! Everything IDT and interrupts
 
-use logger::*;
-use utils::sync::spinlock::{SpinLock, SpinLockable};
 use crate::x86_64::{
-        cpu::{self, Register},
-        event::GENERIC_ISR_VECTOR,
-        gdt::Cs,
+    cpu::{self, Register},
+    event::GENERIC_ISR_VECTOR,
+    gdt::Cs,
 };
 use core::{
     arch::asm,
     mem::{size_of, transmute},
     ptr::{self, from_ref},
 };
+use logger::*;
 use modular_bitfield::prelude::*;
+use utils::sync::spinlock::{SpinLock, SpinLockable};
 
-use super::{apic::ioapic::{self, map_irq_to_vector, set_disabled}, gdt::SegmentSelector, DescriptorTablePtr};
+use super::{
+    DescriptorTablePtr,
+    apic::ioapic::{self, map_irq_to_vector, set_disabled},
+    gdt::SegmentSelector,
+};
 
 /// The number of entries in the IDT
 const IDT_ENTRIES_NUM: usize = 256;

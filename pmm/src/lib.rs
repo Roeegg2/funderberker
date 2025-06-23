@@ -1,20 +1,19 @@
 //! Physical Memory Manager (PMM) module
 
-#![no_std]
-
+#![cfg_attr(not(test), no_std)]
 #![feature(box_vec_non_null)]
 
 #[cfg(feature = "limine")]
 use limine::memory_map;
 
-use utils::sync::spinlock::{SpinLockGuard, SpinLockable};
 use utils::mem::PhysAddr;
+use utils::sync::spinlock::{SpinLockGuard, SpinLockable};
 
 extern crate alloc;
 
 // TODO: Move this somewhere else
 const BASIC_PAGE_SIZE: usize = 0x1000; // 4KB page size
-                                       
+
 #[cfg(feature = "buddy")]
 mod buddy;
 #[cfg(feature = "bump")]
@@ -54,13 +53,17 @@ pub fn get<'a>() -> SpinLockGuard<'a, impl PmmAllocator> {
 
 /// Initilizes the used PMM from limine
 #[cfg(feature = "limine")]
-pub unsafe fn init_from_limine(mem_map: &[&memory_map::Entry]) {
+pub unsafe fn init_from_limine<'a>(
+    mem_map: &'a [&'a memory_map::Entry],
+) -> &'a limine::memory_map::Entry {
+    #[cfg(feature = "bump")]
     unsafe {
-        #[cfg(feature = "bump")]
-        bump::BumpAllocator::init_from_limine(mem_map);
-        #[cfg(feature = "buddy")]
-        buddy::BuddyAllocator::init_from_limine(mem_map);
-    };
+        bump::BumpAllocator::init_from_limine(mem_map)
+    }
+    #[cfg(feature = "buddy")]
+    unsafe {
+        buddy::BuddyAllocator::init_from_limine(mem_map)
+    }
 }
 
 pub trait PmmAllocator: SpinLockable {
@@ -69,11 +72,8 @@ pub trait PmmAllocator: SpinLockable {
     /// If allocation if successfull, the physical address of the start of the block is returned.
     ///
     /// NOTE: `alignment should be passed as page granularity. (e.g. 1 for 4KB, 2 for 8KB, etc.)`
-    fn allocate(
-        &mut self,
-        alignment: usize,
-        page_count: usize,
-    ) -> Result<PhysAddr, PmmError>;
+    #[must_use = "Not freeing allocated memory will leak it"]
+    fn allocate(&mut self, alignment: usize, page_count: usize) -> Result<PhysAddr, PmmError>;
 
     /// Tries to allocate a **physically** contiguous block of memory at a specific address
     #[allow(dead_code)]
@@ -90,7 +90,9 @@ pub trait PmmAllocator: SpinLockable {
 
     /// Initilizes the PMM when using Limine using limine's memory map.
     #[cfg(feature = "limine")]
-    unsafe fn init_from_limine(mem_map: &[&memory_map::Entry]);
+    unsafe fn init_from_limine<'a>(
+        mem_map: &'a [&'a memory_map::Entry],
+    ) -> &'a limine::memory_map::Entry;
 }
 
 /// Get the maximum addressable page count from the memory map.

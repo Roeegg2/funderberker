@@ -7,13 +7,13 @@ use limine::memory_map;
 
 use logger::*;
 use paging::get_pml;
-use utils::mem::VirtAddr;
 use utils::mem::PhysAddr;
+use utils::mem::VirtAddr;
 
+use crate::Arch;
 use crate::paging::Flags;
 use crate::paging::PageSize;
 use crate::paging::PagingError;
-use crate::Arch;
 
 use interrupts::Idt;
 use utils::collections::fast_lazy_static::FastLazyStatic;
@@ -54,6 +54,7 @@ pub struct DescriptorTablePtr {
 impl Arch for X86_64 {
     const BASIC_PAGE_SIZE: PageSize<Self> = PageSize::<Self>::size_4kb(); // 4KB page size
 
+    #[inline]
     unsafe fn early_boot_init() {
         // Make sure no pesky interrupt interrupt us
         Idt::init();
@@ -61,37 +62,38 @@ impl Arch for X86_64 {
         find_cpu_vendor();
     }
 
+    #[inline]
     #[cfg(feature = "limine")]
     unsafe fn init_paging_from_limine(
         mem_map: &[&memory_map::Entry],
         kernel_virt: VirtAddr,
         kernel_phys: PhysAddr,
+        used_by_pmm: &memory_map::Entry,
     ) {
         use paging::init_from_limine;
 
         unsafe {
-            init_from_limine(mem_map, kernel_virt, kernel_phys);
+            init_from_limine(mem_map, kernel_virt, kernel_phys, used_by_pmm);
         }
     }
 
     unsafe fn map_page_to(
-            phys_addr: PhysAddr,
-            virt_addr: VirtAddr,
-            flags: Flags<Self>,
-            page_size: PageSize<Self>,
-        ) -> Result<(), PagingError> {
+        phys_addr: PhysAddr,
+        virt_addr: VirtAddr,
+        flags: Flags<Self>,
+        page_size: PageSize<Self>,
+    ) -> Result<(), PagingError> {
         let pml = get_pml();
-        unsafe {
-            pml.map(virt_addr, phys_addr, page_size, flags)
-        }
+        unsafe { pml.map(virt_addr, phys_addr, page_size, flags) }
     }
 
-    unsafe fn unmap_page(virt_addr: VirtAddr, page_size: PageSize<Self>) -> Result<(), PagingError> {
+    unsafe fn unmap_page(
+        virt_addr: VirtAddr,
+        page_size: PageSize<Self>,
+    ) -> Result<(), PagingError> {
         let pml = get_pml();
         // TODO: Change this to unmap_page
-        unsafe {
-            pml.unmap(virt_addr, 1, page_size)
-        }
+        unsafe { pml.unmap(virt_addr, 1, page_size) }
     }
 
     fn translate(virt_addr: VirtAddr) -> Option<PhysAddr> {

@@ -1,9 +1,12 @@
 //! Parser for the HPET table
 
-use arch::{map_page, paging::{Flags, PageSize}};
-use logger::*;
 use super::{AcpiError, AcpiTable, Gas, SdtHeader};
+use arch::{
+    map_page,
+    paging::{Flags, PageSize},
+};
 use drivers::timer::hpet::{self, InterruptRoutingMode};
+use logger::*;
 use utils::mem::PhysAddr;
 
 /// The HPET table structure
@@ -25,7 +28,12 @@ impl Hpet {
         // reserved, so the kernel shouldn't be tracking it
         let phys_addr = PhysAddr(self.base_addr.addr as usize);
         unsafe {
-            let virt_addr = map_page(phys_addr, Flags::new().set_read_write(true), PageSize::size_4kb()).unwrap();
+            let virt_addr = map_page(
+                phys_addr,
+                Flags::new().set_read_write(true),
+                PageSize::size_4kb(),
+            )
+            .unwrap();
 
             hpet::Hpet::init(
                 virt_addr.into(),
