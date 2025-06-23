@@ -1,7 +1,7 @@
 //! HPET driver implementation
 
 use super::{PIT_IRQ, RTC_IRQ, Timer, TimerError};
-use kernel::arch::x86_64::{
+use arch::x86_64::{
         apic::ioapic::{self, allocate_irq_at, gsi_to_irq},
         interrupts::{IsrStub, register_irq},
 };

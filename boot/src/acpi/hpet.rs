@@ -1,12 +1,9 @@
 //! Parser for the HPET table
 
+use arch::{map_page, paging::{Flags, PageSize}};
 use logger::*;
 use super::{AcpiError, AcpiTable, Gas, SdtHeader};
 use drivers::timer::hpet::{self, InterruptRoutingMode};
-use kernel::{
-    arch::x86_64::paging::Entry,
-    mem::vmm::map_page,
-};
 use utils::mem::PhysAddr;
 
 /// The HPET table structure
@@ -26,9 +23,9 @@ impl Hpet {
 
         // SAFETY: This should be OK since we're mapping a physical address that is marked as
         // reserved, so the kernel shouldn't be tracking it
+        let phys_addr = PhysAddr(self.base_addr.addr as usize);
         unsafe {
-            let phys_addr = PhysAddr(self.base_addr.addr as usize);
-            let virt_addr = map_page(phys_addr, Entry::FLAG_RW);
+            let virt_addr = map_page(phys_addr, Flags::new().set_read_write(true), PageSize::size_4kb()).unwrap();
 
             hpet::Hpet::init(
                 virt_addr.into(),

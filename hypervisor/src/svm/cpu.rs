@@ -1,7 +1,7 @@
+use arch::BASIC_PAGE_SIZE;
 use utils::sanity_assert;
 
 use utils::mem::PhysAddr;
-use kernel::arch::BASIC_PAGE_SIZE;
 
 use core::arch::asm;
 

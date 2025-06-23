@@ -1,11 +1,8 @@
 //! ACPI table parser
 
 use core::{ptr::from_ref, slice::from_raw_parts};
+use arch::{map_page, paging::{Flags, PageSize}, BASIC_PAGE_SIZE};
 use rsdp::Rsdp2;
-use kernel::{
-    arch::BASIC_PAGE_SIZE,
-    mem::vmm::map_page,
-};
 use logger::*;
 use utils::{mem::PhysAddr, sanity_assert};
 
@@ -84,12 +81,11 @@ trait AcpiTable {
 
 /// Initialize the ACPI subsystem
 pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
-    println!("HERE");
     sanity_assert!(rsdp_addr.0 % align_of::<Rsdp2>() == 0);
 
     let rsdp = unsafe {
         let diff = rsdp_addr.0 % BASIC_PAGE_SIZE;
-        let ptr: *const Rsdp2 = (map_page(rsdp_addr - diff, 0) + diff).into();
+        let ptr: *const Rsdp2 = (map_page(rsdp_addr - diff, Flags::new(), PageSize::size_4kb()).unwrap() + diff).into();
         ptr.as_ref().unwrap()
     };
 

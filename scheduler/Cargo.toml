@@ -7,7 +7,7 @@ edition = "2024"
 name = "scheduler"
 
 [dependencies]
-kernel = { version = "0.1.0", path = "../kernel" }
+arch = { version = "0.1.0", path = "../arch" }
 utils = { version = "0.1.0", path = "../utils" }
 logger = { version = "0.1.0", path = "../logger" }
 

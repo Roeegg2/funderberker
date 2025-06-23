@@ -2,7 +2,7 @@
 
 use logger::*;
 use utils::sync::spinlock::{SpinLock, SpinLockable};
-use crate::arch::x86_64::{
+use crate::x86_64::{
         cpu::{self, Register},
         event::GENERIC_ISR_VECTOR,
         gdt::Cs,

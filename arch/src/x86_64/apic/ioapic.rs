@@ -1,14 +1,15 @@
 //! Interface and driver for the IO APIC
 
 use super::{DeliveryMode, Destination};
-use crate::arch::x86_64::{cpu::outb_8, paging::Entry};
-use crate::mem::vmm::map_page;
-use utils::mem::{PhysAddr, mmio::MmioCell};
-use utils::sync::spinlock::{SpinLock, SpinLockable};
+use crate::{map_page, paging::{Flags, PageSize}, x86_64::cpu::outb_8};
+use utils::{
+    mem::{PhysAddr, mmio::MmioCell},
+    sync::spinlock::{SpinLock, SpinLockable},
+    collections::id::{Id, tracker::{IdTracker, IdTrackerError}},
+};
 use alloc::vec::Vec;
 use core::cell::SyncUnsafeCell;
 use modular_bitfield::prelude::*;
-use utils::collections::id::{Id, tracker::{IdTracker, IdTrackerError}};
 
 /// Errors the IO APIC might encounter
 #[derive(Debug, Copy, Clone)]
@@ -210,7 +211,7 @@ fn get_ioapics() -> &'static Vec<SpinLock<IoApic>> {
 pub unsafe fn add(phys_addr: PhysAddr, gsi_base: u32, apic_id: u8) {
     // SAFETY: This should be OK since we're mapping a physical address that is marked as
     // reserved, so the kernel shouldn't be tracking it
-    let virt_addr = unsafe { map_page(phys_addr, Entry::FLAG_RW) };
+    let virt_addr = unsafe { map_page(phys_addr, Flags::new().set_read_write(true), PageSize::size_4kb()).unwrap() };
 
     let ioapics = unsafe { IO_APICS.get().as_mut().unwrap() };
     ioapics.push(SpinLock::new(IoApic::new(

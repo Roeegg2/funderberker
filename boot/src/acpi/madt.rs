@@ -1,18 +1,8 @@
 //! Parser for the MADT table
 
+use arch::{map_page, paging::{Flags, PageSize}, x86_64::apic::{ioapic::{self, init_irq_allocator, IoApic}, lapic, DeliveryMode}};
 use logger::*;
 use super::{AcpiError, AcpiTable, SdtHeader};
-use kernel::{
-    arch::x86_64::{
-        apic::{
-            DeliveryMode,
-            ioapic::{self, IoApic, init_irq_allocator},
-            lapic,
-        },
-        paging::Entry,
-    },
-    mem::vmm::map_page,
-};
 use utils::mem::PhysAddr;
 
 /// A ZST struct for the possible entry types in the MADT
@@ -235,8 +225,9 @@ impl Madt {
                     let entry = entry.cast::<LocalApicAddrOverrideEntry>().as_ref().unwrap();
                     let ptr: *mut u32 = map_page(
                         PhysAddr(entry.local_apic_phys_addr as usize),
-                        Entry::FLAG_RW,
-                    )
+                        Flags::new().set_read_write(true),
+                        PageSize::size_4kb(),
+                    ).unwrap()
                     .into();
                     lapic::override_base(ptr);
                 },

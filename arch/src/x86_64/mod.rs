@@ -6,10 +6,15 @@ use core::arch::x86_64::__cpuid_count;
 use limine::memory_map;
 
 use logger::*;
+use paging::get_pml;
 use utils::mem::VirtAddr;
 use utils::mem::PhysAddr;
 
-use super::Architecture;
+use crate::paging::Flags;
+use crate::paging::PageSize;
+use crate::paging::PagingError;
+use crate::Arch;
+
 use interrupts::Idt;
 use utils::collections::fast_lazy_static::FastLazyStatic;
 
@@ -36,7 +41,7 @@ pub enum CpuVendor {
 }
 
 /// a ZST to implement the Arch trait on
-pub(super) struct X86_64;
+pub struct X86_64;
 
 /// Pointer to some descriptor table (IDTR, GDTR, etc)
 #[repr(C, packed)]
@@ -46,8 +51,10 @@ pub struct DescriptorTablePtr {
     base: u64,
 }
 
-impl Architecture for X86_64 {
-    unsafe fn init() {
+impl Arch for X86_64 {
+    const BASIC_PAGE_SIZE: PageSize<Self> = PageSize::<Self>::size_4kb(); // 4KB page size
+
+    unsafe fn early_boot_init() {
         // Make sure no pesky interrupt interrupt us
         Idt::init();
 
@@ -60,10 +67,37 @@ impl Architecture for X86_64 {
         kernel_virt: VirtAddr,
         kernel_phys: PhysAddr,
     ) {
+        use paging::init_from_limine;
 
         unsafe {
-            paging::init_from_limine(mem_map, kernel_virt, kernel_phys);
+            init_from_limine(mem_map, kernel_virt, kernel_phys);
         }
+    }
+
+    unsafe fn map_page_to(
+            phys_addr: PhysAddr,
+            virt_addr: VirtAddr,
+            flags: Flags<Self>,
+            page_size: PageSize<Self>,
+        ) -> Result<(), PagingError> {
+        let pml = get_pml();
+        unsafe {
+            pml.map(virt_addr, phys_addr, page_size, flags)
+        }
+    }
+
+    unsafe fn unmap_page(virt_addr: VirtAddr, page_size: PageSize<Self>) -> Result<(), PagingError> {
+        let pml = get_pml();
+        // TODO: Change this to unmap_page
+        unsafe {
+            pml.unmap(virt_addr, 1, page_size)
+        }
+    }
+
+    fn translate(virt_addr: VirtAddr) -> Option<PhysAddr> {
+        let pml = get_pml();
+
+        pml.translate(virt_addr)
     }
 }
 
@@ -72,12 +106,6 @@ impl Architecture for X86_64 {
 #[inline]
 fn find_cpu_vendor() {
     type CpuidVendorString = (u32, u32, u32);
-
-    // Making sure we're not executing this for nothing
-    assert!(
-        CPU_VENDOR.get() == CpuVendor::Invalid,
-        "CPU vendor is already set. Did you forget you called `find_cpu_vendor`?",
-    );
 
     // The strings (broken down into parts) we should compare to to find out the vendor.
     //
@@ -91,6 +119,12 @@ fn find_cpu_vendor() {
         u32::from_le_bytes(*b"Auth"),
         u32::from_le_bytes(*b"enti"),
         u32::from_le_bytes(*b"cAMD"),
+    );
+
+    // Making sure we're not executing this for nothing
+    assert!(
+        CPU_VENDOR.get() == CpuVendor::Invalid,
+        "CPU vendor is already set. Did you forget you called `find_cpu_vendor`?",
     );
 
     let string = unsafe {

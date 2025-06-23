@@ -4,15 +4,14 @@
 
 extern crate alloc;
 
-use utils::sync::spinlock::{SpinLock, SpinLockable};
-use kernel::mem::slab::{SlabAllocatable, SlabAllocator};
+use slab::{SlabAllocatable, SlabAllocator};
+use utils::sync::spinlock::SpinLock;
 use alloc::boxed::Box;
 use core::marker::PhantomData;
 use scheduler::{Schedulable, constant::Constant};
 use svm::Svm;
 use utils::collections::id::{Id, hander::IdHander};
 
-mod mem;
 mod svm;
 
 static SCHEDULER: SpinLock<Constant<Vessel<Svm>>> = SpinLock::new(Constant::new_const());

@@ -3,6 +3,19 @@
 version = 4
 
 [[package]]
+name = "arch"
+version = "0.1.0"
+dependencies = [
+ "limine",
+ "logger",
+ "macros",
+ "modular-bitfield",
+ "pmm",
+ "rustc-std-workspace-alloc",
+ "utils",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12,11 +25,13 @@ checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 name = "boot"
 version = "0.1.0"
 dependencies = [
+ "arch",
  "drivers",
  "hypervisor",
- "kernel",
  "limine",
  "logger",
+ "pmm",
+ "slab",
  "utils",
 ]
 
@@ -24,7 +39,7 @@ dependencies = [
 name = "drivers"
 version = "0.1.0"
 dependencies = [
- "kernel",
+ "arch",
  "logger",
  "modular-bitfield",
  "utils",
@@ -34,22 +49,11 @@ dependencies = [
 name = "hypervisor"
 version = "0.1.0"
 dependencies = [
- "kernel",
+ "arch",
  "logger",
  "modular-bitfield",
  "scheduler",
- "utils",
-]
-
-[[package]]
-name = "kernel"
-version = "0.1.0"
-dependencies = [
- "limine",
- "logger",
- "macros",
- "modular-bitfield",
- "rustc-std-workspace-alloc",
+ "slab",
  "utils",
 ]
 
@@ -99,6 +103,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pmm"
+version = "0.1.0"
+dependencies = [
+ "limine",
+ "utils",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -126,8 +138,16 @@ checksum = "f9d441c3b2ebf55cebf796bfdc265d67fa09db17b7bb6bd4be75c509e1e8fec3"
 name = "scheduler"
 version = "0.1.0"
 dependencies = [
- "kernel",
+ "arch",
  "logger",
+ "utils",
+]
+
+[[package]]
+name = "slab"
+version = "0.1.0"
+dependencies = [
+ "arch",
  "utils",
 ]
 

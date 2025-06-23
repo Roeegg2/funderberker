@@ -1,16 +1,24 @@
 //! A simple slab allocator implementation
 
+#![no_std]
+
+#![feature(sync_unsafe_cell)]
+#![feature(allocator_api)]
+#![feature(pointer_is_aligned_to)]
+#![feature(box_vec_non_null)]
+
 use core::{alloc::Layout, cell::SyncUnsafeCell, marker::PhantomData, ptr::NonNull};
 
 use alloc::alloc::{AllocError, Allocator};
 use internal::{InternalSlabAllocator, ObjectNode};
-
 use utils::sync::spinlock::SpinLockable;
+
+extern crate alloc;
 
 // TODO: Actually call 'initializer' of the SlabAllocatable trait
 
-mod heap;
-pub(super) mod internal;
+pub mod heap;
+mod internal;
 
 /// A trait for every type that can be allocated using a custom slab allocator.
 pub trait SlabAllocatable {}

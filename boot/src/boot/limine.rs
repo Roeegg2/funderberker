@@ -1,10 +1,9 @@
 //! Everything needed to boot the kernel with Limine.
 
+use arch::vaa;
 use logger::*;
 use crate::{acpi, funderberker_start};
-use kernel::arch::{self, x86_64};
 use utils::mem::{HHDM_OFFSET, PhysAddr, VirtAddr};
-use kernel::mem::{pmm, vmm};
 
 #[cfg(feature = "framebuffer")]
 use limine::request::FramebufferRequest;
@@ -73,7 +72,7 @@ unsafe extern "C" fn kmain() -> ! {
     };
 
     unsafe {
-        arch::init();
+        arch::early_boot_init();
     };
 
     let mem_map = MEMORY_MAP_REQUEST
@@ -89,7 +88,7 @@ unsafe extern "C" fn kmain() -> ! {
         .get_response()
         .expect("Can't get Limine RSDP feature");
 
-    vmm::init_from_limine(mem_map.entries());
+    vaa::init_from_limine(mem_map.entries());
     unsafe { pmm::init_from_limine(mem_map.entries()) };
     unsafe {
         arch::init_paging_from_limine(

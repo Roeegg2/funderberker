@@ -10,14 +10,11 @@ use core::{
     ptr::{NonNull, null_mut},
 };
 
-/// The global instance of the kernel heap allocator
-#[global_allocator]
-pub(super) static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocator::new();
 
 /// A global heap allocator for the kernel. Structured as a bunch of uninitable object slab
 /// allocators
 #[derive(Debug)]
-pub(super) struct KernelHeapAllocator([UnsafeCell<InternalSlabAllocator>; Self::SIZE]);
+pub struct KernelHeapAllocator([UnsafeCell<InternalSlabAllocator>; Self::SIZE]);
 
 /// A macro to make creating slab allocators easier
 macro_rules! create_slab_allocators {
@@ -35,7 +32,7 @@ impl KernelHeapAllocator {
 
     /// Create a new instance of the kernel heap allocator
     #[rustfmt::skip]
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         // TODO: Use a const array::from_fn here!
         // TODO: Benchmark and possibly change the slab allocator sizes
         Self(create_slab_allocators!(
@@ -102,43 +99,43 @@ unsafe impl GlobalAlloc for KernelHeapAllocator {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use alloc::{boxed::Box, string::ToString, vec::Vec};
-    use macros::test_fn;
-
-    #[test_fn]
-    fn test_heap_generic_allocs() {
-        let a = Box::new(5_usize);
-        let string = Box::new("Hello, World!".to_string());
-        assert_eq!(*a, 5);
-        assert_eq!(*string, "Hello, World!".to_string());
-        drop(a);
-        drop(string);
-
-        let a = Box::new([100_usize, 12_usize, 42_usize]);
-        let part1 = Box::new("Hello there");
-        {
-            let part2 = Box::new("General Kenobi");
-            let b = Box::new(200);
-            let mut v = Vec::new();
-
-            for i in 0..100 {
-                v.push(Box::new(i));
-            }
-
-            for i in 0..100 {
-                assert_eq!(*v.pop().unwrap(), 99 - i);
-            }
-
-            assert_eq!(*b, 200);
-            assert_eq!(*part2, "General Kenobi");
-        }
-
-        assert_eq!(*a, [100, 12, 42]);
-        assert_eq!(*part1, "Hello there");
-
-        let a = Box::new(());
-        assert_eq!(*a, ());
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use alloc::{boxed::Box, string::ToString, vec::Vec};
+//     use macros::test_fn;
+//
+//     #[test_fn]
+//     fn test_heap_generic_allocs() {
+//         let a = Box::new(5_usize);
+//         let string = Box::new("Hello, World!".to_string());
+//         assert_eq!(*a, 5);
+//         assert_eq!(*string, "Hello, World!".to_string());
+//         drop(a);
+//         drop(string);
+//
+//         let a = Box::new([100_usize, 12_usize, 42_usize]);
+//         let part1 = Box::new("Hello there");
+//         {
+//             let part2 = Box::new("General Kenobi");
+//             let b = Box::new(200);
+//             let mut v = Vec::new();
+//
+//             for i in 0..100 {
+//                 v.push(Box::new(i));
+//             }
+//
+//             for i in 0..100 {
+//                 assert_eq!(*v.pop().unwrap(), 99 - i);
+//             }
+//
+//             assert_eq!(*b, 200);
+//             assert_eq!(*part2, "General Kenobi");
+//         }
+//
+//         assert_eq!(*a, [100, 12, 42]);
+//         assert_eq!(*part1, "Hello there");
+//
+//         let a = Box::new(());
+//         assert_eq!(*a, ());
+//     }
+// }

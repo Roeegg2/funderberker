@@ -7,8 +7,10 @@ members = [
     "scheduler", 
     "hypervisor",
     "boot",
-    "kernel", 
-    "logger",
+    "logger", 
+    "pmm", 
+    "slab", 
+    "arch",
 ]
 
 [profile.dev]

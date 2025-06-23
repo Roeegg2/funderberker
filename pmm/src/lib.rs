@@ -1,15 +1,23 @@
 //! Physical Memory Manager (PMM) module
 
+#![no_std]
+
+#![feature(box_vec_non_null)]
+
 #[cfg(feature = "limine")]
 use limine::memory_map;
 
-use core::num::NonZero;
 use utils::sync::spinlock::{SpinLockGuard, SpinLockable};
 use utils::mem::PhysAddr;
 
-#[cfg(feature = "pmm_buddy")]
+extern crate alloc;
+
+// TODO: Move this somewhere else
+const BASIC_PAGE_SIZE: usize = 0x1000; // 4KB page size
+                                       
+#[cfg(feature = "buddy")]
 mod buddy;
-#[cfg(feature = "pmm_bump")]
+#[cfg(feature = "bump")]
 mod bump;
 
 /// Errors that the PMM might encounter
@@ -26,27 +34,31 @@ pub enum PmmError {
     InvalidAlignment,
     /// The requested address is invalid
     InvalidAddress,
+    /// The requested page count is invalid (0)
+    EmptyAllocation,
+    /// The requested page count is invalid (0)
+    EmptyFree,
 }
 
 /// Get the used PMM
 pub fn get<'a>() -> SpinLockGuard<'a, impl PmmAllocator> {
-    #[cfg(feature = "pmm_bump")]
+    #[cfg(feature = "bump")]
     {
-        bump::BUMP_ALLOCATOR.lock()
+        bump::PMM.lock()
     }
-    #[cfg(feature = "pmm_buddy")]
+    #[cfg(feature = "buddy")]
     {
-        buddy::BUDDY_ALLOCATOR.lock()
+        buddy::PMM.lock()
     }
 }
 
 /// Initilizes the used PMM from limine
 #[cfg(feature = "limine")]
-pub unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
+pub unsafe fn init_from_limine(mem_map: &[&memory_map::Entry]) {
     unsafe {
-        #[cfg(feature = "pmm_bump")]
+        #[cfg(feature = "bump")]
         bump::BumpAllocator::init_from_limine(mem_map);
-        #[cfg(feature = "pmm_buddy")]
+        #[cfg(feature = "buddy")]
         buddy::BuddyAllocator::init_from_limine(mem_map);
     };
 }
@@ -59,47 +71,45 @@ pub trait PmmAllocator: SpinLockable {
     /// NOTE: `alignment should be passed as page granularity. (e.g. 1 for 4KB, 2 for 8KB, etc.)`
     fn allocate(
         &mut self,
-        alignment: NonZero<usize>,
-        page_count: NonZero<usize>,
+        alignment: usize,
+        page_count: usize,
     ) -> Result<PhysAddr, PmmError>;
 
     /// Tries to allocate a **physically** contiguous block of memory at a specific address
     #[allow(dead_code)]
-    fn allocate_at(&mut self, addr: PhysAddr, page_count: NonZero<usize>) -> Result<(), PmmError>;
+    fn allocate_at(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError>;
 
     /// Tries to free a contiguous block of pages.
     #[allow(dead_code)]
-    unsafe fn free(&mut self, addr: PhysAddr, page_count: NonZero<usize>) -> Result<(), PmmError>;
+    unsafe fn free(&mut self, addr: PhysAddr, page_count: usize) -> Result<(), PmmError>;
 
     /// Returns true if a page if free, false if it's not. If an error is encountered, an error is
     /// returned instead.
     #[allow(dead_code)]
-    fn is_page_free(&self, addr: PhysAddr, page_count: NonZero<usize>) -> Result<bool, PmmError>;
+    fn is_page_free(&self, addr: PhysAddr, page_count: usize) -> Result<bool, PmmError>;
 
     /// Initilizes the PMM when using Limine using limine's memory map.
     #[cfg(feature = "limine")]
-    unsafe fn init_from_limine(mem_map: &[&limine::memory_map::Entry]);
+    unsafe fn init_from_limine(mem_map: &[&memory_map::Entry]);
 }
 
 /// Get the maximum addressable page count from the memory map.
 /// This is done by finding the last memory map entry that is usable and calculating the page count
 #[cfg(feature = "limine")]
-fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> NonZero<usize> {
-    use crate::arch::BASIC_PAGE_SIZE;
-
+fn get_page_count_from_mem_map(mem_map: &[&memory_map::Entry]) -> usize {
     let last_descr = mem_map
         .iter()
         .rev()
         .find(|&entry| {
             matches!(
                 entry.entry_type,
-                limine::memory_map::EntryType::USABLE
-                    | limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE
-                    | limine::memory_map::EntryType::ACPI_RECLAIMABLE
-                    | limine::memory_map::EntryType::EXECUTABLE_AND_MODULES
+                memory_map::EntryType::USABLE
+                    | memory_map::EntryType::BOOTLOADER_RECLAIMABLE
+                    | memory_map::EntryType::ACPI_RECLAIMABLE
+                    | memory_map::EntryType::EXECUTABLE_AND_MODULES
             )
         })
         .unwrap();
 
-    NonZero::new((last_descr.base + last_descr.length) as usize / BASIC_PAGE_SIZE).unwrap()
+    (last_descr.base + last_descr.length) as usize / BASIC_PAGE_SIZE
 }

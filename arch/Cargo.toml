@@ -1,0 +1,26 @@
+[package]
+name = "arch"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+utils = { version = "0.1.0", path = "../utils" }
+logger = { version = "0.1.0", path = "../logger" }
+macros = { version = "0.1.0", path = "../macros" }
+limine = { version = "0.5.0", optional = true }
+modular-bitfield = { version = "0.12" }
+pmm = { version = "0.1.0", path = "../pmm" }
+alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc" }
+
+[features]
+default = ["limine", "paging_4", "framebuffer"]
+
+limine = ["dep:limine"]
+
+# TODO: Get rid of this
+paging_5 = []
+paging_4 = []
+
+framebuffer = []
+
+

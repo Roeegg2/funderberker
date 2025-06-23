@@ -99,6 +99,7 @@ pub(super) fn get_pat_entry(entry: PatEntry) -> PatType {
         .unwrap()
 }
 
+pub(super) const fn 
 /// Set the PAT entry for a page table entry.
 ///
 /// NOTE: It is assumed that `page_table_entry` is the "mapping" entry for the page (i.e. the last
@@ -106,7 +107,7 @@ pub(super) fn get_pat_entry(entry: PatEntry) -> PatType {
 /// This function is not defined for other entries.
 pub(super) fn set_page_table_entry_pat(
     page_table_entry: &mut Entry,
-    page_size: PageSize,
+    page_size: PageSize<X86_64>,
     pat_entry: PatEntry,
 ) {
     // Clear the bits

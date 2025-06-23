@@ -1,11 +1,8 @@
 //! Support for the PCI Express bus.
 
+use arch::{map_page, paging::{Flags, PageSize}, unmap_page};
 // use crate::acpi::mcfg::ConfigSpace;
 use logger::*;
-use kernel::{
-    arch::x86_64::paging::Entry,
-    mem::vmm::{map_page, unmap_page},
-};
 use utils::{
     sync::spinlock::{SpinLock, SpinLockable},
     mem::{
@@ -218,8 +215,9 @@ impl PcieManager {
             let virt_addr = unsafe {
                 map_page(
                     phys_addr,
-                    Entry::FLAG_RW | Entry::FLAG_PWT | Entry::FLAG_PCD,
-                )
+                    Flags::new().set_read_write(true).set_write_through(true).set_cache_disable(true),
+                    PageSize::size_4kb(),
+                ).unwrap()
             };
 
             MmioArea::new(virt_addr.into())
@@ -229,7 +227,8 @@ impl PcieManager {
         let vendor_id =
             unsafe { config_space.read(StandardHeader::DeviceVendorId as usize) & 0xffff };
         if vendor_id == VENDOR_ID_INVALID as u32 {
-            unsafe { unmap_page(config_space.base().into()) };
+            // XXX: Set the flags to the correct ones
+            unsafe { unmap_page(config_space.base().into(), PageSize::size_4kb()) };
             return None;
         }
 
@@ -292,7 +291,7 @@ impl PcieDevice {
 impl Drop for PcieDevice {
     fn drop(&mut self) {
         unsafe {
-            unmap_page(self.config_space.base().into());
+            unmap_page(self.config_space.base().into(), PageSize::size_4kb()).expect("Failed to unmap PCIe device config space");
         };
     }
 }

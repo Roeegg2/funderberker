@@ -1,12 +1,9 @@
 //! Parser for the XSDT table
 
+use arch::{map_page, paging::{Flags, PageSize}, BASIC_PAGE_SIZE};
 use logger::*;
 use core::ptr::from_ref;
 use super::{AcpiError, AcpiTable, SdtHeader, madt::Madt, mcfg::Mcfg, hpet::Hpet};
-use kernel::{
-    arch::{BASIC_PAGE_SIZE, x86_64::paging::Entry},
-    mem::vmm::map_page,
-};
 use utils::mem::PhysAddr;
 
 /// The XSDT
@@ -80,7 +77,7 @@ impl Iterator for Iter {
         let ptr: *const SdtHeader = unsafe {
             let addr = self.ptr.read_unaligned();
             let diff = addr.0 % BASIC_PAGE_SIZE;
-            (map_page(addr - diff, Entry::FLAGS_NONE) + diff).into()
+            (map_page(addr - diff, Flags::new(), PageSize::size_4kb()).unwrap() + diff).into()
         };
 
         self.ptr = unsafe { self.ptr.add(1) };

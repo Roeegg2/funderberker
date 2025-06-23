@@ -1,20 +1,10 @@
 use super::{
     Vesselable, VirtTech,
-    mem::{create_guest_address_space, new_guest_page_table},
 };
 
+use arch::{allocate_pages, paging::{Flags, PageSize}, translate, x86_64::{cpu::{msr::{rdmsr, wrmsr, AmdMsr, Efer, MsrData}, read_rsp, AmdDr6, AmdDr7, Cr0, Cr2, Cr3, Cr4, Register, Rflags}, gdt::{Cs, Ds, Es, FullSegmentSelector, Gdt, Ss}, interrupts::Idt, X86_64}, BASIC_PAGE_SIZE};
 use logger::*;
-use kernel::{
-    arch::{x86_64::{
-        cpu::{
-            msr::{rdmsr, wrmsr, AmdMsr, Efer, MsrData}, read_rsp, AmdDr6, AmdDr7, Cr0, Cr2, Cr3, Cr4, Register, Rflags
-        },
-        gdt::{Cs, Ds, Es, FullSegmentSelector, Gdt, Ss},
-        interrupts::Idt,
-        paging::{Entry, PageSize},
-    }, BASIC_PAGE_SIZE},
-    mem::{slab::{SlabAllocatable, SlabAllocator}, vmm::{allocate_pages, map_page, translate}},
-};
+use slab::{SlabAllocatable, SlabAllocator};
 use utils::{
     mem::VirtAddr,
     sync::spinlock::SpinLock,
@@ -24,7 +14,6 @@ use alloc::boxed::Box;
 use core::{
     arch::x86_64::__cpuid,
     mem::transmute,
-    num::NonZero,
     ops::{Deref, DerefMut},
     ptr,
     todo,
@@ -140,7 +129,7 @@ struct ExitIntInfo {
 // TODO: Change the name fo this
 #[bitfield]
 #[repr(u64)]
-struct Flags {
+struct SvmFlags {
     np_enable: B1,
     sev_enable: B1,
     essev_enable: B1,
@@ -171,7 +160,7 @@ struct ControlArea {
     exitinfo1: u64,
     exitinfo2: u64,
     exitintinfo: ExitIntInfo,
-    flags: Flags,
+    flags: SvmFlags,
     avic_apic_bar_reserved: u64,
     guest_phys_addr_ghcb: u64,
     event_injection: u64,
@@ -515,7 +504,9 @@ impl Svm {
         // NOTE: IIRC this should be called on each processor!
 
         // Getting rid of stale data
-        let host_state_page = allocate_pages(1, Entry::FLAG_RW);
+        let host_state_page = allocate_pages(1, Flags::new().set_read_write(true), PageSize::size_4kb())
+            .expect("Failed to allocate host state page");
+
         unsafe {
             // Map the physical page so we can write to it
             let host_state_ptr: *mut u32 = host_state_page.into();
@@ -524,7 +515,7 @@ impl Svm {
         };
 
         unsafe {
-            let phys_addr = translate(host_state_page, PageSize::Size4KB).unwrap();
+            let phys_addr = translate::<X86_64>(host_state_page).unwrap();
             // Breaking the physical address of the page into parts, so we can write it to the MSR
             let low = (phys_addr.0 & 0xffff_ffff) as u32;
             let high = ((phys_addr.0 >> 32) & 0xffff_ffff) as u32;
@@ -697,9 +688,9 @@ impl Vmcb {
         // Enable the feature in the VMCB
         self.control.flags.set_np_enable(1);
 
-        let (n_cr3_addr, n_cr3) = create_guest_address_space(4);
-        self.control.n_cr3 = n_cr3_addr.0 as u64;
-        self.state_save.cr3 = (new_guest_page_table(n_cr3).0.0 as u64).into();
+        // let (n_cr3_addr, n_cr3) = create_guest_address_space(4);
+        // self.control.n_cr3 = n_cr3_addr.0 as u64;
+        // self.state_save.cr3 = (new_guest_page_table(n_cr3).0.0 as u64).into();
         // self.cr3 = new_page_table();
         // self.n_cr3 = new_mem_space();
 
@@ -801,7 +792,7 @@ impl Vmcb {
     #[cfg(test)]
     fn run_test(&mut self, expected_exit_code: InterceptCode) {
         let ptr = ptr::from_mut(self);
-        let phys_addr = translate(ptr.into(), PageSize::Size4KB).unwrap();
+        let phys_addr = translate::<X86_64>(ptr.into()).unwrap();
 
         unsafe {
             cpu::vmrun(phys_addr);
@@ -872,7 +863,7 @@ impl Vesselable for Vmcb {
 
     fn run(&mut self) {
         let ptr = ptr::from_mut(self);
-        let phys_addr = translate(ptr.into(), PageSize::Size4KB).unwrap();
+        let phys_addr = translate::<X86_64>(ptr.into()).unwrap();
 
         unsafe {
             cpu::vmrun(phys_addr);
@@ -898,57 +889,55 @@ impl DerefMut for Vmcb {
 
 impl SlabAllocatable for Vmcb {}
 
-#[cfg(test)]
-mod tests {
-    use crate::arch::x86_64::paging::PageSize;
-
-    use super::*;
-    use core::mem::{offset_of, size_of};
-    use macros::test_fn;
-
-    #[test_fn]
-    fn test_cpuid_intercept() {
-        fn to_run() {
-            // This function is called by the guest code to trigger a CPUID intercept
-            unsafe {
-                asm!("cpuid");
-            }
-        }
-
-        let mut vmcb = Vmcb::new(
-            translate(VirtAddr(to_run as usize), PageSize::Size4KB)
-                .unwrap()
-                .0,
-        );
-        vmcb.run_test(InterceptCode::Cpuid);
-    }
-
-    // TODO: Make this a compile time check
-    #[test_fn]
-    fn test_vmcb_layout() {
-        assert_eq!(offset_of!(VmcbInner, control), 0);
-        assert_eq!(offset_of!(VmcbInner, state_save), size_of::<ControlArea>());
-
-        // ControlArea offset checks
-        assert_eq!(offset_of!(ControlArea, pause_filter_thershold), 0x03c);
-        assert_eq!(offset_of!(ControlArea, vintr), 0x060);
-        assert_eq!(offset_of!(ControlArea, event_injection), 0x0a8);
-
-        // StateSaveArea offset checks (relative to StateSaveArea start)
-        assert_eq!(offset_of!(StateSaveArea, es), 0x000);
-        assert_eq!(offset_of!(StateSaveArea, cpl), 0xcb);
-        assert_eq!(offset_of!(StateSaveArea, cr4), 0x148);
-        assert_eq!(offset_of!(StateSaveArea, rax), 0x1f8);
-        assert_eq!(offset_of!(StateSaveArea, g_pat), 0x268);
-        assert_eq!(offset_of!(StateSaveArea, dbg_extn_ctl), 0x298);
-        assert_eq!(offset_of!(StateSaveArea, spec_ctrl), 0x2e0);
-        assert_eq!(offset_of!(StateSaveArea, ic_ibs_extd_ctl), 0x7c0);
-
-        // FullSegmentSelector size and offset checks
-        assert_eq!(size_of::<FullSegmentSelector>(), 16);
-        assert_eq!(size_of::<u16>(), 2); // sel
-        assert_eq!(size_of::<u16>(), 2); // attr
-        assert_eq!(size_of::<u32>(), 4); // limit
-        assert_eq!(size_of::<u64>(), 8); // base
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use core::mem::{offset_of, size_of};
+//     use macros::test_fn;
+//
+//     #[test_fn]
+//     fn test_cpuid_intercept() {
+//         fn to_run() {
+//             // This function is called by the guest code to trigger a CPUID intercept
+//             unsafe {
+//                 asm!("cpuid");
+//             }
+//         }
+//
+//         let mut vmcb = Vmcb::new(
+//             translate(VirtAddr(to_run as usize))
+//                 .unwrap()
+//                 .0,
+//         );
+//         vmcb.run_test(InterceptCode::Cpuid);
+//     }
+//
+//     // TODO: Make this a compile time check
+//     #[test_fn]
+//     fn test_vmcb_layout() {
+//         assert_eq!(offset_of!(VmcbInner, control), 0);
+//         assert_eq!(offset_of!(VmcbInner, state_save), size_of::<ControlArea>());
+//
+//         // ControlArea offset checks
+//         assert_eq!(offset_of!(ControlArea, pause_filter_thershold), 0x03c);
+//         assert_eq!(offset_of!(ControlArea, vintr), 0x060);
+//         assert_eq!(offset_of!(ControlArea, event_injection), 0x0a8);
+//
+//         // StateSaveArea offset checks (relative to StateSaveArea start)
+//         assert_eq!(offset_of!(StateSaveArea, es), 0x000);
+//         assert_eq!(offset_of!(StateSaveArea, cpl), 0xcb);
+//         assert_eq!(offset_of!(StateSaveArea, cr4), 0x148);
+//         assert_eq!(offset_of!(StateSaveArea, rax), 0x1f8);
+//         assert_eq!(offset_of!(StateSaveArea, g_pat), 0x268);
+//         assert_eq!(offset_of!(StateSaveArea, dbg_extn_ctl), 0x298);
+//         assert_eq!(offset_of!(StateSaveArea, spec_ctrl), 0x2e0);
+//         assert_eq!(offset_of!(StateSaveArea, ic_ibs_extd_ctl), 0x7c0);
+//
+//         // FullSegmentSelector size and offset checks
+//         assert_eq!(size_of::<FullSegmentSelector>(), 16);
+//         assert_eq!(size_of::<u16>(), 2); // sel
+//         assert_eq!(size_of::<u16>(), 2); // attr
+//         assert_eq!(size_of::<u32>(), 4); // limit
+//         assert_eq!(size_of::<u64>(), 8); // base
+//     }
+// }

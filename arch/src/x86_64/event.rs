@@ -3,7 +3,7 @@
 use logger::*;
 use macros::isr;
 
-use crate::arch::x86_64::{
+use crate::x86_64::{
     apic::lapic::LocalApic,
     cpu::{Cr2, Register},
 };

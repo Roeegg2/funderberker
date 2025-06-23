@@ -70,7 +70,7 @@ impl IdHander {
 
     /// Get
     #[inline]
-    pub const fn next(&self) -> Id {
+    pub const fn peek_next(&self) -> Id {
         self.next
     }
 }

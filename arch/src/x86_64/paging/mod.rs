@@ -1,150 +1,65 @@
-use core::arch::x86_64::__cpuid;
-use core::fmt::Debug;
-use core::num::NonZero;
-use core::ops::{Deref, DerefMut};
+use core::{
+    arch::x86_64::__cpuid,
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
-use crate::arch::{x86_64::cpu::{Cr3, Register}, BASIC_PAGE_SIZE};
-use crate::mem::pmm::{self, PmmAllocator};
+use crate::{paging::{Flags, PageSize, PagingError}, x86_64::cpu::{Cr3, Register}, Arch};
+use logger::println;
+use page_size::MAX_BOTTOM_PAGING_LEVEL;
+use pmm::PmmAllocator;
 use utils::mem::{
     PhysAddr, VirtAddr,
 };
 
 #[cfg(feature = "limine")]
 use limine::memory_map::{self, EntryType};
-use pat::check_pat_support;
 use utils::mem::memset;
 use utils::sanity_assert;
 
-use super::cpu::Cr4;
-use super::cpu::msr::{AmdMsr, Efer, rdmsr, wrmsr};
+use super::{cpu::{msr::{rdmsr, wrmsr, AmdMsr, Efer}, Cr4}, X86_64};
 
-mod pat;
-
-/// A manager for the paging system, which holds a reference to the top level page table
-struct PagingManager {
-    pml: &'static mut PageTable,
-}
+pub mod flags;
+pub mod page_size;
+// mod pat;
 
 /// The number of entries per page table
 pub const ENTRIES_PER_TABLE: usize = 512;
 
-/// The possible page sizes that can be used
-#[derive(Debug, Clone, Copy)]
-pub enum PageSize {
-    /// 4KB page
-    Size4KB = 0,
-    /// 2MB page
-    Size2MB = 1,
-    /// 1GB page
-    Size1GB = 2,
-    #[cfg(feature = "paging_4")]
-    Max = 3,
-    #[cfg(feature = "paging_5")]
-    Max = 4,
-}
-
 /// An entry in a page table
 #[repr(C)]
 #[derive(Debug)]
-pub struct Entry(usize);
+pub(super) struct Entry(usize);
 
 /// A page table
 #[repr(C, align(4096))]
 #[derive(Debug)]
-pub struct PageTable([Entry; ENTRIES_PER_TABLE]);
+pub(super) struct PageTable([Entry; ENTRIES_PER_TABLE]);
 
 #[allow(dead_code)]
 impl Entry {
-    /// Keep all flags as off
-    pub const FLAGS_NONE: usize = 0;
-    /// Present bit (`0`):
-    /// - If `1` the page is present.
-    /// - If `0` the page isn't present, and accessing it would cause a PF
-    pub const FLAG_P: usize = 1 << 0;
-    /// Read/write bit (`1`):
-    /// - If `1` any address this page maps is writeable and readable
-    /// - If `0` any address this page maps is read-only
-    pub const FLAG_RW: usize = 1 << 1;
-    /// User/supervisor bit (`2`):
-    /// - If `1` any address this page maps is accessible from user mode
-    /// - If `0` any address this page maps is accessible only from kernel mode
-    pub const FLAG_US: usize = 1 << 2;
-    /// Page-level write-through bit (`3`):
-    /// - If `1` the page is write-through
-    /// - If `0` the page is write-back
-    pub const FLAG_PWT: usize = 1 << 3;
-    /// Page-level cache disable bit (`4`):
-    /// - If `1` the page is not cacheable
-    /// - If `0` the page is cacheable
-    pub const FLAG_PCD: usize = 1 << 4;
-    /// Accessed bit (`5`):
-    /// - If `1` the page has been accessed (read from or written to)
-    /// - If `0` the page has not been accessed
-    pub const FLAG_A: usize = 1 << 5;
-    /// Dirty bit (`6`):
-    /// - If `1` the page has been written to
-    /// - If `0` the page has not been written to
-    pub const FLAG_D: usize = 1 << 6;
-    /// Page size bit (`7`):
-    /// - If `1` the page is 2MB
-    /// - If `0` the page is 4KB
-    pub const FLAG_PS: usize = 1 << 7;
-    /// Global bit (`8`):
-    /// - If `1` the CPU won't update the associated address when the TLB is flushed
-    /// - If `0` the CPU will update the associated address when the TLB is flushed
-    pub const FLAG_G: usize = 1 << 8;
-    /// Ignored bits (`9-11`) on AMD:
-    /// Ignored bits (`9-10`) on Intel:
-    pub const RESERVED: usize = 1 << 9;
-    /// HLAT paging bit (`12` Intel ONLY!!):
-    pub const HLAT: usize = 1 << 11;
-    /// PAT bit (`12`) (on PDPE!)
-    pub const FLAG_1GB_PAT: usize = 1 << 12;
-    /// PAT bit (`7`) (on PTE!)
-    pub const FLAG_4KB_PAT: usize = 1 << 7;
-    /// Execute disable bit (`63`):
-    /// - If `1` the page is not executable
-    /// - If `0` the page is executable
-    pub const FLAG_XD: usize = 1 << 63;
 
-    /// A custom flag to mark the entry as taken - meaning that the entry is no free, but isn't
-    /// present (ie. not useable yet).
-    /// It will become present when the entry is activated, so we can lazily map the page.
-    pub const FLAG_TAKEN: usize = 1 << 9;
-
-    /// When lazily mapping a page, we can't pass information regarding the size of the page we
-    /// want to map.
-    /// So we need to set this flag to mark the entry as a "last entry" in the page table, and now
-    /// that we know the last level we can combine that with the `PS` flag to determine the size
-    pub const FLAG_LAST_ENTRY: usize = 1 << 10;
-
-    /// Set a flag on
-    const fn set_flag(&mut self, flag: usize) {
-        self.0 |= flag;
+    const fn get_flags(&self) -> Flags<X86_64> {
+        unsafe {
+            Flags::<X86_64>::from_raw(self.0 & 0xFFF)
+        }
     }
 
-    /// Set a flag off
-    const fn clear_flag(&mut self, flag: usize) {
-        self.0 &= !flag;
-    }
-
-    /// Returns `true` if the given flag is set, `false` otherwise
-    const fn is_flag_set(&self, flag: usize) -> bool {
-        (self.0 & flag) != 0
-    }
-
-    /// Sets the entry's address to the given physical address
-    const fn set_addr(&mut self, addr: PhysAddr) {
-        // Mask the address to make sure it's aligned
-        assert!(addr.0.trailing_zeros() >= 12, "Address is not aligned");
-
-        self.0 |= addr.0;
+    #[inline]
+    const fn set_flags(&mut self, flags: Flags<X86_64>) {
+        self.0 |= flags.data();
     }
 
     /// Returns the entry's physical address
+    #[inline]
     const fn get_addr(&self) -> PhysAddr {
         // Possibly mask this address
         PhysAddr(self.0 & !0xFFF)
+    }
+
+    #[inline]
+    const fn set_addr(&mut self, addr: PhysAddr) {
+        self.0 = (self.0 & 0xFFF) | addr.0;
     }
 
     fn next_level_table(&mut self) -> &mut PageTable {
@@ -161,27 +76,27 @@ impl Entry {
     /// The reset of the initializiation will be done later when the entry is activated
     ///
     /// NOTE: As already mentioned, this isn't the same as "present".
-    fn take(&mut self, flags: usize, page_size: PageSize) {
+    fn take(&mut self, flags: Flags<X86_64>, page_size: PageSize<X86_64>) {
         assert!(
-            !self.is_flag_set(Self::FLAG_TAKEN),
+            !flags.get_taken(),
             "Entry is already taken"
         );
-        assert!(!self.is_flag_set(Self::FLAG_P), "Entry is already present");
+        assert!(
+            !flags.get_present(),
+            "Entry is already present"
+        );
 
-        self.set_flag(flags);
-        self.set_flag(page_size.flag());
-        self.set_flag(Self::FLAG_TAKEN);
-        self.set_flag(Self::FLAG_LAST_ENTRY);
+        self.set_flags(flags);
+        self.set_flags(page_size.flag());
+        // TODO: Remove the present and have activate set it
+        self.set_flags(Flags::<X86_64>::new().set_taken(true).set_last_entry(true).set_present(true));
 
         let phys_addr = pmm::get()
-            .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
+            .allocate(1, 1)
             .expect("Failed to allocate page");
 
         self.set_addr(phys_addr);
-        self.set_flag(Self::FLAG_P);
         // XXX: Maybe need to memset to 0?
-        // set the taken bit
-        // set the other requested flags
     }
 
     /// Activates a "taken" entry.
@@ -189,66 +104,77 @@ impl Entry {
     /// Most setting up was already done by `take()`, all we need to do now is allocate a physical
     /// page and map the virtual address to it, as well as set the `present` bit.
     fn activate_taken(&mut self) {
-        assert!(self.is_flag_set(Self::FLAG_TAKEN), "Entry is not taken");
-        assert!(!self.is_flag_set(Self::FLAG_P), "Entry is already present");
+        let flags = self.get_flags();
+        assert!(
+            flags.get_taken(),
+            "Entry is not taken"
+        );
+        assert!(
+            !flags.get_present(),
+            "Entry is already present"
+        );
 
-        let phys_addr = pmm::get()
-            .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
+        let phys_addr = pmm::get().allocate(1, 1)
             .expect("Failed to allocate page");
 
         self.set_addr(phys_addr);
-        self.set_flag(Self::FLAG_P);
+        self.set_flags(Flags::<X86_64>::new().set_present(true));
     }
 
     /// Immediately maps the entry to the given physical address with the given flags.
-    unsafe fn map(&mut self, phys_addr: PhysAddr, flags: usize, page_size: PageSize) {
-        assert!(!self.is_flag_set(Self::FLAG_P), "Entry is not present");
+    unsafe fn map(&mut self, phys_addr: PhysAddr, flags: Flags<X86_64>, page_size: PageSize<X86_64>) {
         assert!(
-            !self.is_flag_set(Self::FLAG_TAKEN),
+            !flags.get_taken(),
             "Entry is already taken"
+        );
+        assert!(
+            !flags.get_present(),
+            "Entry is already present"
         );
 
         self.set_addr(phys_addr);
-        self.set_flag(flags);
-        self.set_flag(page_size.flag());
-        self.set_flag(Self::FLAG_P);
-        self.set_flag(Self::FLAG_LAST_ENTRY);
+        self.set_flags(flags);
+        self.set_flags(page_size.flag());
+        self.set_flags(Flags::<X86_64>::new().set_present(true).set_last_entry(true));
     }
 
     /// Marks the entry as not present and frees the physical page if the entry was activated not
     /// manually (ie. activated using a call to `activate`).
     fn release(&mut self) {
-        assert!(self.is_flag_set(Self::FLAG_P), "Entry is not present");
+        let flags = self.get_flags();
+        assert!(
+            flags.get_present(),
+            "Entry is not present"
+        );
 
         // If the entry was "taken" (ie. it was "activated" and not just mapped), we need to free
         // the physical page allocated to it
-        if self.is_flag_set(Self::FLAG_TAKEN) {
+        if flags.get_taken() {
             let phys_addr = self.get_addr();
             unsafe {
-                pmm::get()
-                    .free(phys_addr, NonZero::new(1).unwrap())
+                pmm::get().free(phys_addr, 1)
                     .expect("Failed to free page");
             }
 
-            self.clear_flag(Self::FLAG_TAKEN);
+            flags.set_taken(false);
         }
+        flags.set_present(false);
 
-        self.clear_flag(Self::FLAG_P);
+        self.set_flags(flags);
     }
 }
 
 impl PageTable {
     /// Allocates a new page table
     pub fn new() -> (&'static mut Self, PhysAddr) {
-        let phys_addr = pmm::get()
-            .allocate(NonZero::new(1).unwrap(), NonZero::new(1).unwrap())
+        let phys_addr = pmm::get().allocate(1, 1)
             .expect("Failed to allocate page table");
 
         // For easier bootstrapping, we are HHDM mapping all page tables
         let ptr: *mut u8 = phys_addr.add_hhdm_offset().into();
         // Memset to clear old stale data that might be in the page tables
         unsafe {
-            memset(ptr, 0, core::mem::size_of::<PageTable>());
+            memset(ptr, 0, size_of::<PageTable>());
         }
 
         (
@@ -264,13 +190,15 @@ impl PageTable {
         let mut table = self;
 
         for level in
-            (PageSize::Size4KB.bottom_paging_level()..=PageSize::Max.bottom_paging_level()).rev()
+            (PageSize::<X86_64>::size_4kb().bottom_paging_level()..MAX_BOTTOM_PAGING_LEVEL).rev()
         {
             let i = next_level_index(virt_addr, level);
 
-            if table[i].is_flag_set(Entry::FLAG_LAST_ENTRY) {
+            let flags = table[i].get_flags();
+            // if table[i].is_flag_set(Entry::FLAG_LAST_ENTRY) {
+            if flags.get_last_entry() {
                 return Some(&mut table[i]);
-            } else if table[i].is_flag_set(Entry::FLAG_P) {
+            } else if flags.get_present() {
                 table = table[i].next_level_table();
             } else {
                 return None;
@@ -286,11 +214,11 @@ impl PageTable {
     fn get_create_table_range(
         &mut self,
         base_addr: VirtAddr,
-        page_size: PageSize,
+        page_size: PageSize<X86_64>,
     ) -> &mut PageTable {
         {
             let start = next_level_index(base_addr, page_size.bottom_paging_level());
-            let end = start + (page_size as usize);
+            let end = start + page_size.size();
             assert!(end <= ENTRIES_PER_TABLE, "Range out of bounds");
         }
 
@@ -299,13 +227,14 @@ impl PageTable {
 
         let mut table = self;
         for level in
-            (page_size.bottom_paging_level() + 1..=PageSize::Max.bottom_paging_level()).rev()
+            (page_size.bottom_paging_level() + 1..=MAX_BOTTOM_PAGING_LEVEL).rev()
         {
             let i = next_level_index(base_addr, level);
-            if !table[i].is_flag_set(Entry::FLAG_P) {
+            let flags = table[i].get_flags();
+            if !flags.get_present() {
                 table[i].set_addr(PageTable::new().1);
-                table[i].set_flag(Entry::FLAG_P);
-                table[i].set_flag(Entry::FLAG_RW);
+                flags.set_present(true).set_read_write(true);
+                table[i].set_flags(flags);
             }
 
             table = table[i].next_level_table();
@@ -320,20 +249,21 @@ impl PageTable {
     fn get_table_range(
         &mut self,
         base_addr: VirtAddr,
-        page_size: PageSize,
+        page_size: PageSize<X86_64>,
     ) -> Option<&mut PageTable> {
         {
             let start = next_level_index(base_addr, page_size.bottom_paging_level());
-            let end = start + (page_size as usize);
+            let end = start + page_size.size();
             assert!(end <= ENTRIES_PER_TABLE, "Range out of bounds");
         }
 
         let mut table = self;
         for level in
-            (page_size.bottom_paging_level() + 1..=PageSize::Max.bottom_paging_level()).rev()
+            (page_size.bottom_paging_level() + 1..=MAX_BOTTOM_PAGING_LEVEL).rev()
         {
             let i = next_level_index(base_addr, level);
-            if !table[i].is_flag_set(Entry::FLAG_P) {
+            let flags = table[i].get_flags();
+            if !flags.get_present() {
                 return None;
             }
 
@@ -346,7 +276,7 @@ impl PageTable {
     /// Activates the mapping for the given virtual address
     ///
     /// If the entry isn't "taken" (or perhaps already activated) the function will panic
-    pub fn activate_mapping(&mut self, base_addr: VirtAddr) {
+    fn activate_mapping(&mut self, base_addr: VirtAddr) {
         let entry = self.get_entry(base_addr).expect("Failed to get entry");
 
         entry.activate_taken();
@@ -358,20 +288,21 @@ impl PageTable {
         &mut self,
         base_addr: VirtAddr,
         count: usize,
-        page_size: PageSize,
-        flags: usize,
+        page_size: PageSize<X86_64>,
+        flags: Flags<X86_64>,
     ) {
         // TODO: Change me to the actual flags we can set and the ones we can't
-        assert!(flags & !0b111 == 0, "Invalid flags");
+        // assert!(flags & !0b111 == 0, "Invalid flags");
 
         // Get the parent page table
         let table = self.get_create_table_range(base_addr, page_size);
 
-        // Find out how much to skiop how much to take
+        // Find out how much to skip, and how much to take
         let to_skip = next_level_index(base_addr, page_size.bottom_paging_level());
         for entry in table.iter_mut().skip(to_skip).take(count) {
             entry.take(flags, page_size);
         }
+
     }
 
     /// Maps the given virtual address to the given physical address
@@ -379,9 +310,9 @@ impl PageTable {
         &mut self,
         base_addr: VirtAddr,
         phys_addr: PhysAddr,
-        page_size: PageSize,
-        flags: usize,
-    ) {
+        page_size: PageSize<X86_64>,
+        flags: Flags<X86_64>,
+    ) -> Result<(), PagingError> {
         // TODO: Change me to the actual flags we can set and the ones we can't
         // assert!(flags & !0b111 == 0, "Invalid flags");
 
@@ -392,11 +323,13 @@ impl PageTable {
         let i = next_level_index(base_addr, page_size.bottom_paging_level());
         // Map the entry
         unsafe { table[i].map(phys_addr, flags, page_size) };
+
+        Ok(())
     }
 
     /// Unmaps the given virtual address range, as well as frees the physical page mapped to it if the page was
     /// mapped with `map_allocate`
-    pub unsafe fn unmap(&mut self, base_addr: VirtAddr, count: usize, page_size: PageSize) {
+    pub(super) unsafe fn unmap(&mut self, base_addr: VirtAddr, count: usize, page_size: PageSize<X86_64>) -> Result<(), PagingError> {
         let table = self.get_table_range(base_addr, page_size).unwrap();
 
         let to_skip = next_level_index(base_addr, page_size.bottom_paging_level());
@@ -407,56 +340,28 @@ impl PageTable {
         for entry in table.iter_mut().skip(to_skip).take(count) {
             entry.release();
         }
+
+        Ok(())
     }
 
     /// Get the physical address associated with the given virtual address.
     ///
     /// If the virtual address is not mapped, `None` is returned.
-    pub fn translate(&mut self, base_addr: VirtAddr) -> Option<PhysAddr> {
+    pub(super) fn translate(&mut self, base_addr: VirtAddr) -> Option<PhysAddr> {
         let entry = self.get_entry(base_addr)?;
 
-        if entry.is_flag_set(Entry::FLAG_P) {
-            Some(entry.get_addr())
-        } else {
-            None
+        let flags = entry.get_flags();
+        if !flags.get_present() {
+            return None;
         }
+
+        Some(entry.get_addr())
     }
 }
 
-impl PageSize {
-    /// Get the bottom paging level of the page size (ie. the level of the page table that maps
-    /// entries of this size)
-    #[inline]
-    pub const fn bottom_paging_level(self) -> usize {
-        self as usize
-    }
-
-    /// Get the flag that needs to be set to make the entry map a page of this size
-    #[inline]
-    const fn flag(self) -> usize {
-        match self {
-            PageSize::Size4KB => 0,
-            _ => Entry::FLAG_PS,
-        }
-    }
-
-    /// Get the amount of bits of the offset in the virtual address
-    #[inline]
-    pub const fn offset_bit_count(self) -> usize {
-        12 + (self as usize * 9)
-    }
-
-    // TODO: Possibly have the enum contian this value instead of calculating it every time if the
-    // usage is high enough
-    /// Get the size in bytes of this page size
-    #[inline]
-    pub const fn size(self) -> usize {
-        2_usize.pow(self.offset_bit_count() as u32)
-    }
-}
 
 /// Get the top level paging table PML4/PML5 (depending on the paging level)
-pub fn get_pml() -> &'static mut PageTable {
+pub(super) fn get_pml() -> &'static mut PageTable {
     let phys_addr = unsafe { PhysAddr((Cr3::read().top_pml() << 12) as usize) };
 
     let ptr: *mut PageTable = phys_addr.add_hhdm_offset().into();
@@ -474,14 +379,16 @@ fn map_with_hhdm_offset(
     new_pml: &mut PageTable,
 ) {
     // Just making sure the addresses are both aligned
-    sanity_assert!(base_virt_addr.0 % BASIC_PAGE_SIZE == 0);
-    sanity_assert!(base_phys_addr.0 % BASIC_PAGE_SIZE == 0);
+    sanity_assert!(base_virt_addr.0 % X86_64::BASIC_PAGE_SIZE.size() == 0);
+    sanity_assert!(base_phys_addr.0 % X86_64::BASIC_PAGE_SIZE.size() == 0);
 
     for i in 0..page_count {
-        let virt_addr = base_virt_addr + (i * BASIC_PAGE_SIZE);
-        let phys_addr = base_phys_addr + (i * BASIC_PAGE_SIZE);
+        let virt_addr = base_virt_addr + (i * X86_64::BASIC_PAGE_SIZE.size());
+        let phys_addr = base_phys_addr + (i * X86_64::BASIC_PAGE_SIZE.size());
 
-        unsafe { new_pml.map(virt_addr, phys_addr, PageSize::Size4KB, Entry::FLAG_RW) };
+        // TODO: Map with correct flags
+        // TODO: Use different page sizes
+        unsafe { new_pml.map(virt_addr, phys_addr, PageSize::size_4kb(), Flags::new().set_read_write(true)) };
     }
 }
 
@@ -489,7 +396,7 @@ fn map_with_hhdm_offset(
 const fn next_level_index(addr: VirtAddr, level: usize) -> usize {
     assert!(level < 5);
 
-    (addr.0 >> (PageSize::Size4KB.offset_bit_count() + (level * 9))) & 0b1_1111_1111
+    (addr.0 >> (PageSize::size_4kb().offset_bit_count() + (level * 9))) & 0b1_1111_1111
 }
 
 #[cfg(feature = "limine")]
@@ -516,9 +423,9 @@ pub(super) unsafe fn init_from_limine(
     // also HHDM mapped IIRC)
     for entry in mem_map {
         // Just making sure the length is a multiple of a page size
-        sanity_assert!(entry.length as usize % BASIC_PAGE_SIZE == 0);
+        sanity_assert!(entry.length as usize % X86_64::BASIC_PAGE_SIZE.size() == 0);
 
-        let page_count = entry.length as usize / BASIC_PAGE_SIZE;
+        let page_count = entry.length as usize / X86_64::BASIC_PAGE_SIZE.size();
         match entry.entry_type {
             EntryType::EXECUTABLE_AND_MODULES => {
                 map_with_hhdm_offset(kernel_virt, kernel_phys, page_count, new_pml)
@@ -595,7 +502,7 @@ unsafe fn finalize_init(pml_phys_addr: PhysAddr) {
     // TODO: Make sure CRs flags are OK
     unsafe {
         // Check to make sure the features we want to enable are supported
-        check_pat_support();
+        // check_pat_support();
         check_pge_support();
         // enable_nx();
 

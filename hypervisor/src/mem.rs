@@ -1,13 +1,6 @@
 use core::{num::NonZero, ptr::from_ref};
 
 use logger::*;
-use kernel::{
-    arch::{
-        BASIC_PAGE_SIZE,
-        x86_64::paging::{Entry, PageSize, PageTable},
-    },
-    mem::pmm::{self, PmmAllocator},
-};
 use utils::mem::{PhysAddr, VirtAddr};
 
 const DEFAULT_GUEST_ADDRESS_SPACE_START: GuestPhysAddr = VirtAddr(0x1000);

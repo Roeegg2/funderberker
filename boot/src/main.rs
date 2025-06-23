@@ -7,6 +7,7 @@
 // this CPU.
 
 use logger::*;
+use slab::heap::KernelHeapAllocator;
 use core::panic::PanicInfo;
 use core::arch::asm;
 use core::format_args;
@@ -14,14 +15,11 @@ use core::format_args;
 mod boot;
 mod acpi;
 
+/// The global instance of the kernel heap allocator
+#[global_allocator]
+pub static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocator::new();
+
 fn funderberker_start() -> ! {
-    hcf();
-}
-
-#[panic_handler]
-pub fn rust_panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
-
     hcf();
 }
 
@@ -36,3 +34,11 @@ fn hcf() -> ! {
         }
     }
 }
+
+#[panic_handler]
+pub fn rust_panic(info: &PanicInfo) -> ! {
+    println!("{}", info);
+
+    hcf();
+}
+
