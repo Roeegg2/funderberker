@@ -40,13 +40,11 @@ where
     #[inline]
     pub fn get(&self) -> T {
         unsafe {
-            let foo = *self.data.get();
-
             // TODO: Might have to remove this since sometimes the UNINT type can be valid
             // Making sure the value has indeed been set
             // sanity_assert!(foo != T::UNINIT);
 
-            foo
+            *self.data.get()
         }
     }
 }

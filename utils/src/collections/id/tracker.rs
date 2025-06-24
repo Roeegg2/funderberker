@@ -28,6 +28,7 @@ pub struct IdTracker {
 impl IdTracker {
     // TODO: Remove this and use the `Default` when const default is possible
     /// Get an uninitilized instance of an `IdTracker`
+    #[must_use]
     pub const fn uninit() -> Self {
         Self {
             bitmap: Bitmap::uninit(),
@@ -36,6 +37,7 @@ impl IdTracker {
     }
 
     /// Construct a new `IdTracker`
+    #[must_use]
     pub fn new(min: Id, max: Id) -> Self {
         Self {
             bitmap: Bitmap::new(max.0 - min.0 + 1),
@@ -43,7 +45,7 @@ impl IdTracker {
         }
     }
 
-    /// Try to find a free id in the pool_range and allocate it
+    /// Try to find a free id in the `pool_range` and allocate it
     #[must_use = "Not freeing the ID will cause leaking"]
     pub fn allocate(&mut self) -> Result<Id, IdTrackerError> {
         for i in 0..self.bitmap.used_bits_count() {

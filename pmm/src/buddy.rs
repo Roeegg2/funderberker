@@ -392,6 +392,8 @@ impl SpinLockable for BuddyAllocator<'_> {}
 
 #[cfg(test)]
 mod tests {
+    use alloc::{vec, vec::Vec};
+
     use super::*;
 
     const BASE_ADDR: PhysAddr = PhysAddr(0x1000000); // 16MB base address for testing

@@ -6,16 +6,13 @@ on:
     branches: [ main ]
   schedule:
     - cron: '0 0 * * *'  # Run nightly to catch regressions
-
 permissions:
   contents: write
   pages: write
   id-token: write
-
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-
 # TODO: 
 # 1. Add Clippy
 # 2. Add mock Funderberker testing
@@ -73,41 +70,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run Cargo Check
         run: |
-          cargo check --workspace --exclude kernel --all-targets
-          cargo check -p kernel
+          cargo check
 
-  # Documentation job (depends on tests passing)
-  docs:
-    name: Documentation
+  documentation:
+    name: Generate Documentation
     runs-on: ubuntu-latest
-    needs: docs_tests  # Only run if tests pass
-    permissions:
-      pages: write
-      id-token: write
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: false
+    if: github.ref == 'refs/heads/main'
+    needs: [unit_tests, formatting, docs_tests, linting]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           toolchain: nightly
       - uses: Swatinem/rust-cache@v2
-      
-      # Build docs
-      - name: Build docs
+        with:
+          key: docs
+      - name: Generate documentation
         run: |
-          cargo doc --workspace --no-deps --verbose
-          echo '<meta http-equiv="refresh" content="0;url=aoc/index.html">' > target/doc/index.html
-
-      # Setup and deploy to GitHub Pages
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-      - name: Upload artifact
+          cargo doc --workspace --no-deps --all-features
+          echo '<meta http-equiv="refresh" content="0; url=kernel">' > target/doc/index.html
+      - name: Upload documentation artifacts
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./target/doc/kernel
+          path: target/doc
+
+  deploy_docs:
+    name: Deploy Documentation to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: documentation
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main'
         id: deployment
         uses: actions/deploy-pages@v4

@@ -15,6 +15,3 @@ pedantic = "warn"
 default = ["limine"]
 
 limine = ["dep:limine"]
-
-[kernel.features]
-

@@ -198,8 +198,8 @@ impl Madt {
                     let entry = entry.cast::<LocalApicEntry>().as_ref().unwrap();
                     lapic::add(
                         PhysAddr(self.local_apic_addr as usize),
-                        entry.acpi_processor_id as u32,
-                        entry.apic_id as u32,
+                        u32::from(entry.acpi_processor_id),
+                        u32::from(entry.apic_id),
                         entry.flags,
                     );
                 },
@@ -226,7 +226,11 @@ impl Madt {
                 },
                 EntryType::LOCAL_APIC_NMI => unsafe {
                     let entry = entry.cast::<LocalApicNmiEntry>().as_ref().unwrap();
-                    lapic::config_lints(entry.acpi_processor_id as u32, entry.lint, entry.flags);
+                    lapic::config_lints(
+                        u32::from(entry.acpi_processor_id),
+                        entry.lint,
+                        entry.flags,
+                    );
                 },
                 EntryType::LOCAL_APIC_ADDR_OVERRIDE => unsafe {
                     // XXX: I think this entry should always come before the local apic and all the

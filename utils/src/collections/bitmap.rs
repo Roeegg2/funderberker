@@ -176,7 +176,7 @@ impl IntoIterator for Bitmap {
     }
 }
 
-/// IntoIterator implementation for owned bitmap
+/// `IntoIterator` implementation for owned bitmap
 pub struct BitmapIntoIterator {
     bitmap: Bitmap,
     current_index: usize,

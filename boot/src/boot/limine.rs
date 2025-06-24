@@ -61,7 +61,11 @@ unsafe extern "C" fn kmain() -> ! {
 
     logger::Writer::init_from_limine(
         FRAMEBUFFER_REQUEST
-            .get_response().unwrap().framebuffers().next().as_ref(),
+            .get_response()
+            .unwrap()
+            .framebuffers()
+            .next()
+            .as_ref(),
     );
 
     let hhdm = HHDM_REQUEST

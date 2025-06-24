@@ -22,6 +22,7 @@ where
     T: Schedulable,
 {
     // TODO: Remove this `new_const` when we get const fn in trait support, and use `new` instead
+    #[must_use]
     pub const fn new_const() -> Self {
         Self { scheduable: None }
     }

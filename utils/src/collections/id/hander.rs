@@ -18,6 +18,7 @@ pub struct IdHander {
 impl IdHander {
     // TODO: Remove this and use the `Default` when const default is possible
     /// Return an uninitialized `IdHander`.
+    #[must_use]
     pub const fn uninit() -> Self {
         Self {
             next: Id(0),
@@ -27,6 +28,7 @@ impl IdHander {
 
     /// Creates a new `IdHander` starting from the given ID.
     #[inline]
+    #[must_use]
     pub const fn new_starting_from(start_id: Id, max_id: Id) -> Self {
         Self {
             next: start_id,
@@ -36,6 +38,7 @@ impl IdHander {
 
     /// Creates a new `IdHander` starting from 0.
     #[inline]
+    #[must_use]
     pub const fn new(max_id: Id) -> Self {
         Self::new_starting_from(Id(0), max_id)
     }
@@ -62,6 +65,7 @@ impl IdHander {
 
     /// Get
     #[inline]
+    #[must_use]
     pub const fn peek_next(&self) -> Id {
         self.next
     }

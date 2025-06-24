@@ -1,6 +1,6 @@
 //! A simple slab allocator implementation
 
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 #![feature(sync_unsafe_cell)]
 #![feature(allocator_api)]
 #![feature(pointer_is_aligned_to)]
@@ -32,10 +32,20 @@ where
     phantom_data: PhantomData<T>,
 }
 
+impl<T> Default for SlabAllocator<T>
+where
+    T: SlabAllocatable,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> SlabAllocator<T>
 where
     T: SlabAllocatable,
 {
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             allocator: SyncUnsafeCell::new(InternalSlabAllocator::new(Layout::new::<T>())),

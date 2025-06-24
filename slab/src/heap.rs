@@ -24,6 +24,12 @@ macro_rules! create_slab_allocators {
     };
 }
 
+impl Default for KernelHeapAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KernelHeapAllocator {
     const MIN_POW: usize = 6;
     const MAX_POW: usize = 15;
@@ -31,7 +37,7 @@ impl KernelHeapAllocator {
 
     /// Create a new instance of the kernel heap allocator
     #[rustfmt::skip]
-    pub const fn new() -> Self {
+    #[must_use]    pub const fn new() -> Self {
         // TODO: Use a const array::from_fn here!
         // TODO: Benchmark and possibly change the slab allocator sizes
         Self(create_slab_allocators!(

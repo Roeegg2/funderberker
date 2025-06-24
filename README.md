@@ -25,15 +25,19 @@ For more info, run
 just help
 ```
 
-## Project Structure
+## Structure
 
-Funderberker is structured into several crates, each serving a specific purpose:
-- `kernel`: The core of the hypervisor.
-- `memory`: Hardware-independent components of the memory management subsystem (PMM, VMM, slab allocator, etc.).
-- `drivers`: Drivers and general driver interfaces.
-- `utils`: Various utility functions and types that are used across the project.
-- `macros`: Procedural macros used throughout the project (this is made a separate crate because of a Rust limitation).
-- `scheduler`: Schedulers and a general scheduler interface.
+Naturally, because of the nature of a type 1 hypervisor, the code structure is similar to that of a microkernel:
+- `kernel`: A very minimal, basic kernel that provides the bare minimum to run the hypervisor.
+- `hypervisor`: The hypervisor itself, which provides the basic functionality to run VMs.
+- `drivers`: Drivers for various devices
+- `utils`: Various utilities and helpers
+- `macros`: Custom proc macros (placed in a crate of it's own because of a Rust internal limitation)
+- `logger`: A simple loggin crate to log messages during runtime
+- `pmm`: A buddy physical memory manager
+- `slab`: A slab allocator
+- `scheduler`: A simple scheduler to manage VMs
+
 
 ## Contributing
 

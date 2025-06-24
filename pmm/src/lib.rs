@@ -1,6 +1,6 @@
 //! Physical Memory Manager (PMM) module
 
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 #![feature(box_vec_non_null)]
 // TODO: Remove this once you fix the `as` conversion warnings
 #![allow(clippy::cast_possible_truncation)]

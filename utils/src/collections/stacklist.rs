@@ -66,8 +66,15 @@ impl<T> DerefMut for Node<T> {
     }
 }
 
+impl<T> Default for StackList<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> StackList<T> {
     #[inline]
+    #[must_use]
     pub const fn new() -> Self {
         StackList { head: None, len: 0 }
     }
@@ -114,6 +121,7 @@ impl<T> StackList<T> {
     }
 
     #[inline]
+    #[must_use]
     pub fn peek(&self) -> Option<&T> {
         self.head
             .as_ref()
@@ -155,16 +163,19 @@ impl<T> StackList<T> {
 
     /// Check if the list is empty
     #[inline]
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.head.is_none()
     }
 
     #[inline]
+    #[must_use]
     pub const fn len(&self) -> usize {
         self.len
     }
 
     #[inline]
+    #[must_use]
     pub fn iter_node(&self) -> IterNode<'_, T> {
         IterNode {
             head: self.head,
@@ -183,6 +194,7 @@ impl<T> StackList<T> {
     }
 
     #[inline]
+    #[must_use]
     pub fn iter(&self) -> Iter<'_, T> {
         Iter {
             head: self.head,
@@ -310,6 +322,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alloc::{
+        format,
+        string::{String, ToString},
+        vec,
+        vec::Vec,
+    };
+
     use super::*;
 
     #[test]

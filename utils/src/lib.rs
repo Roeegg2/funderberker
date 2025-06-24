@@ -1,4 +1,4 @@
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 #![feature(let_chains)]
 #![feature(box_vec_non_null)]
 #![feature(sync_unsafe_cell)]

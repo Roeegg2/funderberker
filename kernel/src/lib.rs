@@ -1,4 +1,4 @@
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 #![feature(sync_unsafe_cell)]
 // TODO: Remove this once the modular_bitfield errors are taken care of
 #![allow(dead_code)]

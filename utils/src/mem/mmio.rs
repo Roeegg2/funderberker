@@ -74,6 +74,7 @@ where
 
     /// Get the base address of the MMIO area
     #[inline]
+    #[must_use]
     pub const fn base(&self) -> *mut T {
         self.base
     }
@@ -92,6 +93,7 @@ where
     /// Read an MMIO register in the area. `reg` should have `reg.offset()` return the offset **in
     /// bytes**
     #[inline]
+    #[must_use]
     pub unsafe fn read(&self) -> T {
         unsafe { read_volatile(self.base) }
     }
