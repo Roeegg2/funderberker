@@ -2,7 +2,6 @@
 
 use super::{Schedulable, Scheduler};
 use alloc::boxed::Box;
-use logger::*;
 use utils::{sanity_assert, sync::spinlock::SpinLockable};
 
 /// The parameters required to create a new `Constant` scheduler.
@@ -51,7 +50,7 @@ where
     }
 
     fn operation_loop(&mut self) -> ! {
-        log_info!("Entered scheduler loop");
+        logger::info!("Entered scheduler loop");
 
         if let Some(ref mut vessel) = self.scheduable {
             loop {

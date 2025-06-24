@@ -10,7 +10,7 @@ members = [
     "logger", 
     "pmm", 
     "slab", 
-    "arch",
+    "kernel",
 ]
 
 [profile.dev]

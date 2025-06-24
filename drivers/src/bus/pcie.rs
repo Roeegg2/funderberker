@@ -1,14 +1,12 @@
 //! Support for the PCI Express bus.
 
-use arch::{
-    map_page,
-    paging::{Flags, PageSize},
-    unmap_page,
-    x86_64::paging::pat::PatType,
+use kernel::{
+    arch::x86_64::{X86_64, paging::pat::PatType},
+    mem::paging::{Flags, PageSize, PagingManager},
 };
+
 // use crate::acpi::mcfg::ConfigSpace;
 use alloc::vec::Vec;
-use logger::*;
 use utils::{
     mem::{
         PhysAddr,
@@ -218,8 +216,9 @@ impl PcieManager {
         let config_space: MmioArea<usize, usize, u32> = {
             let phys_addr = PcieDevice::get_base_address(bus, device, function, segment_group_base);
             let virt_addr = unsafe {
-                map_page(
+                X86_64::map_pages(
                     phys_addr,
+                    1,
                     Flags::new()
                         .set_read_write(true)
                         .set_pat(PatType::WriteThrough, PageSize::size_4kb()),
@@ -236,7 +235,9 @@ impl PcieManager {
             unsafe { config_space.read(StandardHeader::DeviceVendorId as usize) & 0xffff };
         if vendor_id == VENDOR_ID_INVALID as u32 {
             // XXX: Set the flags to the correct ones
-            unsafe { unmap_page(config_space.base().into(), PageSize::size_4kb()) };
+            unsafe {
+                X86_64::unmap_pages(config_space.base().into(), 1, PageSize::size_4kb()).unwrap()
+            };
             return None;
         }
 
@@ -277,7 +278,7 @@ impl PcieManager {
 
             match (class_code, subclass, prog_if) {
                 (0x1, 0x8, 0x2) => {
-                    log_info!("Found NVMe");
+                    logger::info!("Found NVMe");
                 }
                 _ => (),
             }
@@ -309,7 +310,7 @@ impl PcieDevice {
 impl Drop for PcieDevice {
     fn drop(&mut self) {
         unsafe {
-            unmap_page(self.config_space.base().into(), PageSize::size_4kb())
+            X86_64::unmap_pages(self.config_space.base().into(), 1, PageSize::size_4kb())
                 .expect("Failed to unmap PCIe device config space");
         };
     }

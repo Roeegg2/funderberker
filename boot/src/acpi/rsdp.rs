@@ -1,11 +1,11 @@
 //! Parser for the RSDP table
 
 use super::{AcpiError, SdtHeader, xsdt::Xsdt};
-use arch::{
-    BASIC_PAGE_SIZE, map_page,
-    paging::{Flags, PageSize},
-};
 use core::ptr;
+use kernel::{
+    arch::{BASIC_PAGE_SIZE, x86_64::X86_64},
+    mem::paging::{Flags, PageSize, PagingManager},
+};
 use utils::mem::PhysAddr;
 
 /// The RSDP (a pointer to the XSDT)
@@ -79,7 +79,8 @@ impl Rsdp2 {
         let ptr: *const SdtHeader = unsafe {
             let addr = PhysAddr(self.xsdt_address as usize);
             let diff = addr.0 % BASIC_PAGE_SIZE;
-            (map_page(addr - diff, Flags::new(), PageSize::size_4kb()).unwrap() + diff).into()
+            (X86_64::map_pages(addr - diff, 1, Flags::new(), PageSize::size_4kb()).unwrap() + diff)
+                .into()
         };
 
         utils::sanity_assert!(ptr.is_aligned_to(align_of::<Xsdt>()));

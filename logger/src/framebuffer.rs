@@ -306,7 +306,7 @@ impl FramebufferWriter {
     /// structure.
     #[cfg(feature = "limine")]
     #[inline]
-    pub(super) fn init_from_limine(&mut self, fb: Framebuffer<'static>) {
+    pub(super) fn init_from_limine(&mut self, fb: &Framebuffer<'static>) {
         self.framebuffer.ptr = fb.addr().cast::<u32>();
         self.framebuffer.width = fb.width();
         self.framebuffer.height = fb.height();
@@ -317,7 +317,7 @@ impl FramebufferWriter {
     /// Draws a pixel at the given coordinates with the given color.
     pub(super) fn draw_pixel(&self, mut x: u64, mut y: u64, color: u32) {
         y *= self.framebuffer.pitch;
-        x *= (self.framebuffer.bpp / 8) as u64;
+        x *= u64::from(self.framebuffer.bpp / 8);
 
         unsafe { *(self.framebuffer.ptr.byte_add((x + y) as usize)) = color };
     }

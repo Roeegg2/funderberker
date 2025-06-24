@@ -43,6 +43,9 @@ pub trait Timer: Sized {
 
     /// Configure and setup the timer, and return the amount of clock ticks that the timer will
     /// tick for
+    ///
+    /// # Errors
+    /// If the timer cannot be configured, a general error describing what went wrong is returned.
     fn configure(
         &mut self,
         time: Duration,

@@ -6,7 +6,7 @@ use macros::isr;
 use modular_bitfield::prelude::*;
 
 use crate::{
-    arch::x86_64::{
+    kernel::archx86_64::{
         apic::{ioapic, lapic::LocalApic},
         cpu::outb_8,
         interrupts,

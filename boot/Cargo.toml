@@ -6,13 +6,16 @@ edition = "2024"
 [dependencies]
 limine = { version = "0.5.0", optional = true }
 
-arch = { version = "0.1.0", path = "../arch" }
+kernel = { version = "0.1.0", path = "../kernel" }
 drivers = { version = "0.1.0", path = "../drivers" }
 hypervisor = { version = "0.1.0", path = "../hypervisor" }
 logger = { version = "0.1.0", path = "../logger" }
 utils = { version = "0.1.0", path = "../utils" }
 pmm = { version = "0.1.0", path = "../pmm" }
 slab = { version = "0.1.0", path = "../slab" }
+
+[lints.clippy]
+pedantic = "warn"
 
 [features]
 default = ["limine", "serial", "framebuffer"]

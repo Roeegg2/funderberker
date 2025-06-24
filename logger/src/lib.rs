@@ -1,11 +1,12 @@
 //! Simple module to provide logging & printing utils
 
 #![no_std]
+// TODO: Remove this once you fix the `as` conversion warnings
+#![allow(clippy::cast_possible_truncation)]
 
 use core::fmt::Write;
 #[cfg(feature = "limine")]
 use limine::framebuffer::Framebuffer;
-
 #[cfg(feature = "framebuffer")]
 mod framebuffer;
 #[cfg(feature = "serial")]
@@ -13,14 +14,6 @@ mod serial;
 
 /// Empty struct to implement 'Write' on
 pub struct Writer;
-
-/// A macro to print to the serial port or framebuffer
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => {{
-        let _ = core::fmt::Write::write_fmt(&mut $crate::Writer, format_args!($($arg)*));
-    }}
-}
 
 /// A macro to print to the serial port or framebuffer with a newline
 #[macro_export]
@@ -32,31 +25,31 @@ macro_rules! println {
 
 /// A macro to print a warning to the serial port or framebuffer
 #[macro_export]
-macro_rules! log_info {
+macro_rules! info {
     ($($arg:tt)*) => {
-        println!("-> INFO: {}", format_args!($($arg)*));
+        $crate::println!("-> INFO: {}", format_args!($($arg)*));
     }
 }
 
 /// A macro to print an error to the serial port or framebuffer
 #[macro_export]
-macro_rules! log_err {
+macro_rules! err {
     ($($arg:tt)*) => {
-        println!("-> ERROR: {}", format_args!($($arg)*));
+        $crate::println!("-> ERROR: {}", format_args!($($arg)*));
     }
 }
 
 /// A macro to print a warning to the serial port or framebuffer
 #[macro_export]
-macro_rules! log_warn {
+macro_rules! warn {
     ($($arg:tt)*) => {
-        println!("-> WARNING: {}", format_args!($($arg)*));
+        $crate::println!("-> WARNING: {}", format_args!($($arg)*));
     }
 }
 
 impl Writer {
     #[cfg(feature = "limine")]
-    pub fn init_from_limine(fb: Option<Framebuffer<'static>>) {
+    pub fn init_from_limine(fb: Option<&Framebuffer<'static>>) {
         #[cfg(feature = "serial")]
         {
             #[allow(static_mut_refs)]

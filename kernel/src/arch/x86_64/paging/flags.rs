@@ -1,8 +1,6 @@
-use core::marker::PhantomData;
-
 use crate::{
-    paging::{Flags, PageSize},
-    x86_64::X86_64,
+    arch::x86_64::X86_64,
+    mem::paging::{Flags, PageSize},
 };
 
 use super::pat::{PatEntry, PatType};
@@ -64,52 +62,16 @@ impl Flags<X86_64> {
     /// - If `0` the page is executable
     pub(super) const FLAG_XD: usize = 1 << 63;
 
-    /// A custom flag to mark the entry as taken - meaning that the entry is no free, but isn't
-    /// present (ie. not useable yet).
-    /// It will become present when the entry is activated, so we can lazily map the page.
-    pub(super) const FLAG_TAKEN: usize = 1 << 9;
+    /// Custom flag to mark a page as an allocated one, so we should free it when the time comes
+    pub(super) const FLAG_ALLOCATED: usize = 1 << 9;
 
-    /// When lazily mapping a page, we can't pass information regarding the size of the page we
-    /// want to map.
-    /// So we need to set this flag to mark the entry as a "last entry" in the page table, and now
+    /// Set this flag to mark the entry as a "last entry" in the page table, and now
     /// that we know the last level we can combine that with the `PS` flag to determine the size
     pub(super) const FLAG_LAST_ENTRY: usize = 1 << 10;
 
     #[inline]
     pub const fn new() -> Self {
-        Self {
-            data: Self::FLAGS_NONE,
-            _arch: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub(super) const fn data(self) -> usize {
-        self.data
-    }
-
-    #[inline]
-    const fn get(self, data: usize) -> bool {
-        (self.data & data) != 0
-    }
-
-    #[inline]
-    const fn set(mut self, data: usize, status: bool) -> Self {
-        if status {
-            self.data |= data;
-        } else {
-            self.data &= !data;
-        }
-
-        self
-    }
-
-    #[inline]
-    pub(super) const unsafe fn from_raw(data: usize) -> Self {
-        Self {
-            data,
-            _arch: PhantomData,
-        }
+        unsafe { Self::from_raw(Self::FLAGS_NONE) }
     }
 
     #[inline]
@@ -190,8 +152,8 @@ impl Flags<X86_64> {
     }
 
     #[inline]
-    pub(super) const fn set_taken(self, status: bool) -> Self {
-        self.set(Self::FLAG_TAKEN, status)
+    pub(super) const fn set_allocated(self, status: bool) -> Self {
+        self.set(Self::FLAG_ALLOCATED, status)
     }
 
     #[inline]
@@ -255,8 +217,8 @@ impl Flags<X86_64> {
     }
 
     #[inline]
-    pub const fn get_taken(self) -> bool {
-        self.get(Self::FLAG_TAKEN)
+    pub const fn get_allocated(self) -> bool {
+        self.get(Self::FLAG_ALLOCATED)
     }
 
     #[inline]

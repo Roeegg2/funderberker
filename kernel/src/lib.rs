@@ -1,15 +1,9 @@
-//! Various drivers and driver interfaces
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+#![feature(sync_unsafe_cell)]
 // TODO: Remove this once the modular_bitfield errors are taken care of
 #![allow(dead_code)]
 // TODO: Remove this once you fix the `as` conversion warnings
 #![allow(clippy::cast_possible_truncation)]
 
-extern crate alloc;
-
-pub mod bus;
-pub mod clock;
-#[cfg(feature = "rtc")]
-mod cmos;
-pub mod storage;
-pub mod timer;
+pub mod arch;
+pub mod mem;

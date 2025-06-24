@@ -343,11 +343,10 @@ impl From<DescriptorTablePtr> for FullSegmentSelector {
 #[cfg(test)]
 mod tests {
     use core::mem::offset_of;
-    use macros::test_fn;
 
     use crate::arch::x86_64::gdt::FullSegmentSelector;
 
-    #[test_fn]
+    #[test]
     fn test_full_segment_selector_layout() {
         assert_eq!(offset_of!(FullSegmentSelector, selector), 0);
         assert_eq!(offset_of!(FullSegmentSelector, attributes), 2);

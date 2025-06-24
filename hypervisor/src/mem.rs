@@ -1,6 +1,5 @@
 use core::{num::NonZero, ptr::from_ref};
 
-use logger::*;
 use utils::mem::{PhysAddr, VirtAddr};
 
 const DEFAULT_GUEST_ADDRESS_SPACE_START: GuestPhysAddr = VirtAddr(0x1000);

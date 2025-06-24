@@ -9,7 +9,7 @@ name = "drivers"
 [dependencies]
 utils = { path = "../utils" }
 modular-bitfield = { version = "0.12" }
-arch = { version = "0.1.0", path = "../arch" }
+kernel = { version = "0.1.0", path = "../kernel" }
 logger = { version = "0.1.0", path = "../logger" }
 
 [lints.clippy]

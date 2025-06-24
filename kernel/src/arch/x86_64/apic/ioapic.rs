@@ -1,11 +1,11 @@
 //! Interface and driver for the IO APIC
 
-use super::{DeliveryMode, Destination};
 use crate::{
-    map_page,
-    paging::{Flags, PageSize},
-    x86_64::cpu::outb_8,
+    arch::x86_64::{X86_64, cpu::outb_8},
+    mem::paging::{Flags, PageSize, PagingManager},
 };
+
+use super::{DeliveryMode, Destination};
 use alloc::vec::Vec;
 use core::cell::SyncUnsafeCell;
 use modular_bitfield::prelude::*;
@@ -219,8 +219,9 @@ pub unsafe fn add(phys_addr: PhysAddr, gsi_base: u32, apic_id: u8) {
     // SAFETY: This should be OK since we're mapping a physical address that is marked as
     // reserved, so the kernel shouldn't be tracking it
     let virt_addr = unsafe {
-        map_page(
+        X86_64::map_pages(
             phys_addr,
+            1,
             Flags::new().set_read_write(true),
             PageSize::size_4kb(),
         )
@@ -245,7 +246,7 @@ pub fn init_irq_allocator() {
         .map(|ioapic| ioapic.lock())
         .fold(0, |acc, ioapic| acc + ioapic.gsi_count as usize);
 
-    *irq_allocator = IdTracker::new(Id(0)..Id(gsi_count));
+    *irq_allocator = IdTracker::new(Id(0), Id(gsi_count - 1));
 }
 
 /// Mark the given IRQ as used.

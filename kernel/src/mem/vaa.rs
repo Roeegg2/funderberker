@@ -1,4 +1,3 @@
-use logger::*;
 use utils::{
     collections::id::{Id, hander::IdHander},
     mem::{HHDM_OFFSET, VirtAddr},
@@ -6,9 +5,9 @@ use utils::{
     sync::spinlock::{SpinLock, SpinLockable},
 };
 
-use crate::BASIC_PAGE_SIZE;
+use crate::arch::BASIC_PAGE_SIZE;
 
-pub(super) static VAA: SpinLock<VirtualAddressAllocator> =
+pub(crate) static VAA: SpinLock<VirtualAddressAllocator> =
     SpinLock::new(VirtualAddressAllocator::uninit());
 
 pub struct VirtualAddressAllocator {
@@ -29,13 +28,11 @@ impl VirtualAddressAllocator {
             "Cannot find enough virtual memory space"
         );
 
-        log_info!("VAA initialized with start address of {:?}", start_addr);
+        logger::info!("VAA initialized with start address of {:?}", start_addr);
 
-        {
-            let start_id = Id(start_addr.0 / BASIC_PAGE_SIZE);
-            Self {
-                hander: IdHander::new_starting_from(start_id, Id::MAX_ID),
-            }
+        let start_id = Id(start_addr.0 / BASIC_PAGE_SIZE);
+        Self {
+            hander: IdHander::new_starting_from(start_id, Id::MAX_ID),
         }
     }
 
@@ -51,24 +48,13 @@ impl VirtualAddressAllocator {
         let next = self.hander.peek_next().0;
         let skip = (next as *const ()).align_offset(page_alignment);
 
-        let page_id = unsafe {
-            self.hander.skip(skip);
-            self.hander.handout_and_skip(count)
-        };
+        let page_id = self
+            .hander
+            .handout_and_skip(skip + count)
+            .expect("Virtual address allocator ran out of IDs");
 
         VirtAddr(page_id.0 * BASIC_PAGE_SIZE)
     }
-}
-
-#[cfg(feature = "limine")]
-pub fn init_from_limine(mem_map: &[&limine::memory_map::Entry]) {
-    // Get the last entry in the memory map
-
-    let last_entry = mem_map.last().unwrap();
-    let addr = VirtAddr(last_entry.base as usize + last_entry.length as usize);
-
-    let mut vaa = VAA.lock();
-    *vaa = VirtualAddressAllocator::new(addr);
 }
 
 impl SpinLockable for VirtualAddressAllocator {}

@@ -2,21 +2,19 @@
 
 use core::arch::x86_64::__cpuid_count;
 
-#[cfg(feature = "limine")]
-use limine::memory_map;
-
-use logger::*;
 use paging::get_pml;
 use utils::mem::PhysAddr;
 use utils::mem::VirtAddr;
 
-use crate::Arch;
-use crate::paging::Flags;
-use crate::paging::PageSize;
-use crate::paging::PagingError;
-
 use interrupts::Idt;
 use utils::collections::fast_lazy_static::FastLazyStatic;
+
+use crate::mem::paging::Flags;
+use crate::mem::paging::PageSize;
+use crate::mem::paging::PagingError;
+use crate::mem::paging::PagingManager;
+
+use super::Arch;
 
 #[macro_use]
 pub mod cpu;
@@ -52,8 +50,6 @@ pub struct DescriptorTablePtr {
 }
 
 impl Arch for X86_64 {
-    const BASIC_PAGE_SIZE: PageSize<Self> = PageSize::<Self>::size_4kb(); // 4KB page size
-
     #[inline]
     unsafe fn early_boot_init() {
         // Make sure no pesky interrupt interrupt us
@@ -61,14 +57,18 @@ impl Arch for X86_64 {
 
         find_cpu_vendor();
     }
+}
+
+impl PagingManager for X86_64 {
+    const BASIC_PAGE_SIZE: PageSize<Self> = PageSize::<Self>::size_4kb(); // 4KB page size
 
     #[inline]
     #[cfg(feature = "limine")]
     unsafe fn init_paging_from_limine(
-        mem_map: &[&memory_map::Entry],
+        mem_map: &[&limine::memory_map::Entry],
         kernel_virt: VirtAddr,
         kernel_phys: PhysAddr,
-        used_by_pmm: &memory_map::Entry,
+        used_by_pmm: &limine::memory_map::Entry,
     ) {
         use paging::init_from_limine;
 
@@ -77,23 +77,42 @@ impl Arch for X86_64 {
         }
     }
 
-    unsafe fn map_page_to(
+    unsafe fn init_vaa_from_limine(mem_map: &[&limine::memory_map::Entry]) {
+        assert!(!cfg!(test), "Cannot initialize VAA in test environment");
+        // Get the last entry in the memory map
+
+        use crate::mem::vaa::{VAA, VirtualAddressAllocator};
+
+        let last_entry = mem_map.last().unwrap();
+        let addr = VirtAddr(last_entry.base as usize + last_entry.length as usize);
+
+        let mut vaa = VAA.lock();
+        *vaa = VirtualAddressAllocator::new(addr);
+    }
+
+    unsafe fn map_pages_to(
         phys_addr: PhysAddr,
         virt_addr: VirtAddr,
+        count: usize,
         flags: Flags<Self>,
         page_size: PageSize<Self>,
     ) -> Result<(), PagingError> {
+        assert!(!cfg!(test), "Cannot map pages in test environment");
+
         let pml = get_pml();
-        unsafe { pml.map(virt_addr, phys_addr, page_size, flags) }
+        unsafe { pml.map_pages(virt_addr, phys_addr, count, page_size, flags) }
     }
 
-    unsafe fn unmap_page(
+    unsafe fn unmap_pages(
         virt_addr: VirtAddr,
+        page_count: usize,
         page_size: PageSize<Self>,
     ) -> Result<(), PagingError> {
+        assert!(!cfg!(test), "Cannot map pages in test environment");
+
         let pml = get_pml();
         // TODO: Change this to unmap_page
-        unsafe { pml.unmap(virt_addr, 1, page_size) }
+        unsafe { pml.unmap_pages(virt_addr, page_count, page_size) }
     }
 
     fn translate(virt_addr: VirtAddr) -> Option<PhysAddr> {
@@ -142,7 +161,7 @@ fn find_cpu_vendor() {
         });
     };
 
-    log_info!("CPU Vendor found: `{:?}`", CPU_VENDOR.get());
+    logger::info!("CPU Vendor found: `{:?}`", CPU_VENDOR.get());
 }
 
 impl From<DescriptorTablePtr> for VirtAddr {

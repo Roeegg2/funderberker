@@ -5,6 +5,8 @@
 #![feature(allocator_api)]
 #![feature(pointer_is_aligned_to)]
 #![feature(box_vec_non_null)]
+// TODO: Remove this once you fix the `as` conversion warnings
+#![allow(clippy::cast_possible_truncation)]
 
 use core::{alloc::Layout, cell::SyncUnsafeCell, marker::PhantomData, ptr::NonNull};
 

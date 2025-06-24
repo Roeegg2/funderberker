@@ -1,8 +1,9 @@
 //! Everything needed to boot the kernel with Limine.
 
 use crate::{acpi, funderberker_start};
-use arch::vaa;
-use logger::*;
+use kernel::arch::Arch;
+use kernel::arch::x86_64::X86_64;
+use kernel::mem::paging::PagingManager;
 use utils::mem::{HHDM_OFFSET, PhysAddr, VirtAddr};
 
 #[cfg(feature = "framebuffer")]
@@ -60,49 +61,40 @@ unsafe extern "C" fn kmain() -> ! {
 
     logger::Writer::init_from_limine(
         FRAMEBUFFER_REQUEST
-            .get_response()
-            .unwrap()
-            .framebuffers()
-            .next(),
+            .get_response().unwrap().framebuffers().next().as_ref(),
     );
 
     let hhdm = HHDM_REQUEST
         .get_response()
         .expect("Can't get Limine framebuffer feature response");
-
-    unsafe {
-        HHDM_OFFSET.set(hhdm.offset() as usize);
-    };
-
-    unsafe {
-        arch::early_boot_init();
-    };
-
     let mem_map = MEMORY_MAP_REQUEST
         .get_response()
         .expect("Can't get Limine memory map feature");
     let kernel_addr = KERNEL_ADDRESS_REQUEST
         .get_response()
         .expect("Can't get Limine kernel address feature");
-    // let paging_mode = PAGING_MODE_REQUEST
-    //     .get_response()
-    //     .expect("Can't get Limine paging mode feature");
     let rsdp = RSDP_REQUEST
         .get_response()
         .expect("Can't get Limine RSDP feature");
 
-    vaa::init_from_limine(mem_map.entries());
-    let used_by_pmm = unsafe { pmm::init_from_limine(mem_map.entries()) };
     unsafe {
-        arch::init_paging_from_limine(
+        HHDM_OFFSET.set(hhdm.offset() as usize);
+
+        X86_64::early_boot_init();
+
+        X86_64::init_vaa_from_limine(mem_map.entries());
+
+        let used_by_pmm = pmm::init_from_limine(mem_map.entries());
+
+        X86_64::init_paging_from_limine(
             mem_map.entries(),
             VirtAddr(kernel_addr.virtual_base() as usize),
             PhysAddr(kernel_addr.physical_base() as usize),
             used_by_pmm,
         );
-    };
 
-    unsafe { acpi::init(PhysAddr(rsdp.address())).expect("Failed to initialize ACPI") };
+        acpi::init(PhysAddr(rsdp.address())).expect("Failed to initialize ACPI");
+    };
 
     // XXX: As I've stated in the comment in the function below, this is technically bad since
     // there is a period of time our stack is marked as free, but during that time period nothing
@@ -110,5 +102,5 @@ unsafe extern "C" fn kmain() -> ! {
     // unsafe { free_bootloader_reclaimable(mem_map.entries()) };
 
     funderberker_start();
-    // unsafe { arch::migrate_to_new_stack() };
+    // unsafe { kernel::archmigrate_to_new_stack() };
 }

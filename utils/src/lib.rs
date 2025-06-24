@@ -2,12 +2,13 @@
 #![feature(let_chains)]
 #![feature(box_vec_non_null)]
 #![feature(sync_unsafe_cell)]
+// TODO: Remove this once you fix the `as` conversion warnings
+#![allow(clippy::cast_possible_truncation)]
 
 pub mod collections;
 pub mod mem;
 pub mod sync;
 
-#[cfg(not(test))]
 extern crate alloc;
 
 /// Returns the maximum of two values (potentially) at compile time.

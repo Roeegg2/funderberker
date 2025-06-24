@@ -1,5 +1,9 @@
 #![no_std]
 #![feature(allocator_api)]
+// TODO: Remove this once the modular_bitfield errors are taken care of
+#![allow(dead_code)]
+// TODO: Remove this once you fix the `as` conversion warnings
+#![allow(clippy::cast_possible_truncation)]
 
 extern crate alloc;
 
@@ -47,7 +51,7 @@ where
 {
     fn new(rip: usize) -> Self {
         Self {
-            id: VID_ALLOCATOR.lock().handout(),
+            id: VID_ALLOCATOR.lock().handout().unwrap(),
             phantom: PhantomData,
             control: T::VesselControlBlock::new(rip),
         }

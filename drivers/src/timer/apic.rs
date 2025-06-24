@@ -6,12 +6,9 @@ use super::{
     Timer, TimerError,
     hpet::{self, AdditionalConfig, DeliveryMode, HPET, HpetTimer, TriggerMode},
 };
-use arch::x86_64::{
-    apic::lapic::{LocalApic, TimerDivisor, TimerMode},
-    event::__isr_stub_generic_irq_isr,
-};
 use core::{arch::x86_64::__cpuid_count, hint, time::Duration};
-use logger::*;
+use kernel::arch::x86_64::apic::lapic::{LocalApic, TimerDivisor, TimerMode};
+use kernel::arch::x86_64::event::__isr_stub_generic_irq_isr;
 
 // TODO: Remove having a APIC field, we should just have a global static
 
@@ -36,7 +33,7 @@ impl ApicTimer {
 
         let base_frequency = Self::find_base_frequency(apic_id);
 
-        log_info!("APIC timer frequency: {} Mhz", base_frequency);
+        logger::info!("APIC timer frequency: {} Mhz", base_frequency);
 
         // Cache the TSC deadline mode support
         let tsc_deadline_supported = {

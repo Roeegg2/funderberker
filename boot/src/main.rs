@@ -1,14 +1,16 @@
 #![no_std]
 #![no_main]
 #![feature(pointer_is_aligned_to)]
+// TODO: Remove this once the modular_bitfield errors are taken care of
+#![allow(dead_code)]
+// TODO: Remove this once you fix the `as` conversion warnings
+#![allow(clippy::cast_possible_truncation)]
 
 // TODO: Some boot sanity checks to make sure basic features that are expected are available on
 // this CPU.
 
 use core::arch::asm;
-use core::format_args;
 use core::panic::PanicInfo;
-use logger::*;
 use slab::heap::KernelHeapAllocator;
 
 mod acpi;
@@ -35,8 +37,8 @@ fn hcf() -> ! {
 }
 
 #[panic_handler]
-pub fn rust_panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
+pub fn panic_handler(info: &PanicInfo) -> ! {
+    logger::err!("{}", info);
 
     hcf();
 }

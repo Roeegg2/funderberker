@@ -1,6 +1,6 @@
 //! Everything IDT and interrupts
 
-use crate::x86_64::{
+use crate::arch::x86_64::{
     cpu::{self, Register},
     event::GENERIC_ISR_VECTOR,
     gdt::Cs,
@@ -10,7 +10,6 @@ use core::{
     mem::{size_of, transmute},
     ptr::{self, from_ref},
 };
-use logger::*;
 use modular_bitfield::prelude::*;
 use utils::sync::spinlock::{SpinLock, SpinLockable};
 
@@ -167,7 +166,7 @@ impl Idt {
 
         self.0[GENERIC_ISR_VECTOR as usize].install(__isr_stub_generic_irq_isr as usize as u64, cs, 0, GateType::Interrupt, Dpl::Kernel, Present::Present);
 
-        log_info!("Installed ISRs successfully");
+        logger::info!("Installed ISRs successfully");
     }
 
     /// Loads the IDT into memory.
@@ -187,7 +186,7 @@ impl Idt {
             );
         }
 
-        log_info!("Loaded IDT successfully");
+        logger::info!("Loaded IDT successfully");
     }
 
     /// Get the address of the IDTR, aquired by reading the `IDTR`

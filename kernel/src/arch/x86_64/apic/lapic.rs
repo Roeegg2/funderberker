@@ -3,13 +3,14 @@
 use core::{arch::x86_64::__cpuid_count, cell::SyncUnsafeCell, mem::transmute};
 
 use crate::{
-    map_page,
-    paging::{Flags, PageSize},
-    x86_64::cpu::msr::{IntelMsr, rdmsr, wrmsr},
+    arch::x86_64::{
+        X86_64,
+        cpu::msr::{IntelMsr, rdmsr, wrmsr},
+    },
+    mem::paging::{Flags, PageSize, PagingManager},
 };
 
 use super::{DeliveryMode, Destination, DestinationShorthand, Level, PinPolarity, TriggerMode};
-use logger::*;
 use utils::mem::{
     PhysAddr,
     mmio::{MmioArea, Offsetable},
@@ -431,7 +432,7 @@ fn get_lapics() -> &'static Vec<SpinLock<LocalApic>> {
 /// Adds a new Local APIC to the systems global list of Local APICs
 pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: u32) {
     if flags & 0x1 != 1 && flags & 0x2 != 0x2 {
-        log_warn!(
+        logger::warn!(
             "LOCAL APIC with ID {:#x} is not enabled or online capable",
             apic_id
         );
@@ -441,8 +442,9 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: u
     // SAFETY: This should be OK since we're mapping a physical address that is marked as
     // reserved, so the kernel shouldn't be tracking it
     let virt_addr = unsafe {
-        map_page(
+        X86_64::map_pages(
             base,
+            1,
             Flags::new().set_read_write(true),
             PageSize::size_4kb(),
         )

@@ -1,11 +1,11 @@
 //! HPET driver implementation
 
 use super::{PIT_IRQ, RTC_IRQ, Timer, TimerError};
-use arch::x86_64::{
-    apic::ioapic::{self, allocate_irq_at, gsi_to_irq},
+use core::{ptr, time::Duration};
+use kernel::arch::x86_64::{
+    apic::ioapic::{allocate_irq_at, gsi_to_irq},
     interrupts::{IsrStub, register_irq},
 };
-use core::{ptr, time::Duration};
 use modular_bitfield::prelude::*;
 use utils::{
     collections::id::{Id, tracker::IdTracker},
@@ -327,7 +327,7 @@ impl Hpet {
         sanity_assert!(max_timer_index < Self::MAX_TIMER_AMOUNT);
 
         // Construct the range
-        hpet.timer_ids = IdTracker::new(Id(0)..Id(max_timer_index));
+        hpet.timer_ids = IdTracker::new(Id(0), Id(max_timer_index));
 
         hpet
     }
@@ -379,11 +379,11 @@ impl HpetTimer {
                 let irq = {
                     match int_routing_mode {
                         InterruptRoutingMode::Legacy if self.id == Id(0) => unsafe {
-                            ioapic::allocate_irq_at(PIT_IRQ).map_err(|_| TimerError::IrqError)?;
+                            allocate_irq_at(PIT_IRQ).map_err(|_| TimerError::IrqError)?;
                             PIT_IRQ
                         },
                         InterruptRoutingMode::Legacy if self.id == Id(1) => unsafe {
-                            ioapic::allocate_irq_at(RTC_IRQ).map_err(|_| TimerError::IrqError)?;
+                            allocate_irq_at(RTC_IRQ).map_err(|_| TimerError::IrqError)?;
                             RTC_IRQ
                         },
                         _ => unsafe {

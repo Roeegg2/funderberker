@@ -7,7 +7,6 @@ use core::{
     ptr::NonNull,
     ptr::{read_volatile, write_volatile},
 };
-use logger::*;
 
 pub mod mmio;
 
@@ -153,17 +152,6 @@ impl<T> TryFrom<VirtAddr> for NonNull<T> {
     fn try_from(value: VirtAddr) -> Result<Self, Self::Error> {
         NonNull::new(value.0 as *mut T).ok_or(())
     }
-}
-
-/// Dumps out the memory to the console in hex format.
-pub unsafe fn memdump(ptr: *const u8, len: usize) {
-    unsafe {
-        for i in 0..len {
-            let byte = core::ptr::read_volatile(ptr.add(i));
-            print!("{:02x} ", byte);
-        }
-        println!("");
-    };
 }
 
 /// Wrapper to memset some region of memory to some value

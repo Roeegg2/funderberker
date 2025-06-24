@@ -1,16 +1,17 @@
 //! Parser for the MADT table
 
 use super::{AcpiError, AcpiTable, SdtHeader};
-use arch::{
-    map_page,
-    paging::{Flags, PageSize},
-    x86_64::apic::{
-        DeliveryMode,
-        ioapic::{self, IoApic, init_irq_allocator},
-        lapic,
+use kernel::{
+    arch::x86_64::{
+        X86_64,
+        apic::{
+            DeliveryMode,
+            ioapic::{self, IoApic, init_irq_allocator},
+            lapic,
+        },
     },
+    mem::paging::{Flags, PageSize, PagingManager},
 };
-use logger::*;
 use utils::mem::PhysAddr;
 
 /// A ZST struct for the possible entry types in the MADT
@@ -231,8 +232,9 @@ impl Madt {
                     // XXX: I think this entry should always come before the local apic and all the
                     // override entries but that might be wrong. But eh womp womp if that's the case I guess
                     let entry = entry.cast::<LocalApicAddrOverrideEntry>().as_ref().unwrap();
-                    let ptr: *mut u32 = map_page(
+                    let ptr: *mut u32 = X86_64::map_pages(
                         PhysAddr(entry.local_apic_phys_addr as usize),
+                        1,
                         Flags::new().set_read_write(true),
                         PageSize::size_4kb(),
                     )
@@ -250,7 +252,7 @@ impl Madt {
                     );
                 },
                 _ => {
-                    log_warn!("APIC: Unknown entry type: {}", entry_type);
+                    logger::warn!("APIC: Unknown entry type: {}", entry_type);
                 }
             }
         }

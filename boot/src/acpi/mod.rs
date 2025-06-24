@@ -1,11 +1,10 @@
 //! ACPI table parser
 
-use arch::{
-    BASIC_PAGE_SIZE, map_page,
-    paging::{Flags, PageSize},
-};
 use core::{ptr::from_ref, slice::from_raw_parts};
-use logger::*;
+use kernel::{
+    arch::{BASIC_PAGE_SIZE, x86_64::X86_64},
+    mem::paging::{Flags, PageSize, PagingManager},
+};
 use rsdp::Rsdp2;
 use utils::{mem::PhysAddr, sanity_assert};
 
@@ -89,7 +88,9 @@ pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
     let rsdp = unsafe {
         let diff = rsdp_addr.0 % BASIC_PAGE_SIZE;
         let ptr: *const Rsdp2 =
-            (map_page(rsdp_addr - diff, Flags::new(), PageSize::size_4kb()).unwrap() + diff).into();
+            (X86_64::map_pages(rsdp_addr - diff, 1, Flags::new(), PageSize::size_4kb()).unwrap()
+                + diff)
+                .into();
         ptr.as_ref().unwrap()
     };
 
@@ -97,7 +98,7 @@ pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
     let xsdt = rsdp.get_xsdt();
     xsdt.parse_tables()?;
 
-    log_info!("ACPI: All tables parsed successfully");
+    logger::info!("ACPI: All tables parsed successfully");
 
     Ok(())
 }

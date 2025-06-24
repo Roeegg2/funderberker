@@ -1,5 +1,3 @@
-use core::ops::Range;
-
 use crate::{collections::bitmap::Bitmap, sync::spinlock::SpinLockable};
 
 use super::Id;
@@ -21,8 +19,8 @@ pub enum IdTrackerError {
 pub struct IdTracker {
     /// Bitmap for keeping track of IDs
     bitmap: Bitmap,
-    /// The range of the ID pool
-    pool_range: Range<Id>,
+    /// The minimum ID that can be allocated
+    min: Id,
 }
 
 // TODO: Use a ring ptr here?
@@ -33,27 +31,30 @@ impl IdTracker {
     pub const fn uninit() -> Self {
         Self {
             bitmap: Bitmap::uninit(),
-            pool_range: Id(0)..Id(0),
+            min: Id(0),
         }
     }
 
     /// Construct a new `IdTracker`
-    pub fn new(pool_range: Range<Id>) -> Self {
+    pub fn new(min: Id, max: Id) -> Self {
         Self {
-            bitmap: Bitmap::new(pool_range.end.0 - pool_range.start.0 + 1),
-            pool_range,
+            bitmap: Bitmap::new(max.0 - min.0 + 1),
+            min,
         }
     }
 
     /// Try to find a free id in the pool_range and allocate it
     #[must_use = "Not freeing the ID will cause leaking"]
     pub fn allocate(&mut self) -> Result<Id, IdTrackerError> {
-        let max_id = self.bitmap.used_bits_count();
-
-        for i in 0..max_id {
-            if !self.bitmap.is_set(i) {
-                self.bitmap.set(i);
-                return Ok(Id(i + self.pool_range.start.0));
+        for i in 0..self.bitmap.used_bits_count() {
+            if !self
+                .bitmap
+                .is_set(i)
+                .map_err(|_| IdTrackerError::InvalidId)?
+            {
+                let id = Id(self.min.0 + i);
+                self.bitmap.set(i).unwrap();
+                return Ok(id);
             }
         }
 
@@ -61,13 +62,16 @@ impl IdTracker {
     }
 
     pub fn allocate_at(&mut self, id: Id) -> Result<(), IdTrackerError> {
-        if id.0 >= self.bitmap.used_bits_count() {
+        if id < self.min || id > Id(self.min.0 + self.bitmap.used_bits_count() - 1) {
             return Err(IdTrackerError::InvalidId);
-        } else if self.bitmap.is_set(id.0) {
+        }
+        let bit_index = id.0 - self.min.0;
+        let found = self.bitmap.is_set(bit_index).unwrap();
+        if found {
             return Err(IdTrackerError::IdAlreadyTaken);
         }
 
-        self.bitmap.set(id.0);
+        self.bitmap.set(bit_index).unwrap();
 
         Ok(())
     }
@@ -75,29 +79,19 @@ impl IdTracker {
     // TODO: Give a handle or something to prevent bad freeing?
     /// Tries to free the given id
     pub unsafe fn free(&mut self, id: Id) -> Result<(), IdTrackerError> {
-        // Make sure the ID is in the given pool_range
-        if self.pool_range.end.0 < id.0 || id.0 < self.pool_range.start.0 {
-            return Err(IdTrackerError::OutOfIds);
+        if id < self.min || id > Id(self.min.0 + self.bitmap.used_bits_count() - 1) {
+            return Err(IdTrackerError::InvalidId);
+        }
+        let bit_index = id.0 - self.min.0;
+        let found = self.bitmap.is_set(bit_index).unwrap();
+        if !found {
+            return Err(IdTrackerError::IdAlreadyFree);
         }
 
-        let index = id.0 - self.pool_range.start.0;
+        self.bitmap.unset(bit_index).unwrap();
 
-        // Free only if the ID is indeed already taken
-        if self.bitmap.is_set(index) {
-            self.bitmap.unset(index);
-
-            return Ok(());
-        }
-
-        Err(IdTrackerError::IdAlreadyFree)
+        Ok(())
     }
-
-    pub fn pool_range(&self) -> Range<Id> {
-        self.pool_range.clone()
-    }
-
-    // pub fn grow_pool();
-    // pub fn shrink_pool();
 }
 
 impl SpinLockable for IdTracker {}
@@ -107,18 +101,186 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_id_allocator() {
-        let mut allocator = IdTracker::new(Id(0)..Id(10));
+    fn test_allocate_single_id() {
+        let mut tracker = IdTracker::new(Id(0), Id(10));
+        let allocated = tracker.allocate().unwrap();
+        assert_eq!(allocated, Id(0));
+    }
 
-        let id1 = allocator.allocate().unwrap();
-        assert_eq!(id1.0, 0);
+    #[test]
+    fn test_allocate_multiple_ids() {
+        let mut tracker = IdTracker::new(Id(0), Id(5));
 
-        let id2 = allocator.allocate().unwrap();
-        assert_eq!(id2.0, 1);
+        let id1 = tracker.allocate().unwrap();
+        let id2 = tracker.allocate().unwrap();
+        let id3 = tracker.allocate().unwrap();
 
-        unsafe { allocator.free(id1).unwrap() };
+        assert_eq!(id1, Id(0));
+        assert_eq!(id2, Id(1));
+        assert_eq!(id3, Id(2));
+    }
 
-        let id3 = allocator.allocate().unwrap();
-        assert_eq!(id3.0, 0);
+    #[test]
+    fn test_allocate_with_offset_range() {
+        let mut tracker = IdTracker::new(Id(10), Id(15));
+        let allocated = tracker.allocate().unwrap();
+        assert_eq!(allocated, Id(10));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_allocate_exhaustion() {
+        let mut tracker = IdTracker::new(Id(0), Id(2));
+
+        // Allocate all available IDs
+        tracker.allocate().unwrap();
+        tracker.allocate().unwrap();
+        tracker.allocate().unwrap();
+
+        // Should panic on the fourth allocation
+        tracker.allocate().unwrap();
+    }
+
+    #[test]
+    fn test_allocate_at_success() {
+        let mut tracker = IdTracker::new(Id(0), Id(10));
+        let result = tracker.allocate_at(Id(5));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_allocate_at_invalid_id() {
+        let mut tracker = IdTracker::new(Id(0), Id(5));
+        let result = tracker.allocate_at(Id(10));
+        assert_eq!(result, Err(IdTrackerError::InvalidId));
+    }
+
+    #[test]
+    fn test_allocate_at_already_taken() {
+        let mut tracker = IdTracker::new(Id(0), Id(10));
+
+        // First allocation should succeed
+        tracker.allocate_at(Id(3)).unwrap();
+
+        // Second allocation of same ID should fail
+        let result = tracker.allocate_at(Id(3));
+        assert_eq!(result, Err(IdTrackerError::IdAlreadyTaken));
+    }
+
+    #[test]
+    fn test_free_allocated_id() {
+        let mut tracker = IdTracker::new(Id(0), Id(10));
+        let allocated = tracker.allocate().unwrap();
+
+        let result = unsafe { tracker.free(allocated) };
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_free_id_out_of_range_high() {
+        let mut tracker = IdTracker::new(Id(0), Id(5));
+        let result = unsafe { tracker.free(Id(10)) };
+        assert_eq!(result, Err(IdTrackerError::InvalidId));
+    }
+
+    #[test]
+    fn test_free_id_out_of_range_low() {
+        let mut tracker = IdTracker::new(Id(5), Id(10));
+        let result = unsafe { tracker.free(Id(2)) };
+        assert_eq!(result, Err(IdTrackerError::InvalidId));
+    }
+
+    #[test]
+    fn test_free_already_free_id() {
+        let mut tracker = IdTracker::new(Id(0), Id(10));
+        let allocated = tracker.allocate().unwrap();
+
+        // Free once - should succeed
+        unsafe { tracker.free(allocated) }.unwrap();
+
+        // Free again - should fail
+        let result = unsafe { tracker.free(allocated) };
+        assert_eq!(result, Err(IdTrackerError::IdAlreadyFree));
+    }
+
+    #[test]
+    fn test_free_never_allocated_id() {
+        let mut tracker = IdTracker::new(Id(0), Id(10));
+        let result = unsafe { tracker.free(Id(5)) };
+        assert_eq!(result, Err(IdTrackerError::IdAlreadyFree));
+    }
+
+    #[test]
+    fn test_allocate_after_free() {
+        let mut tracker = IdTracker::new(Id(0), Id(3));
+
+        // Allocate all IDs
+        let id1 = tracker.allocate().unwrap();
+        let id2 = tracker.allocate().unwrap();
+        let id3 = tracker.allocate().unwrap();
+        let id4 = tracker.allocate().unwrap();
+
+        assert_eq!(id1, Id(0));
+        assert_eq!(id2, Id(1));
+        assert_eq!(id3, Id(2));
+        assert_eq!(id4, Id(3));
+
+        // Should be out of IDs
+        assert_eq!(tracker.allocate(), Err(IdTrackerError::OutOfIds));
+
+        // Free the middle ID
+        unsafe { tracker.free(id2) }.unwrap();
+
+        // Should be able to allocate again and get the freed ID
+        let reused_id = tracker.allocate().unwrap();
+        assert_eq!(reused_id, Id(1));
+    }
+
+    #[test]
+    fn test_complex_allocation_pattern() {
+        let mut tracker = IdTracker::new(Id(10), Id(15));
+
+        // Allocate some IDs
+        let id1 = tracker.allocate().unwrap();
+        let id2 = tracker.allocate().unwrap();
+        let id3 = tracker.allocate().unwrap();
+
+        assert_eq!(id1, Id(10));
+        assert_eq!(id2, Id(11));
+        assert_eq!(id3, Id(12));
+
+        // Free the first one
+        unsafe { tracker.free(id1) }.unwrap();
+
+        // Allocate again - should reuse the freed ID
+        let reused = tracker.allocate().unwrap();
+        assert_eq!(reused, Id(10));
+
+        // Continue allocating
+        let id4 = tracker.allocate().unwrap();
+        let id5 = tracker.allocate().unwrap();
+        let id6 = tracker.allocate().unwrap();
+
+        assert_eq!(id4, Id(13));
+        assert_eq!(id5, Id(14));
+        assert_eq!(id6, Id(15));
+
+        // Should be exhausted now
+        assert_eq!(tracker.allocate(), Err(IdTrackerError::OutOfIds));
+    }
+
+    #[test]
+    fn test_edge_case_single_id_pool() {
+        let mut tracker = IdTracker::new(Id(5), Id(5));
+        let allocated = tracker.allocate().unwrap();
+        assert_eq!(allocated, Id(5));
+
+        // Should be exhausted
+        assert_eq!(tracker.allocate(), Err(IdTrackerError::OutOfIds));
+
+        // Free and reallocate
+        unsafe { tracker.free(allocated) }.unwrap();
+        let reallocated = tracker.allocate().unwrap();
+        assert_eq!(reallocated, Id(5));
     }
 }

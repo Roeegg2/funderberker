@@ -1,18 +1,12 @@
 //! A simple, unidirectional linked list
 
+use alloc::boxed::Box;
 use core::{
     fmt::{self, Debug},
     marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
-
-#[cfg(not(test))]
-use alloc::boxed::Box;
-#[cfg(not(test))]
-extern crate alloc;
-#[cfg(test)]
-use std::boxed::Box;
 
 pub struct Iter<'a, T: 'a> {
     head: Option<NonNull<Node<T>>>,
@@ -218,16 +212,16 @@ impl<'a, T> Iterator for IterNode<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.len == 0 {
-            return None;
-        } else {
-            self.head.map(|node| {
+        if self.len != 0 {
+            return self.head.map(|node| {
                 self.len -= 1;
                 self.head = unsafe { node.as_ref().next };
                 // SAFETY: node is valid and not aliased.
                 unsafe { node.as_ref() }
-            })
+            });
         }
+
+        None
     }
 
     #[inline]
@@ -241,16 +235,16 @@ impl<'a, T> Iterator for IterNodeMut<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.len == 0 {
-            return None;
-        } else {
-            self.head.map(|mut node| {
+        if self.len != 0 {
+            return self.head.map(|mut node| {
                 self.len -= 1;
                 self.head = unsafe { node.as_ref().next };
                 // SAFETY: node is valid and not aliased.
                 unsafe { node.as_mut() }
-            })
+            });
         }
+
+        None
     }
 
     #[inline]
@@ -264,16 +258,16 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.len == 0 {
-            return None;
-        } else {
-            self.head.map(|node| {
+        if self.len != 0 {
+            return self.head.map(|node| {
                 self.len -= 1;
                 self.head = unsafe { node.as_ref().next };
                 // SAFETY: node is valid and not aliased.
                 unsafe { &node.as_ref().data }
-            })
+            });
         }
+
+        None
     }
 
     #[inline]
@@ -287,16 +281,16 @@ impl<'a, T> Iterator for IterMut<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.len == 0 {
-            return None;
-        } else {
-            self.head.map(|mut node| {
+        if self.len != 0 {
+            return self.head.map(|mut node| {
                 self.len -= 1;
                 self.head = unsafe { node.as_ref().next };
                 // SAFETY: node is valid and not aliased.
                 unsafe { &mut node.as_mut().data }
-            })
+            });
         }
+
+        None
     }
 
     #[inline]
@@ -311,5 +305,398 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_list_is_empty() {
+        let list: StackList<i32> = StackList::new();
+        assert!(list.is_empty());
+        assert_eq!(list.len(), 0);
+        assert!(list.peek().is_none());
+    }
+
+    #[test]
+    fn test_push_and_peek() {
+        let mut list = StackList::new();
+
+        list.push(1);
+        assert!(!list.is_empty());
+        assert_eq!(list.len(), 1);
+        assert_eq!(list.peek(), Some(&1));
+
+        list.push(2);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list.peek(), Some(&2)); // Stack behavior - last pushed is first
+
+        list.push(3);
+        assert_eq!(list.len(), 3);
+        assert_eq!(list.peek(), Some(&3));
+    }
+
+    #[test]
+    fn test_pop() {
+        let mut list = StackList::new();
+
+        // Pop from empty list
+        assert!(list.pop().is_none());
+
+        list.push(1);
+        list.push(2);
+        list.push(3);
+
+        // Pop in LIFO order
+        assert_eq!(list.pop(), Some(3));
+        assert_eq!(list.len(), 2);
+        assert_eq!(list.peek(), Some(&2));
+
+        assert_eq!(list.pop(), Some(2));
+        assert_eq!(list.len(), 1);
+        assert_eq!(list.peek(), Some(&1));
+
+        assert_eq!(list.pop(), Some(1));
+        assert_eq!(list.len(), 0);
+        assert!(list.is_empty());
+        assert!(list.peek().is_none());
+
+        // Pop from empty list again
+        assert!(list.pop().is_none());
+    }
+
+    #[test]
+    fn test_peek_mut() {
+        let mut list = StackList::new();
+
+        // peek_mut on empty list
+        assert!(list.peek_mut().is_none());
+
+        list.push(42);
+
+        if let Some(val) = list.peek_mut() {
+            *val = 100;
+        }
+
+        assert_eq!(list.peek(), Some(&100));
+        assert_eq!(list.pop(), Some(100));
+    }
+
+    #[test]
+    fn test_remove_at() {
+        let mut list = StackList::new();
+
+        // Remove from empty list
+        assert!(list.remove_at(0).is_none());
+
+        list.push(1);
+        list.push(2);
+        list.push(3);
+        list.push(4);
+        // List is now: [4, 3, 2, 1] (head to tail)
+
+        // Remove out of bounds
+        assert!(list.remove_at(4).is_none());
+        assert!(list.remove_at(100).is_none());
+
+        // Remove from middle (index 1, which is 3)
+        let removed = list.remove_at(1);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().data, 3);
+        assert_eq!(list.len(), 3);
+
+        // Remove from head (index 0, which is 4)
+        let removed = list.remove_at(0);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().data, 4);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list.peek(), Some(&2));
+
+        // Remove from tail (index 1, which is 1)
+        let removed = list.remove_at(1);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().data, 1);
+        assert_eq!(list.len(), 1);
+
+        // Remove last element
+        let removed = list.remove_at(0);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().data, 2);
+        assert_eq!(list.len(), 0);
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_pop_into() {
+        let mut list1 = StackList::new();
+        let mut list2 = StackList::new();
+
+        list1.push(1);
+        list1.push(2);
+        list1.push(3);
+
+        // Pop from list1 into list2
+        list1.pop_into(&mut list2);
+
+        assert_eq!(list1.len(), 2);
+        assert_eq!(list2.len(), 1);
+        assert_eq!(list1.peek(), Some(&2));
+        assert_eq!(list2.peek(), Some(&3));
+
+        // Pop from empty list1
+        list1.pop();
+        list1.pop();
+        list1.pop_into(&mut list2); // Should do nothing
+
+        assert_eq!(list1.len(), 0);
+        assert_eq!(list2.len(), 1);
+    }
+
+    #[test]
+    fn test_remove_into() {
+        let mut list1 = StackList::new();
+        let mut list2 = StackList::new();
+
+        list1.push(1);
+        list1.push(2);
+        list1.push(3);
+        list1.push(4);
+
+        // Remove from middle of list1 into list2
+        list1.remove_into(&mut list2, 1);
+
+        assert_eq!(list1.len(), 3);
+        assert_eq!(list2.len(), 1);
+        assert_eq!(list2.peek(), Some(&3));
+
+        // Remove out of bounds - should do nothing
+        list1.remove_into(&mut list2, 10);
+
+        assert_eq!(list1.len(), 3);
+        assert_eq!(list2.len(), 1);
+    }
+
+    #[test]
+    fn test_iter() {
+        let mut list = StackList::new();
+
+        // Empty list iteration
+        let items: Vec<&i32> = list.iter().collect();
+        assert!(items.is_empty());
+
+        list.push(1);
+        list.push(2);
+        list.push(3);
+
+        let items: Vec<&i32> = list.iter().collect();
+        assert_eq!(items, vec![&3, &2, &1]); // Head to tail order
+
+        // Test size_hint
+        let mut iter = list.iter();
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        iter.next();
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let mut list = StackList::new();
+
+        list.push(1);
+        list.push(2);
+        list.push(3);
+
+        // Modify through mutable iterator
+        for item in list.iter_mut() {
+            *item *= 2;
+        }
+
+        let items: Vec<&i32> = list.iter().collect();
+        assert_eq!(items, vec![&6, &4, &2]);
+
+        // Test size_hint
+        let mut iter = list.iter_mut();
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        iter.next();
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+    }
+
+    #[test]
+    fn test_iter_node() {
+        let mut list = StackList::new();
+
+        list.push(1);
+        list.push(2);
+        list.push(3);
+
+        let mut node_count = 0;
+        for node in list.iter_node() {
+            assert!(node.data > 0);
+            node_count += 1;
+        }
+        assert_eq!(node_count, 3);
+
+        // Test size_hint
+        let mut iter = list.iter_node();
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        iter.next();
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+    }
+
+    #[test]
+    fn test_iter_node_mut() {
+        let mut list = StackList::new();
+
+        list.push(1);
+        list.push(2);
+        list.push(3);
+
+        // Modify through mutable node iterator
+        for node in list.iter_node_mut() {
+            node.data *= 10;
+        }
+
+        let items: Vec<&i32> = list.iter().collect();
+        assert_eq!(items, vec![&30, &20, &10]);
+
+        // Test size_hint
+        let mut iter = list.iter_node_mut();
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        iter.next();
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+    }
+
+    #[test]
+    fn test_node_deref() {
+        let node = Node::new(42);
+        assert_eq!(*node, 42); // Test Deref
+
+        let mut node = Node::new(42);
+        *node = 100; // Test DerefMut
+        assert_eq!(*node, 100);
+    }
+
+    #[test]
+    fn test_debug_formatting() {
+        let mut list = StackList::new();
+
+        // Empty list
+        let debug_str = format!("{:?}", list);
+        assert_eq!(debug_str, "[]");
+
+        list.push(1);
+        list.push(2);
+        list.push(3);
+
+        let debug_str = format!("{:?}", list);
+        assert_eq!(debug_str, "[3, 2, 1]");
+    }
+
+    #[test]
+    fn test_drop_behavior() {
+        // This test ensures that the Drop implementation doesn't panic
+        // and properly cleans up all nodes
+        {
+            let mut list = StackList::new();
+            for i in 0..1000 {
+                list.push(i);
+            }
+            // List goes out of scope here and should be properly dropped
+        }
+        // If we reach this point without panicking, Drop worked correctly
+    }
+
+    #[test]
+    fn test_with_different_types() {
+        // Test with String
+        let mut string_list = StackList::new();
+        string_list.push("hello".to_string());
+        string_list.push("world".to_string());
+
+        assert_eq!(string_list.peek(), Some(&"world".to_string()));
+        assert_eq!(string_list.pop(), Some("world".to_string()));
+
+        // Test with custom struct
+        #[derive(Debug, PartialEq)]
+        struct Person {
+            name: String,
+            age: u32,
+        }
+
+        let mut person_list = StackList::new();
+        person_list.push(Person {
+            name: "Alice".to_string(),
+            age: 30,
+        });
+        person_list.push(Person {
+            name: "Bob".to_string(),
+            age: 25,
+        });
+
+        assert_eq!(person_list.len(), 2);
+        let bob = person_list.pop().unwrap();
+        assert_eq!(bob.name, "Bob");
+        assert_eq!(bob.age, 25);
+    }
+
+    #[test]
+    fn test_large_list_operations() {
+        let mut list = StackList::new();
+        let n = 10000;
+
+        // Push many items
+        for i in 0..n {
+            list.push(i);
+        }
+        assert_eq!(list.len(), n);
+
+        // Remove from various positions
+        for i in 0..100 {
+            list.remove_at(i * 10);
+        }
+
+        // Pop remaining items
+        let mut popped_count = 0;
+        while list.pop().is_some() {
+            popped_count += 1;
+        }
+
+        assert!(list.is_empty());
+        assert!(popped_count > 0);
+    }
+
+    #[test]
+    fn test_iterator_chain() {
+        let mut list = StackList::new();
+        for i in 1..=5 {
+            list.push(i);
+        }
+
+        // Test chaining iterator operations
+        let sum: i32 = list.iter().map(|&x| x * 2).sum();
+        assert_eq!(sum, 30); // (5+4+3+2+1) * 2 = 15 * 2 = 30
+
+        let filtered: Vec<i32> = list.iter().filter(|&&x| x % 2 == 0).map(|&x| x).collect();
+        assert_eq!(filtered, vec![4, 2]);
+    }
+
+    #[test]
+    fn test_concurrent_iteration() {
+        let mut list = StackList::new();
+        for i in 1..=3 {
+            list.push(i);
+        }
+
+        // Test that we can create multiple iterators
+        let iter1 = list.iter();
+        let iter2 = list.iter();
+
+        let items1: Vec<&i32> = iter1.collect();
+        let items2: Vec<&i32> = iter2.collect();
+
+        assert_eq!(items1, items2);
+        assert_eq!(items1, vec![&3, &2, &1]);
     }
 }

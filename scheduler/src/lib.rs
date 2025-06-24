@@ -1,4 +1,6 @@
 #![no_std]
+// TODO: Remove this once you fix the `as` conversion warnings
+#![allow(clippy::cast_possible_truncation)]
 
 extern crate alloc;
 

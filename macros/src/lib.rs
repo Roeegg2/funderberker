@@ -32,7 +32,7 @@ pub fn test_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     // Generate a unique static for the tuple
-    let tuple_ident = syn::Ident::new(&format!("__test_tuple_{}", fn_name), fn_name.span());
+    let tuple_ident = syn::Ident::new(&format!("__test_tuple_{fn_name}"), fn_name.span());
 
     // Output: original function + tuple
     let output = quote! {
@@ -62,7 +62,7 @@ pub fn isr(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_body = &input_fn.block;
 
     // Generate the wrapper function name
-    let wrapper_name = syn::Ident::new(&format!("__isr_stub_{}", fn_name), fn_name.span());
+    let wrapper_name = syn::Ident::new(&format!("__isr_stub_{fn_name}"), fn_name.span());
 
     // Generate the macro output
     let expanded = quote! {
@@ -89,40 +89,3 @@ pub fn isr(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
-
-// #[proc_macro_attribute]
-// pub fn fast_static_once_cell(_attr: TokenStream, item: TokenStream) -> TokenStream {
-//     // Parse the input as a static item
-//     let input = parse_macro_input!(item as ItemStatic);
-//     let name = &input.ident;
-//     let ty = &input.ty;
-//     let vis = &input.vis;
-//
-//     // Generate the set and get function names
-//     let func_suffix = name.to_string().to_lowercase();
-//     let set_fn = format!("set_{}", func_suffix);
-//     let get_fn = format!("get_{}", func_suffix);
-//     let set_ident = syn::Ident::new(&set_fn, name.span());
-//     let get_ident = syn::Ident::new(&get_fn, name.span());
-//
-//     // Generate the output token stream
-//     let output = quote! {
-//         #vis static mut #name: #ty = #input.expr;
-//
-//         #[inline]
-//         #vis unsafe fn #set_ident(value: #ty) {
-//             unsafe {
-//                 #name = value;
-//             }
-//         }
-//
-//         #[inline]
-//         #vis fn #get_ident() -> #ty {
-//             unsafe {
-//                 #name
-//             }
-//         }
-//     };
-//
-//     TokenStream::from(output)
-// }

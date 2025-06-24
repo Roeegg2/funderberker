@@ -1,10 +1,6 @@
 /// A faster, simpler `OnceCell` alternative *when you know what you're doing* - that is when you
 /// can **100%** guarantee that the safety rules apply. If you can't, use the regular `OnceCell` instead.
-
-#[cfg(not(test))]
 use core::cell::SyncUnsafeCell;
-#[cfg(test)]
-use std::cell::SyncUnsafeCell;
 
 #[repr(transparent)]
 pub struct FastLazyStatic<T>

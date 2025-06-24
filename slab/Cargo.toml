@@ -5,4 +5,16 @@ edition = "2024"
 
 [dependencies]
 utils = { version = "0.1.0", path = "../utils" }
-arch = { version = "0.1.0", path = "../arch" }
+kernel = { version = "0.1.0", path = "../kernel" }
+limine = { version = "0.5.0", optional = true }
+
+[lints.clippy]
+pedantic = "warn"
+
+[features]
+default = ["limine"]
+
+limine = ["dep:limine"]
+
+[kernel.features]
+

@@ -1,5 +1,5 @@
 [package]
-name = "arch"
+name = "kernel"
 version = "0.1.0"
 edition = "2024"
 
@@ -12,15 +12,16 @@ modular-bitfield = { version = "0.12" }
 pmm = { version = "0.1.0", path = "../pmm" }
 alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc" }
 
+[lints.clippy]
+pedantic = "warn"
+
 [features]
-default = ["limine", "paging_4", "framebuffer"]
+default = ["limine", "framebuffer"]
 
 limine = ["dep:limine"]
 
-# TODO: Get rid of this
-paging_5 = []
-paging_4 = []
-
 framebuffer = []
+
+mock = []
 
 

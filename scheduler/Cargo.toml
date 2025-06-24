@@ -7,9 +7,12 @@ edition = "2024"
 name = "scheduler"
 
 [dependencies]
-arch = { version = "0.1.0", path = "../arch" }
+kernel = { version = "0.1.0", path = "../kernel" }
 utils = { version = "0.1.0", path = "../utils" }
 logger = { version = "0.1.0", path = "../logger" }
+
+[lints.clippy]
+pedantic = "warn"
 
 [features]
 default = ["constant"]

@@ -1,4 +1,4 @@
-use arch::BASIC_PAGE_SIZE;
+use kernel::arch::BASIC_PAGE_SIZE;
 use utils::sanity_assert;
 
 use utils::mem::PhysAddr;

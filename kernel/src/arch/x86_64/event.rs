@@ -1,9 +1,8 @@
 //! Various `x86_64` specific events handling
 
-use logger::*;
 use macros::isr;
 
-use crate::x86_64::{
+use crate::arch::x86_64::{
     apic::lapic::LocalApic,
     cpu::{Cr2, Register},
 };
@@ -71,12 +70,12 @@ generic_exception_isr!(exception_11, 11);
 generic_exception_isr!(exception_12, 12);
 generic_exception_isr!(exception_13, 13);
 
-// TODO: Add error code  printing
+// TODO: Take care of recursive calls
 /// Page fault handler
 #[isr]
 fn exception_14() {
     panic!(
-        "Exception: {} at address: {:#x}",
+        "Exception {} at address: {:#x}",
         EXCEPTION_MESSAGES[14],
         unsafe { Cr2::read().0 },
     );
@@ -102,7 +101,6 @@ generic_exception_isr!(exception_31, 31);
 
 #[isr]
 pub fn generic_irq_isr() {
-    println!("GENERIC IRQ ISR CALLED!");
     // TODO: Possibly rewrite this
     let this_lapic_id = LocalApic::get_this_apic_id();
     let lapic = LocalApic::get_apic(this_lapic_id);

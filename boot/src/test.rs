@@ -1,5 +1,5 @@
 pub fn test_runner(tests: &[&(fn(), &str)]) {
-    log_info!("Running {} tests", tests.len());
+    logger::info!("Running {} tests", tests.len());
 
     for (i, test) in tests.iter().enumerate() {
         print!("(TEST) Test number {}: \"{}\" ... ", i + 1, test.1);

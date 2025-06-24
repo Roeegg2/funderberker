@@ -2,6 +2,8 @@
 
 #![cfg_attr(not(test), no_std)]
 #![feature(box_vec_non_null)]
+// TODO: Remove this once you fix the `as` conversion warnings
+#![allow(clippy::cast_possible_truncation)]
 
 #[cfg(feature = "limine")]
 use limine::memory_map;
@@ -14,10 +16,7 @@ extern crate alloc;
 // TODO: Move this somewhere else
 const BASIC_PAGE_SIZE: usize = 0x1000; // 4KB page size
 
-#[cfg(feature = "buddy")]
 mod buddy;
-#[cfg(feature = "bump")]
-mod bump;
 
 /// Errors that the PMM might encounter
 #[allow(dead_code)]
@@ -37,18 +36,13 @@ pub enum PmmError {
     EmptyAllocation,
     /// The requested page count is invalid (0)
     EmptyFree,
+    /// The requested page count is too big
+    TooBigAllocation,
 }
 
 /// Get the used PMM
 pub fn get<'a>() -> SpinLockGuard<'a, impl PmmAllocator> {
-    #[cfg(feature = "bump")]
-    {
-        bump::PMM.lock()
-    }
-    #[cfg(feature = "buddy")]
-    {
-        buddy::PMM.lock()
-    }
+    buddy::PMM.lock()
 }
 
 /// Initilizes the used PMM from limine
@@ -56,14 +50,11 @@ pub fn get<'a>() -> SpinLockGuard<'a, impl PmmAllocator> {
 pub unsafe fn init_from_limine<'a>(
     mem_map: &'a [&'a memory_map::Entry],
 ) -> &'a limine::memory_map::Entry {
-    #[cfg(feature = "bump")]
-    unsafe {
-        bump::BumpAllocator::init_from_limine(mem_map)
-    }
-    #[cfg(feature = "buddy")]
-    unsafe {
-        buddy::BuddyAllocator::init_from_limine(mem_map)
-    }
+    let ret = unsafe { buddy::BuddyAllocator::init_from_limine(mem_map) };
+
+    logger::info!("PMM initialized successfully");
+
+    ret
 }
 
 pub trait PmmAllocator: SpinLockable {

@@ -3,10 +3,13 @@ name = "hypervisor"
 version = "0.1.0"
 edition = "2024"
 
+[lints.clippy]
+pedantic = "warn"
+
 [dependencies]
 modular-bitfield = { version = "0.12" }
 
-arch = { version = "0.1.0", path = "../arch" }
+kernel = { version = "0.1.0", path = "../kernel" }
 utils = { version = "0.1.0", path = "../utils" }
 scheduler = { version = "0.1.0", path = "../scheduler" }
 logger = { version = "0.1.0", path = "../logger" }

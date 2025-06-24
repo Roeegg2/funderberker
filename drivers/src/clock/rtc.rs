@@ -3,7 +3,7 @@
 use utils::sanity_assert;
 
 use crate::{
-    arch::x86_64::{
+    kernel::archx86_64::{
         apic::ioapic,
         interrupts::{self, RTC_IRQ},
     },

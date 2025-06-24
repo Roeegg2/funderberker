@@ -2,13 +2,7 @@
 
 use core::arch::x86_64::__cpuid;
 
-use crate::{
-    paging::Flags,
-    x86_64::X86_64,
-    x86_64::cpu::msr::{IntelMsr, rdmsr, wrmsr},
-};
-
-use super::PageSize;
+use crate::arch::x86_64::cpu::msr::{IntelMsr, rdmsr, wrmsr};
 
 /// The amount of bits between each PAT entry in the `IA32_PAT` MSR. This is the amount of bits we
 /// need to shift to access each PAT entry.
