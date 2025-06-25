@@ -1,6 +1,6 @@
-[![GitHub stars](https://img.shields.io/github/stars/roeegg2/funderberker.svg)](https://github.com/roeegg2/funderberker/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/roeegg2/funderberker.svg)](https://github.com/funderberker-org/funderberker/stargazers)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-![CI Status](https://img.shields.io/github/actions/workflow/status/roeegg2/funderberker/ci.yaml?logo=github)
+![CI Status](https://img.shields.io/github/actions/workflow/status/funderberker-org/funderberker/ci.yaml?logo=github)
 
 
 # Funderberker
@@ -41,7 +41,5 @@ Naturally, because of the nature of a type 1 hypervisor, the code structure is s
 
 ## Contributing
 
-Contributions are more than welcome!
-
-Funderberker is still in its infancy, so there are many things to do.
-
+Unfortunately, as of now the project is not open for contributions, as I'm working on it as a SoM project, but if you want to help, feel free to open an issue or a discussion for any feature/bug/CR/anything else. I'd really appreciate it!
+Once SoM is over I'll merge in any PRs.
