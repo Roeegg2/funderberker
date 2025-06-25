@@ -2,8 +2,6 @@
 
 use core::{cmp::min, ptr::NonNull, slice::from_raw_parts_mut};
 
-use super::get_page_count_from_mem_map;
-
 use crate::BASIC_PAGE_SIZE;
 use alloc::boxed::Box;
 #[cfg(feature = "limine")]
@@ -16,6 +14,7 @@ use utils::{
 
 use super::{PmmAllocator, PmmError};
 
+#[allow(unused)]
 const FREELIST_BUCKETS_SIZE: usize = 0x0020_0000; // 2MB freelist bucket size
 
 pub(super) static PMM: SpinLock<BuddyAllocator<'static>> = SpinLock::new(BuddyAllocator::uninit());
@@ -319,7 +318,7 @@ impl BuddyAllocator<'_> {
         mem_map: &'a [&'a limine::memory_map::Entry],
     ) -> (Self, &'a limine::memory_map::Entry, usize) {
         let zones_count = {
-            let total_page_count = get_page_count_from_mem_map(mem_map);
+            let total_page_count = super::get_page_count_from_mem_map(mem_map);
 
             total_page_count.ilog2() as usize + 1
         };

@@ -17,7 +17,7 @@ limine-binary := limine-dir + "/limine"
 
 # Rust flags
 rustflags := "-C relocation-model=static"
-features := "default"
+features := "limine"
 
 # Default recipe (runs when just is called without arguments)
 default: build
@@ -116,6 +116,8 @@ _media:
   sudo dd if={{iso-file}} of=$DEVICE bs=4M status=progress oflag=sync
 
 # Helper recipe for running QEMU
+#
+# Remove logging options if you want
 _run-qemu: _download-firmware
     qemu-system-x86_64 \
         -machine q35 \
@@ -127,7 +129,8 @@ _run-qemu: _download-firmware
         -drive file=nvme.img,if=none,id=nvme-drive,format=raw \
         -drive if=pflash,unit=0,format=raw,file={{ovmf-code}},readonly=on \
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \
-        -cdrom {{iso-file}}
+        -cdrom {{iso-file}} \
+        -d in_asm,int -D qemu.log \
 
 # Helper recipe for running QEMU with debug
 #
@@ -143,7 +146,7 @@ _run-qemu-debug: _download-firmware
         -drive if=pflash,unit=1,format=raw,file={{ovmf-vars}} \
         -cdrom {{iso-file}} \
         -d in_asm,int -D qemu.log \
-        -D qemu.log \
+        -s -S \
 
 # Common ISO creation steps
 _create-iso-common: _setup-limine

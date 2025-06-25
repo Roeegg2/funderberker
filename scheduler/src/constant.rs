@@ -51,8 +51,6 @@ where
     }
 
     fn operation_loop(&mut self) -> ! {
-        logger::info!("Entered scheduler loop");
-
         if let Some(ref mut vessel) = self.scheduable {
             loop {
                 vessel.run();

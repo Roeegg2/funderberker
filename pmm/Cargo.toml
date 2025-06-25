@@ -12,7 +12,6 @@ logger = { version = "0.1.0", path = "../logger" }
 pedantic = "warn"
 
 [features]
-default = ["limine"]
 buddy = []
 
 limine = ["dep:limine"]

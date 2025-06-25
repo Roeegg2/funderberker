@@ -10,8 +10,3 @@ limine = { version = "0.5.0", optional = true }
 
 [lints.clippy]
 pedantic = "warn"
-
-[features]
-default = ["limine"]
-
-limine = ["dep:limine"]

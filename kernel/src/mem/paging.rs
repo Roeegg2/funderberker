@@ -22,11 +22,14 @@ where
 
 #[derive(Debug, Clone, Copy)]
 pub enum PagingError {
+    PageAlreadyPresent,
     PageNotPresent,
     PageFault,
     InvalidPageSize,
     InvalidAddress,
+    InvalidFlags,
     OutOfMemory,
+    BadPageCountAndAddressCombination,
 }
 
 pub trait PagingManager: Sized {
@@ -55,7 +58,7 @@ pub trait PagingManager: Sized {
     ) -> Result<VirtAddr, PagingError> {
         let base_virt_addr = {
             let mut vaa = VAA.lock();
-            let page_id = vaa.handout(page_count, page_size.alignment());
+            let page_id = vaa.handout(page_count, page_size.page_alignment());
             VirtAddr(page_id.0 * page_size.size())
         };
 
@@ -104,7 +107,7 @@ pub trait PagingManager: Sized {
 
         let virt_addr = {
             let mut vaa = VAA.lock();
-            vaa.handout(1, page_size.alignment())
+            vaa.handout(1, page_size.page_alignment())
         };
 
         unsafe {
@@ -121,9 +124,6 @@ pub trait PagingManager: Sized {
         kernel_phys: PhysAddr,
         used_by_pmm: &limine::memory_map::Entry,
     );
-
-    #[cfg(feature = "limine")]
-    unsafe fn init_vaa_from_limine(mem_map: &[&limine::memory_map::Entry]);
 }
 
 #[inline]
@@ -160,7 +160,7 @@ where
     }
 
     #[inline]
-    pub const fn alignment(self) -> usize {
+    pub const fn page_alignment(self) -> usize {
         self.size / P::BASIC_PAGE_SIZE.size
     }
 
@@ -183,16 +183,19 @@ where
     P: PagingManager,
 {
     #[inline]
+    #[must_use]
     pub const fn data(self) -> usize {
         self.data
     }
 
     #[inline]
+    #[must_use]
     pub(crate) const fn get(self, data: usize) -> bool {
         (self.data & data) != 0
     }
 
     #[inline]
+    #[must_use]
     pub(crate) const fn set(mut self, data: usize, status: bool) -> Self {
         if status {
             self.data |= data;
@@ -204,11 +207,20 @@ where
     }
 
     #[inline]
+    #[must_use]
     pub(crate) const unsafe fn from_raw(data: usize) -> Self {
         Self {
             data,
             _arch: PhantomData,
         }
+    }
+
+    pub const unsafe fn join(self, other: Flags<P>) -> Option<Self> {
+        if self.data & other.data != 0 {
+            return None; // Overlapping flags
+        }
+
+        Some(self.set(other.data, true))
     }
 }
 

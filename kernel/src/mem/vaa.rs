@@ -57,4 +57,19 @@ impl VirtualAddressAllocator {
     }
 }
 
+#[cfg(feature = "limine")]
+pub unsafe fn init_vaa_from_limine(mem_map: &[&limine::memory_map::Entry]) {
+    assert!(!cfg!(test), "Cannot initialize VAA in test environment");
+    // Get the last entry in the memory map
+
+    use crate::mem::vaa::{VAA, VirtualAddressAllocator};
+    use utils::mem::VirtAddr;
+
+    let last_entry = mem_map.last().unwrap();
+    let addr = VirtAddr(last_entry.base as usize + last_entry.length as usize);
+
+    let mut vaa = VAA.lock();
+    *vaa = VirtualAddressAllocator::new(addr);
+}
+
 impl SpinLockable for VirtualAddressAllocator {}

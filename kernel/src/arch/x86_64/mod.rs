@@ -76,20 +76,6 @@ impl PagingManager for X86_64 {
             init_from_limine(mem_map, kernel_virt, kernel_phys, used_by_pmm);
         }
     }
-
-    unsafe fn init_vaa_from_limine(mem_map: &[&limine::memory_map::Entry]) {
-        assert!(!cfg!(test), "Cannot initialize VAA in test environment");
-        // Get the last entry in the memory map
-
-        use crate::mem::vaa::{VAA, VirtualAddressAllocator};
-
-        let last_entry = mem_map.last().unwrap();
-        let addr = VirtAddr(last_entry.base as usize + last_entry.length as usize);
-
-        let mut vaa = VAA.lock();
-        *vaa = VirtualAddressAllocator::new(addr);
-    }
-
     unsafe fn map_pages_to(
         phys_addr: PhysAddr,
         virt_addr: VirtAddr,
