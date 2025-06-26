@@ -20,7 +20,7 @@ impl VirtualAddressAllocator {
         const MIN_MEM_SPAN: usize = 8 * 0x1000 * 0x1000 * 0x1000 * 0x1000; // 8TB
 
         // Making sure address is page aligned
-        sanity_assert!(start_addr.0 % BASIC_PAGE_SIZE == 0);
+        sanity_assert!(start_addr.0 % BASIC_PAGE_SIZE.size() == 0);
 
         // Make sure we have enough virtual memory space
         assert!(
@@ -30,7 +30,7 @@ impl VirtualAddressAllocator {
 
         logger::info!("VAA initialized with start address of {:?}", start_addr);
 
-        let start_id = Id(start_addr.0 / BASIC_PAGE_SIZE);
+        let start_id = Id(start_addr.0 / BASIC_PAGE_SIZE.size());
         Self {
             hander: IdHander::new_starting_from(start_id, Id::MAX_ID),
         }
@@ -53,7 +53,7 @@ impl VirtualAddressAllocator {
             .handout_and_skip(skip + count)
             .expect("Virtual address allocator ran out of IDs");
 
-        VirtAddr(page_id.0 * BASIC_PAGE_SIZE)
+        VirtAddr(page_id.0 * BASIC_PAGE_SIZE.size())
     }
 }
 

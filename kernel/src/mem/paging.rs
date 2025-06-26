@@ -20,7 +20,7 @@ where
     _arch: PhantomData<P>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PagingError {
     PageAlreadyPresent,
     PageNotPresent,

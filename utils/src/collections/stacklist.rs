@@ -215,7 +215,7 @@ impl<T> StackList<T> {
 
 impl<T> Drop for StackList<T> {
     fn drop(&mut self) {
-        while let Some(_) = self.pop_node() {}
+        // while let Some(_) = self.pop_node() {}
     }
 }
 

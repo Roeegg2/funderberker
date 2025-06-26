@@ -86,7 +86,7 @@ pub unsafe fn init(rsdp_addr: PhysAddr) -> Result<(), AcpiError> {
     sanity_assert!(rsdp_addr.0 % align_of::<Rsdp2>() == 0);
 
     let rsdp = unsafe {
-        let diff = rsdp_addr.0 % BASIC_PAGE_SIZE;
+        let diff = rsdp_addr.0 % BASIC_PAGE_SIZE.size();
         let ptr: *const Rsdp2 =
             (X86_64::map_pages(rsdp_addr - diff, 1, Flags::new(), PageSize::size_4kb()).unwrap()
                 + diff)

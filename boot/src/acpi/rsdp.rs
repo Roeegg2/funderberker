@@ -78,7 +78,7 @@ impl Rsdp2 {
     pub(super) fn get_xsdt(&self) -> &Xsdt {
         let ptr: *const SdtHeader = unsafe {
             let addr = PhysAddr(self.xsdt_address as usize);
-            let diff = addr.0 % BASIC_PAGE_SIZE;
+            let diff = addr.0 % BASIC_PAGE_SIZE.size();
             (X86_64::map_pages(addr - diff, 1, Flags::new(), PageSize::size_4kb()).unwrap() + diff)
                 .into()
         };

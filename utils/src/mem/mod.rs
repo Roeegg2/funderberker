@@ -15,12 +15,12 @@ pub static HHDM_OFFSET: FastLazyStatic<usize> = FastLazyStatic::new(0x0);
 
 /// A physical address
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Default)]
 pub struct PhysAddr(pub usize);
 
 /// A virtual address
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Default)]
 pub struct VirtAddr(pub usize);
 
 impl VirtAddr {

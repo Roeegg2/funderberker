@@ -8,7 +8,7 @@ use core::arch::asm;
 /// Execute a VMRUN instruction.
 #[inline]
 pub(super) unsafe fn vmrun(vmcb: PhysAddr) {
-    sanity_assert!(vmcb.0 % BASIC_PAGE_SIZE == 0);
+    sanity_assert!(vmcb.0 % BASIC_PAGE_SIZE.size() == 0);
 
     unsafe {
         asm!(

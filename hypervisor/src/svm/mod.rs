@@ -516,7 +516,7 @@ impl Svm {
             // Map the physical page so we can write to it
             let host_state_ptr: *mut u32 = host_state_page.into();
 
-            memset(host_state_ptr.cast::<u8>(), 0x0, BASIC_PAGE_SIZE);
+            memset(host_state_ptr.cast::<u8>(), 0x0, BASIC_PAGE_SIZE.size());
         };
 
         unsafe {

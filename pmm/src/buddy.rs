@@ -7,9 +7,7 @@ use alloc::boxed::Box;
 #[cfg(feature = "limine")]
 use limine::memory_map::EntryType;
 use utils::{
-    collections::stacklist::{Node, StackList},
-    mem::PhysAddr,
-    sync::spinlock::{SpinLock, SpinLockable},
+    collections::linkedlist::{LinkedList, Node}, mem::PhysAddr, sync::spinlock::{SpinLock, SpinLockable}
 };
 
 use super::{PmmAllocator, PmmError};
@@ -23,9 +21,9 @@ pub(super) static PMM: SpinLock<BuddyAllocator<'static>> = SpinLock::new(BuddyAl
 #[derive(Debug)]
 pub(super) struct BuddyAllocator<'a> {
     /// Array of the zones of the buddy allocator
-    zones: &'a mut [StackList<PhysAddr>],
+    zones: &'a mut [LinkedList<PhysAddr>],
     /// The freelist of the buddy allocator
-    freelist: StackList<PhysAddr>,
+    freelist: LinkedList<PhysAddr>,
 }
 
 impl PmmAllocator for BuddyAllocator<'_> {
@@ -151,7 +149,7 @@ impl BuddyAllocator<'_> {
     pub(super) const fn uninit() -> Self {
         Self {
             zones: &mut [],
-            freelist: StackList::new(),
+            freelist: LinkedList::new(),
         }
     }
 
@@ -168,7 +166,7 @@ impl BuddyAllocator<'_> {
         for i in start_index..self.zones.len() {
             // Try finding a node that satisfies the page wise alignment
             if let Some(node) = self.zones[i]
-                .iter_node()
+                .iter_nodes()
                 .enumerate()
                 .find(|&node| node.1.data.0 % (BASIC_PAGE_SIZE * alignment) == 0)
             {
@@ -192,7 +190,7 @@ impl BuddyAllocator<'_> {
         for i in start_index..self.zones.len() {
             let bucket_size = 2_usize.pow(i as u32) * BASIC_PAGE_SIZE;
             if let Some(node) = self.zones[i]
-                .iter_node()
+                .iter_nodes()
                 .enumerate()
                 .find(|&node| node.1.data <= addr && addr < PhysAddr(node.1.data.0 + bucket_size))
             {
@@ -222,7 +220,7 @@ impl BuddyAllocator<'_> {
         for i in start_index..self.zones.len() {
             let buddy_addr = Self::get_buddy_addr(addr, i);
             if let Some(buddy_node) = self.zones[i]
-                .iter_node()
+                .iter_nodes()
                 .enumerate()
                 .find(|&node| node.1.data == buddy_addr)
             {
@@ -272,19 +270,17 @@ impl BuddyAllocator<'_> {
     /// `buddy_index`
     #[inline]
     fn pop_from_zone(&mut self, zone_index: usize, node_index: usize) {
-        let node = Box::into_non_null(self.zones[zone_index].remove_at(node_index).unwrap());
+        let node = self.zones[zone_index].remove_at_node(node_index).unwrap();
 
-        unsafe { self.freelist.push_node(node) };
+        self.freelist.push_node_back(node)
     }
 
     /// Pushes the passed `buddy_addr` to the zone at the passed `zone_index`
     fn push_to_zone(&mut self, buddy_addr: PhysAddr, zone_index: usize) {
         // Move the node from the freelist to `zones[zone_index]`
-        let mut buddy = self.freelist.pop_node().unwrap();
-        buddy.data = buddy_addr;
-        unsafe {
-            self.zones[zone_index].push_node(Box::into_non_null(buddy));
-        };
+        let mut buddy = self.freelist.pop_node_back().unwrap();
+        buddy.as_mut().data = buddy_addr;
+        self.zones[zone_index].push_node_back(buddy);
     }
 
     fn break_into_buckets_n_free(&mut self, addr: PhysAddr, mut total_page_count: usize) {
@@ -324,7 +320,7 @@ impl BuddyAllocator<'_> {
         };
 
         let total_buffer_size = {
-            let zones_size = zones_count * size_of::<StackList<PhysAddr>>();
+            let zones_size = zones_count * size_of::<LinkedList<PhysAddr>>();
             let align_to_add = zones_size % align_of::<Node<PhysAddr>>();
 
             zones_size + align_to_add + FREELIST_BUCKETS_SIZE
@@ -335,7 +331,7 @@ impl BuddyAllocator<'_> {
 
         // Create a pointer to it
         let zones_ptr =
-            PhysAddr(entry.base as usize).add_hhdm_offset().0 as *mut StackList<PhysAddr>;
+            PhysAddr(entry.base as usize).add_hhdm_offset().0 as *mut LinkedList<PhysAddr>;
 
         let ret = Self {
             zones: Self::create_zones(zones_ptr, zones_count),
@@ -347,23 +343,23 @@ impl BuddyAllocator<'_> {
     }
 
     fn create_zones<'a>(
-        zones_ptr: *mut StackList<PhysAddr>,
+        zones_ptr: *mut LinkedList<PhysAddr>,
         zones_count: usize,
-    ) -> &'a mut [StackList<PhysAddr>] {
+    ) -> &'a mut [LinkedList<PhysAddr>] {
         let zones = unsafe { from_raw_parts_mut(zones_ptr, zones_count) };
 
         for i in 0..zones_count {
-            zones[i] = StackList::new();
+            zones[i] = LinkedList::new();
         }
 
         zones
     }
 
     fn create_freelist(
-        zones_ptr: *mut StackList<PhysAddr>,
+        zones_ptr: *mut LinkedList<PhysAddr>,
         max_zone_level: usize,
-    ) -> StackList<PhysAddr> {
-        let mut freelist = StackList::new();
+    ) -> LinkedList<PhysAddr> {
+        let mut freelist = LinkedList::new();
         // Push the pointer all the way to the end of the zones array, since this is the start
         // of the buffer for the freelist nodes
         let ptr = unsafe { zones_ptr.add(max_zone_level) };
@@ -376,7 +372,7 @@ impl BuddyAllocator<'_> {
         let buckets_count = FREELIST_BUCKETS_SIZE / size_of::<Node<PhysAddr>>();
         for i in 0..buckets_count {
             unsafe {
-                freelist.push_node(NonNull::new(ptr.add(i)).unwrap());
+                freelist.push_node_back(Box::from_raw(ptr.add(i)));
             }
         }
 
@@ -399,19 +395,17 @@ mod tests {
 
     // Mock setup for testing
     fn new_mock_allocator(zones_count: usize, page_count: usize) -> BuddyAllocator<'static> {
-        let zones: Box<[StackList<PhysAddr>]> = (0..zones_count)
-            .map(|_| StackList::new())
+        let zones: Box<[LinkedList<PhysAddr>]> = (0..zones_count)
+            .map(|_| LinkedList::new())
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        let mut freelist = StackList::new();
+        let mut freelist = LinkedList::new();
 
         // Initialize freelist with dummy nodes
         for i in 0..400 {
             let addr = PhysAddr(i * BASIC_PAGE_SIZE);
             let node = Node::new(addr);
-            unsafe {
-                freelist.push_node(Box::into_non_null(Box::new(node)));
-            }
+            freelist.push_node_back(Box::new(node));
         }
 
         let mut ret = BuddyAllocator {
