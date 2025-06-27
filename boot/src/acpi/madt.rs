@@ -241,9 +241,7 @@ impl Madt {
                         1,
                         Flags::new().set_read_write(true),
                         PageSize::size_4kb(),
-                    )
-                    .unwrap()
-                    .into();
+                    ).unwrap().cast();
                     lapic::override_base(ptr);
                 },
                 EntryType::PROCESSOR_LOCAL_X2APIC => unsafe {

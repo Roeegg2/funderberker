@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+
 #![feature(pointer_is_aligned_to)]
 // TODO: Remove this once the modular_bitfield errors are taken care of
 #![allow(dead_code)]
@@ -10,8 +11,6 @@
 // this CPU.
 
 use core::arch::asm;
-use core::panic::PanicInfo;
-
 use slab::heap::Heap;
 
 mod acpi;
@@ -19,7 +18,7 @@ mod boot;
 
 /// The global instance of the kernel heap allocator
 #[global_allocator]
-pub static KERNEL_HEAP_ALLOCATOR: Heap = Heap::new();
+static HEAP: Heap = Heap::new();
 
 fn funderberker_start() -> ! {
     hcf();
@@ -38,7 +37,7 @@ fn hcf() -> ! {
 }
 
 #[panic_handler]
-pub fn panic_handler(info: &PanicInfo) -> ! {
+pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     logger::err!("{}", info);
 
     hcf();

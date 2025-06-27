@@ -142,17 +142,17 @@ impl Msr for AmdMsr {
     }
 }
 
-impl Into<MsrData> for u64 {
-    fn into(self) -> MsrData {
-        MsrData {
-            low: self as u32,
-            high: (self >> 32) as u32,
-        }
+impl From<MsrData> for u64 {
+    fn from(data: MsrData) -> Self {
+        ((data.high as u64) << 32) | (data.low as u64)
     }
 }
 
-impl Into<u64> for MsrData {
-    fn into(self) -> u64 {
-        ((self.high as u64) << 32) | (self.low as u64)
+impl From<u64> for MsrData {
+    fn from(value: u64) -> Self {
+        MsrData {
+            low: value as u32,
+            high: (value >> 32) as u32,
+        }
     }
 }

@@ -9,8 +9,8 @@ pub(super) const MAX_BOTTOM_PAGING_LEVEL: usize = 3;
 
 impl PageSize<X86_64> {
     const SIZE_4KB: usize = 0x1000; // 4KB page size
-    const SIZE_2MB: usize = 0x200000; // 2MB page size
-    const SIZE_1GB: usize = 0x40000000; // 1GB page size
+    const SIZE_2MB: usize = 0x0020_0000; // 2MB page size
+    const SIZE_1GB: usize = 0x4000_0000; // 1GB page size
 
     #[inline]
     #[must_use]
@@ -80,10 +80,10 @@ impl PageSize<X86_64> {
     }
 }
 
-impl Into<Flags<X86_64>> for PageSize<X86_64> {
-    fn into(self) -> Flags<X86_64> {
-        match self.size() {
-            Self::SIZE_4KB => Flags::<X86_64>::new(),
+impl From<PageSize<X86_64>> for Flags<X86_64> {
+    fn from(page_size: PageSize<X86_64>) -> Self {
+        match page_size.size() {
+            PageSize::SIZE_4KB => Flags::<X86_64>::new(),
             _ => Flags::<X86_64>::new().set_page_size(true),
         }
     }

@@ -18,7 +18,7 @@ slab = { version = "0.1.0", path = "../slab" }
 pedantic = "warn"
 
 [features]
-default = ["limine"]
+default = []
 
 # Booting method
 limine = ["dep:limine"]

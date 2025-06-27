@@ -17,7 +17,7 @@ use kernel::{
     mem::paging::{Flags, PageSize, PagingManager},
 };
 use slab::{SlabAllocatable, SlabAllocator};
-use utils::{mem::VirtAddr, sync::spinlock::SpinLock};
+use utils::sync::spinlock::SpinLock;
 
 use alloc::boxed::Box;
 use core::{
@@ -36,7 +36,7 @@ mod cpu;
 
 // TODO: Make sure the pages are writeback WB and not writethough WT
 // TODO: Make this a box to a dyn or something since we might use VMX or something isntead
-static VMCB_ALLOCATOR: SlabAllocator<Vmcb> = SlabAllocator::new();
+static VMCB_ALLOCATOR: SlabAllocator<Vmcb> = SlabAllocator::const_new();
 
 /// The ASID allocator for the guests.
 static ASID_ALLOCATOR: SpinLock<IdTracker> = SpinLock::new(IdTracker::uninit());
@@ -514,13 +514,11 @@ impl Svm {
 
         unsafe {
             // Map the physical page so we can write to it
-            let host_state_ptr: *mut u32 = host_state_page.into();
-
-            memset(host_state_ptr.cast::<u8>(), 0x0, BASIC_PAGE_SIZE.size());
+            memset(host_state_page.as_ptr().cast::<u8>(), 0x0, BASIC_PAGE_SIZE.size());
         };
 
         unsafe {
-            let phys_addr = X86_64::translate(host_state_page).unwrap();
+            let phys_addr = X86_64::translate(host_state_page.into()).unwrap();
             // Breaking the physical address of the page into parts, so we can write it to the MSR
             let low = (phys_addr.0 & 0xffff_ffff) as u32;
             let high = ((phys_addr.0 >> 32) & 0xffff_ffff) as u32;
@@ -720,8 +718,7 @@ impl Vmcb {
     /// and Consistency Checks`
     fn init_guest_state(&mut self, rip: usize) {
         let gdt = {
-            let virt_addr: VirtAddr = Gdt::read_gdtr().into();
-            let ptr: *mut Gdt = virt_addr.into();
+            let ptr: *mut Gdt = Gdt::read_gdtr().into();
             unsafe { ptr.as_mut().unwrap() }
         };
 

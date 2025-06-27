@@ -11,7 +11,7 @@
 use core::{alloc::Layout, cell::SyncUnsafeCell, marker::PhantomData, ptr::NonNull};
 
 use alloc::alloc::{AllocError, Allocator};
-use internal::{InternalSlabAllocator, ObjectNode};
+use internal::{InternalSlabAllocator, ObjectNode, SlabError};
 use utils::sync::spinlock::SpinLockable;
 
 extern crate alloc;
@@ -32,25 +32,26 @@ where
     phantom_data: PhantomData<T>,
 }
 
-impl<T> Default for SlabAllocator<T>
-where
-    T: SlabAllocatable,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<T> SlabAllocator<T>
 where
     T: SlabAllocatable,
 {
     #[must_use]
-    pub const fn new() -> Self {
+    pub const fn const_new() -> Self {
         Self {
-            allocator: SyncUnsafeCell::new(InternalSlabAllocator::new(Layout::new::<T>())),
+            allocator: SyncUnsafeCell::new(InternalSlabAllocator::const_new(Layout::new::<T>())),
             phantom_data: PhantomData,
         }
+    }
+
+    #[must_use]
+    pub fn new() -> Result<Self, SlabError> {
+        let allocator = InternalSlabAllocator::new(Layout::new::<T>())?;
+
+        Ok(Self {
+            allocator: SyncUnsafeCell::new(allocator),
+            phantom_data: PhantomData,
+        })
     }
 }
 
@@ -91,9 +92,9 @@ where
             // Cast and then free :)
             let ptr = ptr.cast::<ObjectNode>();
 
-            unsafe {
-                let _ = allocator.free(ptr);
-            };
+            if unsafe { allocator.free(ptr).is_err() } {
+                panic!("Tried to deallocate a pointer that was not allocated by this allocator");
+            }
         }
     }
 }

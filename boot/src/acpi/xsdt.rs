@@ -3,7 +3,7 @@
 use super::{AcpiError, AcpiTable, SdtHeader, hpet::Hpet, madt::Madt, mcfg::Mcfg};
 use core::ptr::from_ref;
 use kernel::{
-    arch::{BASIC_PAGE_SIZE, x86_64::X86_64},
+    arch::{x86_64::X86_64, BASIC_PAGE_SIZE},
     mem::paging::{Flags, PageSize, PagingManager},
 };
 use utils::mem::PhysAddr;
@@ -76,11 +76,13 @@ impl Iterator for Iter {
             return None;
         }
 
-        let ptr: *const SdtHeader = unsafe {
+        let ptr = unsafe {
             let addr = self.ptr.read_unaligned();
             let diff = addr.0 % BASIC_PAGE_SIZE.size();
-            (X86_64::map_pages(addr - diff, 1, Flags::new(), PageSize::size_4kb()).unwrap() + diff)
-                .into()
+            X86_64::map_pages(addr - diff, 1, Flags::new(), PageSize::size_4kb())
+                .unwrap()
+                .cast::<SdtHeader>()
+                .byte_add(diff)
         };
 
         self.ptr = unsafe { self.ptr.add(1) };

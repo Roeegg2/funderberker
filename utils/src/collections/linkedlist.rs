@@ -1,7 +1,7 @@
-use core::ptr::NonNull;
-use core::marker::PhantomData;
-use core::fmt;
 use alloc::boxed::Box;
+use core::fmt;
+use core::marker::PhantomData;
+use core::ptr::NonNull;
 
 pub struct LinkedList<T> {
     head: Option<NonNull<Node<T>>>,
@@ -17,11 +17,22 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
+    #[must_use]
     pub fn new(data: T) -> Self {
-        Node { data, next: None, prev: None }
+        Node {
+            data,
+            next: None,
+            prev: None,
+        }
     }
-    pub fn data(&self) -> &T { &self.data }
-    pub fn element_mut(&mut self) -> &mut T { &mut self.data }
+    #[must_use]
+    pub fn data(&self) -> &T {
+        &self.data
+    }
+    #[must_use]
+    pub fn element_mut(&mut self) -> &mut T {
+        &mut self.data
+    }
 }
 
 impl<T> LinkedList<T> {
@@ -34,24 +45,37 @@ impl<T> LinkedList<T> {
         }
     }
 
-    pub fn len(&self) -> usize { self.len }
-    pub fn is_empty(&self) -> bool { self.len == 0 }
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 
     pub fn clear(&mut self) {
         while self.pop_front().is_some() {}
     }
 
+    #[must_use]
     pub fn front(&self) -> Option<&T> {
         self.head.map(|node| unsafe { &node.as_ref().data })
     }
+    #[must_use]
     pub fn front_mut(&mut self) -> Option<&mut T> {
-        self.head.map(|node| unsafe { &mut node.as_ptr().as_mut().unwrap().data })
+        self.head
+            .map(|node| unsafe { &mut node.as_ptr().as_mut().unwrap().data })
     }
+    #[must_use]
     pub fn back(&self) -> Option<&T> {
         self.tail.map(|node| unsafe { &node.as_ref().data })
     }
+    #[must_use]
     pub fn back_mut(&mut self) -> Option<&mut T> {
-        self.tail.map(|node| unsafe { &mut node.as_ptr().as_mut().unwrap().data })
+        self.tail
+            .map(|node| unsafe { &mut node.as_ptr().as_mut().unwrap().data })
     }
 
     pub fn push_front(&mut self, data: T) {
@@ -88,6 +112,7 @@ impl<T> LinkedList<T> {
         self.len += 1;
     }
 
+    #[must_use]
     pub fn pop_front(&mut self) -> Option<T> {
         self.head.map(|node| unsafe {
             let mut boxed = Box::from_raw(node.as_ptr());
@@ -98,11 +123,13 @@ impl<T> LinkedList<T> {
                 self.tail = None;
             }
             self.len -= 1;
-            boxed.next = None; boxed.prev = None;
+            boxed.next = None;
+            boxed.prev = None;
             boxed.data
         })
     }
 
+    #[must_use]
     pub fn pop_back(&mut self) -> Option<T> {
         self.tail.map(|node| unsafe {
             let mut boxed = Box::from_raw(node.as_ptr());
@@ -113,11 +140,13 @@ impl<T> LinkedList<T> {
                 self.head = None;
             }
             self.len -= 1;
-            boxed.next = None; boxed.prev = None;
+            boxed.next = None;
+            boxed.prev = None;
             boxed.data
         })
     }
 
+    #[must_use]
     pub fn create_node(data: T) -> Box<Node<T>> {
         Box::new(Node::new(data))
     }
@@ -157,6 +186,7 @@ impl<T> LinkedList<T> {
     }
 
     /// Pops the front node and returns it as Box<Node<T>>.
+    #[must_use]
     pub fn pop_node_front(&mut self) -> Option<Box<Node<T>>> {
         self.head.map(|node| unsafe {
             let mut boxed = Box::from_raw(node.as_ptr());
@@ -174,6 +204,7 @@ impl<T> LinkedList<T> {
     }
 
     /// Pops the back node and returns it as Box<Node<T>>.
+    #[must_use]
     pub fn pop_node_back(&mut self) -> Option<Box<Node<T>>> {
         self.tail.map(|node| unsafe {
             let mut boxed = Box::from_raw(node.as_ptr());
@@ -192,7 +223,9 @@ impl<T> LinkedList<T> {
 
     // Remove node at the given index, returning it as Box<Node<T>>
     pub fn remove_at_node(&mut self, index: usize) -> Option<Box<Node<T>>> {
-        if index >= self.len { return None; }
+        if index >= self.len {
+            return None;
+        }
         let mut curr = self.head?;
         for _ in 0..index {
             curr = unsafe { curr.as_ref().next? };
@@ -218,8 +251,36 @@ impl<T> LinkedList<T> {
         }
     }
 
+    #[must_use]
     pub fn iter(&self) -> Iter<'_, T> {
         Iter {
+            next: self.head,
+            remaining: self.len,
+            _marker: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn iter_nodes(&self) -> IterNode<'_, T> {
+        IterNode {
+            next: self.head,
+            remaining: self.len,
+            _marker: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
+        IterMut {
+            next: self.head,
+            remaining: self.len,
+            _marker: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn iter_mut_node(&mut self) -> IterMutNode<'_, T> {
+        IterMutNode {
             next: self.head,
             remaining: self.len,
             _marker: PhantomData,
@@ -251,7 +312,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
         (self.remaining, Some(self.remaining))
     }
 }
-impl<'a, T> ExactSizeIterator for Iter<'a, T> {}
+impl<T> ExactSizeIterator for Iter<'_, T> {}
 
 pub struct IterMut<'a, T> {
     next: Option<NonNull<Node<T>>>,
@@ -277,17 +338,7 @@ impl<'a, T> Iterator for IterMut<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for IterMut<'a, T> {}
-
-impl<T> LinkedList<T> {
-    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
-        IterMut {
-            next: self.head,
-            remaining: self.len,
-            _marker: PhantomData,
-        }
-    }
-}
+impl<T> ExactSizeIterator for IterMut<'_, T> {}
 
 pub struct IterMutNode<'a, T> {
     next: Option<NonNull<Node<T>>>,
@@ -313,17 +364,7 @@ impl<'a, T> Iterator for IterMutNode<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for IterMutNode<'a, T> {}
-
-impl<T> LinkedList<T> {
-    pub fn iter_mut_node(&mut self) -> IterMutNode<'_, T> {
-        IterMutNode {
-            next: self.head,
-            remaining: self.len,
-            _marker: PhantomData,
-        }
-    }
-}
+impl<T> ExactSizeIterator for IterMutNode<'_, T> {}
 
 pub struct IterNode<'a, T> {
     next: Option<NonNull<Node<T>>>,
@@ -349,17 +390,7 @@ impl<'a, T> Iterator for IterNode<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for IterNode<'a, T> {}
-
-impl<T> LinkedList<T> {
-    pub fn iter_nodes(&self) -> IterNode<'_, T> {
-        IterNode {
-            next: self.head,
-            remaining: self.len,
-            _marker: PhantomData,
-        }
-    }
-}
+impl<T> ExactSizeIterator for IterNode<'_, T> {}
 
 impl<T> Drop for LinkedList<T> {
     fn drop(&mut self) {
@@ -374,10 +405,16 @@ impl<T: fmt::Debug> fmt::Debug for LinkedList<T> {
 }
 impl<T: fmt::Debug> fmt::Debug for Node<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Node").field("data", &self.data).finish()
+        f.debug_struct("Node")
+            .field("data", &self.data)
+            .field("next", &self.next)
+            .field("prev", &self.prev)
+            .finish()
     }
 }
 
 impl<T> Default for LinkedList<T> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

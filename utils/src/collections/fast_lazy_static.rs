@@ -28,12 +28,12 @@ where
     #[inline]
     pub unsafe fn set(&self, data: T) {
         unsafe {
-            let foo = self.data.get().as_mut().unwrap();
+            let var = self.data.get().as_mut().unwrap();
 
             // TODO: Might have to remove this since sometimes the UNINT type can be valid
             // Sanity checking to make sure the value wasn't already set
             // sanity_assert!(*foo == T::UNINIT);
-            *foo = data;
+            *var = data;
         }
     }
 

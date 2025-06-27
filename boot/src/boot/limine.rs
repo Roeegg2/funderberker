@@ -99,7 +99,7 @@ unsafe extern "C" fn kmain() -> ! {
             used_by_pmm,
         );
 
-        acpi::init(PhysAddr(rsdp.address())).expect("Failed to initialize ACPI");
+        acpi::init(PhysAddr(rsdp.address())).unwrap();
     };
 
     // XXX: As I've stated in the comment in the function below, this is technically bad since

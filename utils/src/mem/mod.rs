@@ -4,8 +4,7 @@ use crate::collections::fast_lazy_static::FastLazyStatic;
 use core::{
     fmt::{self, Debug, Formatter},
     ops::{Add, Sub},
-    ptr::NonNull,
-    ptr::{read_volatile, write_volatile},
+    ptr::{NonNull, read_volatile, write_volatile},
 };
 
 pub mod mmio;
@@ -132,25 +131,21 @@ impl Sub<PhysAddr> for PhysAddr {
     }
 }
 
-// NOTE: The following two implementations are safe, since this operation cannot generate UB.
-// BUT using the resulting pointers is obviously unsafe, so be careful!
-impl<T> From<VirtAddr> for *const T {
-    fn from(value: VirtAddr) -> Self {
-        value.0 as *const T
+impl<T> From<*const T> for PhysAddr {
+    fn from(value: *const T) -> Self {
+        Self(value.addr())
     }
 }
 
-impl<T> From<VirtAddr> for *mut T {
-    fn from(value: VirtAddr) -> Self {
-        value.0 as *mut T
+impl<T> From<*mut T> for PhysAddr {
+    fn from(value: *mut T) -> Self {
+        Self(value.addr())
     }
 }
 
-impl<T> TryFrom<VirtAddr> for NonNull<T> {
-    type Error = ();
-
-    fn try_from(value: VirtAddr) -> Result<Self, Self::Error> {
-        NonNull::new(value.0 as *mut T).ok_or(())
+impl<T> From<NonNull<T>> for PhysAddr {
+    fn from(value: NonNull<T>) -> Self {
+        Self(value.as_ptr().addr())
     }
 }
 

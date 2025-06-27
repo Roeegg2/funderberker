@@ -86,12 +86,13 @@ impl<T> StackList<T> {
 
     #[inline]
     pub fn push(&mut self, data: T) {
-        unsafe { self.push_node(Box::leak(Box::new(Node::new(data))).into()) }
+        unsafe { self.push_node(Box::new(Node::new(data))) }
     }
 
-    pub unsafe fn push_node(&mut self, mut node: NonNull<Node<T>>) {
-        unsafe { node.as_mut().next = self.head };
-        self.head = Some(node);
+    pub unsafe fn push_node(&mut self, mut node: Box<Node<T>>) {
+        node.next = self.head;
+        // SAFETY: The node is valid and not aliased.
+        self.head = Some(Box::into_non_null(node));
         self.len += 1;
     }
 
@@ -108,7 +109,7 @@ impl<T> StackList<T> {
         let node = self.pop_node();
         if let Some(node) = node {
             // SAFETY: The node is valid and not aliased.
-            unsafe { other.push_node(Box::into_non_null(node)) };
+            unsafe { other.push_node(node) };
         }
     }
 
@@ -116,7 +117,7 @@ impl<T> StackList<T> {
         let node = self.remove_at(index);
         if let Some(node) = node {
             // SAFETY: The node is valid and not aliased.
-            unsafe { other.push_node(Box::into_non_null(node)) };
+            unsafe { other.push_node(node) };
         }
     }
 
@@ -185,6 +186,7 @@ impl<T> StackList<T> {
     }
 
     #[inline]
+    #[must_use]
     pub fn iter_node_mut(&mut self) -> IterNodeMut<'_, T> {
         IterNodeMut {
             head: self.head,
@@ -204,6 +206,7 @@ impl<T> StackList<T> {
     }
 
     #[inline]
+    #[must_use]
     pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         IterMut {
             head: self.head,
@@ -215,7 +218,9 @@ impl<T> StackList<T> {
 
 impl<T> Drop for StackList<T> {
     fn drop(&mut self) {
-        // while let Some(_) = self.pop_node() {}
+        while let Some(node) = self.pop_node() {
+            drop(node)
+        }
     }
 }
 

@@ -215,7 +215,7 @@ impl PcieManager {
     ) -> Option<MmioArea<usize, usize, u32>> {
         let config_space: MmioArea<usize, usize, u32> = {
             let phys_addr = PcieDevice::get_base_address(bus, device, function, segment_group_base);
-            let virt_addr = unsafe {
+            let ptr = unsafe {
                 X86_64::map_pages(
                     phys_addr,
                     1,
@@ -227,7 +227,7 @@ impl PcieManager {
                 .unwrap()
             };
 
-            MmioArea::new(virt_addr.into())
+            MmioArea::new(ptr.cast())
         };
 
         // Check if the device is present

@@ -1,13 +1,15 @@
 //! A buddy allocator for the PMM
 
-use core::{cmp::min, ptr::NonNull, slice::from_raw_parts_mut};
+use core::{cmp::min, slice::from_raw_parts_mut};
 
 use crate::BASIC_PAGE_SIZE;
 use alloc::boxed::Box;
 #[cfg(feature = "limine")]
 use limine::memory_map::EntryType;
 use utils::{
-    collections::linkedlist::{LinkedList, Node}, mem::PhysAddr, sync::spinlock::{SpinLock, SpinLockable}
+    collections::linkedlist::{LinkedList, Node},
+    mem::PhysAddr,
+    sync::spinlock::{SpinLock, SpinLockable},
 };
 
 use super::{PmmAllocator, PmmError};
@@ -272,7 +274,7 @@ impl BuddyAllocator<'_> {
     fn pop_from_zone(&mut self, zone_index: usize, node_index: usize) {
         let node = self.zones[zone_index].remove_at_node(node_index).unwrap();
 
-        self.freelist.push_node_back(node)
+        self.freelist.push_node_back(node);
     }
 
     /// Pushes the passed `buddy_addr` to the zone at the passed `zone_index`
@@ -283,6 +285,7 @@ impl BuddyAllocator<'_> {
         self.zones[zone_index].push_node_back(buddy);
     }
 
+    #[allow(unused)]
     fn break_into_buckets_n_free(&mut self, addr: PhysAddr, mut total_page_count: usize) {
         let mut addr_id = addr.0 / BASIC_PAGE_SIZE;
         'outer: loop {
@@ -342,19 +345,21 @@ impl BuddyAllocator<'_> {
         (ret, entry, total_buffer_size.div_ceil(BASIC_PAGE_SIZE))
     }
 
+    #[allow(unused)]
     fn create_zones<'a>(
         zones_ptr: *mut LinkedList<PhysAddr>,
         zones_count: usize,
     ) -> &'a mut [LinkedList<PhysAddr>] {
         let zones = unsafe { from_raw_parts_mut(zones_ptr, zones_count) };
 
-        for i in 0..zones_count {
-            zones[i] = LinkedList::new();
+        for zone in zones.iter_mut() {
+            *zone = LinkedList::new();
         }
 
         zones
     }
 
+    #[allow(unused)]
     fn create_freelist(
         zones_ptr: *mut LinkedList<PhysAddr>,
         max_zone_level: usize,
@@ -387,40 +392,67 @@ impl SpinLockable for BuddyAllocator<'_> {}
 
 #[cfg(test)]
 mod tests {
+    use core::ops::{Deref, DerefMut};
+
     use alloc::{vec, vec::Vec};
 
     use super::*;
 
     const BASE_ADDR: PhysAddr = PhysAddr(0x1000000); // 16MB base address for testing
 
-    // Mock setup for testing
-    fn new_mock_allocator(zones_count: usize, page_count: usize) -> BuddyAllocator<'static> {
-        let zones: Box<[LinkedList<PhysAddr>]> = (0..zones_count)
-            .map(|_| LinkedList::new())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let mut freelist = LinkedList::new();
+    struct MockAllocator<'a>(BuddyAllocator<'a>);
 
-        // Initialize freelist with dummy nodes
-        for i in 0..400 {
-            let addr = PhysAddr(i * BASIC_PAGE_SIZE);
-            let node = Node::new(addr);
-            freelist.push_node_back(Box::new(node));
+    impl<'a> Deref for MockAllocator<'a> {
+        type Target = BuddyAllocator<'a>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
         }
+    }
 
-        let mut ret = BuddyAllocator {
-            zones: Box::leak(zones),
-            freelist,
-        };
+    impl DerefMut for MockAllocator<'_> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
 
-        ret.break_into_buckets_n_free(BASE_ADDR, page_count);
+    impl Drop for MockAllocator<'_> {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = Box::from_raw(self.0.zones as *mut [LinkedList<PhysAddr>]);
+            };
+        }
+    }
 
-        ret
+    impl<'a> MockAllocator<'a> {
+        fn new(zones_count: usize, page_count: usize) -> Self {
+            let zones: Box<[LinkedList<PhysAddr>]> = (0..zones_count)
+                .map(|_| LinkedList::new())
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            let mut freelist = LinkedList::new();
+
+            // Initialize freelist with dummy nodes
+            for i in 0..400 {
+                let addr = PhysAddr(i * BASIC_PAGE_SIZE);
+                let node = Node::new(addr);
+                freelist.push_node_back(Box::new(node));
+            }
+
+            let mut ret = BuddyAllocator {
+                zones: Box::leak(zones),
+                freelist,
+            };
+
+            ret.break_into_buckets_n_free(BASE_ADDR, page_count);
+
+            Self(ret)
+        }
     }
 
     #[test]
     fn break_into_buckets_n_free_one_page() {
-        let allocator = new_mock_allocator(33, 1);
+        let allocator = MockAllocator::new(33, 1);
 
         assert_eq!(allocator.zones[0].len(), 1);
 
@@ -434,7 +466,7 @@ mod tests {
 
     #[test]
     fn break_into_buckets_n_free_two_pages() {
-        let allocator = new_mock_allocator(33, 2);
+        let allocator = MockAllocator::new(33, 2);
 
         // 2 pages should create one 2-page bucket in zone 1
         assert_eq!(allocator.zones[1].len(), 1);
@@ -449,7 +481,7 @@ mod tests {
 
     #[test]
     fn break_into_buckets_n_free_three_pages() {
-        let allocator = new_mock_allocator(33, 3);
+        let allocator = MockAllocator::new(33, 3);
 
         // 3 pages = 2 + 1, should have one 2-page bucket and one 1-page bucket
         assert_eq!(allocator.zones[0].len(), 1);
@@ -458,7 +490,7 @@ mod tests {
 
     #[test]
     fn break_into_buckets_n_free_ten_pages() {
-        let allocator = new_mock_allocator(33, 10);
+        let allocator = MockAllocator::new(33, 10);
 
         assert_eq!(allocator.zones[1].len(), 1);
         assert_eq!(allocator.zones[3].len(), 1);
@@ -466,7 +498,7 @@ mod tests {
 
     #[test]
     fn break_into_buckets_n_free_no_overlaps() {
-        let allocator = new_mock_allocator(33, 63);
+        let allocator = MockAllocator::new(33, 63);
 
         // Collect all allocated ranges
         let mut ranges = Vec::new();
@@ -499,7 +531,7 @@ mod tests {
         ];
 
         for (page_count, expected_buckets) in test_cases {
-            let allocator = new_mock_allocator(33, page_count);
+            let allocator = MockAllocator::new(33, page_count);
 
             for (bucket_pages, expected_count) in expected_buckets {
                 let zone_index = (bucket_pages as usize).ilog2() as usize;
@@ -511,7 +543,7 @@ mod tests {
     #[test]
     fn break_into_buckets_n_free_stress_test() {
         // Test with a very large region
-        let mut allocator = new_mock_allocator(33, 2047);
+        let mut allocator = MockAllocator::new(33, 2047);
 
         // Verify total page count
         let mut total_pages = 0;
@@ -532,7 +564,7 @@ mod tests {
 
     #[test]
     fn allocate_and_free() {
-        let mut allocator = new_mock_allocator(33, 1000);
+        let mut allocator = MockAllocator::new(33, 1000);
 
         for _ in 0..200 {
             let addr = allocator.allocate(1, 4).unwrap();
@@ -552,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_allocate_no_available_blocks() {
-        let mut allocator = new_mock_allocator(33, 0);
+        let mut allocator = MockAllocator::new(33, 0);
 
         // Don't add any free blocks
 
@@ -563,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_free_coalescing() {
-        let mut allocator = new_mock_allocator(33, 1000);
+        let mut allocator = MockAllocator::new(33, 1000);
 
         // Allocate a few pages
         let addr1 = allocator.allocate(1, 4).unwrap();
@@ -590,7 +622,7 @@ mod tests {
     // Stress coalescing tests
     #[test]
     fn test_stress_coalescing() {
-        let mut allocator = new_mock_allocator(33, 2048);
+        let mut allocator = MockAllocator::new(33, 2048);
 
         // Allocate many pages of different sizes
         let mut allocations = Vec::new();
@@ -628,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_coalescing_multiple_sizes() {
-        let mut allocator = new_mock_allocator(33, 16);
+        let mut allocator = MockAllocator::new(33, 16);
 
         // Allocate 4 pages of size 4 each (uses up 16 pages total)
         let addr1 = allocator.allocate(1, 4).unwrap();
@@ -670,7 +702,7 @@ mod tests {
     // Disband tests
     #[test]
     fn test_disband_creates_correct_buddies() {
-        let mut allocator = new_mock_allocator(33, 32);
+        let mut allocator = MockAllocator::new(33, 32);
 
         // Allocate a 16-page block (zone index 4)
         let addr = allocator.allocate(1, 16).unwrap();
@@ -691,7 +723,7 @@ mod tests {
 
     #[test]
     fn test_disband_complex_splitting() {
-        let mut allocator = new_mock_allocator(33, 64);
+        let mut allocator = MockAllocator::new(33, 64);
 
         // Allocate from the largest available block
         let addr1 = allocator.allocate(1, 1).unwrap(); // This will split a large block
@@ -717,7 +749,7 @@ mod tests {
     // allocate_at tests
     #[test]
     fn test_allocate_at_success() {
-        let mut allocator = new_mock_allocator(33, 32);
+        let mut allocator = MockAllocator::new(33, 32);
 
         // Try to allocate at a specific address within the available range
         let target_addr = BASE_ADDR + (8 * BASIC_PAGE_SIZE); // Aligned address
@@ -729,7 +761,7 @@ mod tests {
 
     #[test]
     fn test_allocate_at_alignment_error() {
-        let mut allocator = new_mock_allocator(33, 32);
+        let mut allocator = MockAllocator::new(33, 32);
 
         // Try to allocate at a misaligned address
         let misaligned_addr = BASE_ADDR + BASIC_PAGE_SIZE; // Not aligned for 4-page allocation
@@ -741,7 +773,7 @@ mod tests {
 
     #[test]
     fn test_allocate_at_no_containing_block() {
-        let mut allocator = new_mock_allocator(33, 16);
+        let mut allocator = MockAllocator::new(33, 16);
 
         // Try to allocate at an address outside the available range
         let outside_addr = PhysAddr(BASE_ADDR.0 + 32 * BASIC_PAGE_SIZE);
@@ -753,7 +785,7 @@ mod tests {
 
     #[test]
     fn test_allocate_at_already_allocated() {
-        let mut allocator = new_mock_allocator(33, 16);
+        let mut allocator = MockAllocator::new(33, 16);
 
         // First allocation should succeed
         assert!(allocator.allocate_at(BASE_ADDR, 4).is_ok());
@@ -767,7 +799,7 @@ mod tests {
     // Edge cases for allocate and free
     #[test]
     fn test_allocate_zero_pages() {
-        let mut allocator = new_mock_allocator(33, 16);
+        let mut allocator = MockAllocator::new(33, 16);
 
         let result = allocator.allocate(1, 0);
         assert!(result.is_err());
@@ -776,7 +808,7 @@ mod tests {
 
     #[test]
     fn test_allocate_at_zero_pages() {
-        let mut allocator = new_mock_allocator(33, 16);
+        let mut allocator = MockAllocator::new(33, 16);
 
         let result = allocator.allocate_at(BASE_ADDR, 0);
         assert!(result.is_err());
@@ -785,7 +817,7 @@ mod tests {
 
     #[test]
     fn test_free_zero_pages() {
-        let mut allocator = new_mock_allocator(33, 0);
+        let mut allocator = MockAllocator::new(33, 0);
 
         let result = unsafe { allocator.free(BASE_ADDR, 0) };
         assert!(result.is_err());
@@ -794,7 +826,7 @@ mod tests {
 
     #[test]
     fn test_free_already_free_page() {
-        let mut allocator = new_mock_allocator(33, 16);
+        let mut allocator = MockAllocator::new(33, 16);
 
         // First free should fail because the page is already free
         let result = unsafe { allocator.free(BASE_ADDR, 1) };
@@ -804,7 +836,7 @@ mod tests {
 
     #[test]
     fn test_is_page_free_zero_pages() {
-        let allocator = new_mock_allocator(33, 16);
+        let allocator = MockAllocator::new(33, 16);
 
         let result = allocator.is_page_free(BASE_ADDR, 0);
         assert!(result.is_err());
@@ -813,7 +845,7 @@ mod tests {
 
     #[test]
     fn test_is_page_free_misaligned() {
-        let allocator = new_mock_allocator(33, 60);
+        let allocator = MockAllocator::new(33, 60);
 
         let misaligned_addr = PhysAddr(0x1000001); // Not page-aligned
         let result = allocator.is_page_free(misaligned_addr, 1);
@@ -823,7 +855,7 @@ mod tests {
 
     #[test]
     fn test_allocate_overflow() {
-        let mut allocator = new_mock_allocator(33, 16);
+        let mut allocator = MockAllocator::new(33, 16);
 
         // Try to allocate more pages than can fit in usize
         let result = allocator.allocate(1, usize::MAX);
@@ -833,7 +865,7 @@ mod tests {
 
     #[test]
     fn test_alignment_requirements() {
-        let mut allocator = new_mock_allocator(33, 64);
+        let mut allocator = MockAllocator::new(33, 64);
 
         // Test various alignment requirements
         let addr1 = allocator.allocate(2, 4).unwrap(); // 2-page alignment
@@ -848,7 +880,7 @@ mod tests {
 
     #[test]
     fn test_fragmentation_and_coalescing_recovery() {
-        let mut allocator = new_mock_allocator(33, 128);
+        let mut allocator = MockAllocator::new(33, 128);
 
         // Create fragmentation by allocating alternating blocks
         let mut odd_allocations = Vec::new();

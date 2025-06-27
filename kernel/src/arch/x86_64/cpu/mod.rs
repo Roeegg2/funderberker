@@ -2,6 +2,8 @@
 //!
 //! `NOTE:` `core::kernel::archx86_64` already implements `__cpuid`, `rdtsc` and many others, so use them when needed
 
+#![allow(clippy::semicolon_if_nothing_returned)]
+
 use core::{arch::asm, mem::transmute};
 use modular_bitfield::prelude::*;
 use utils::mem::VirtAddr;
@@ -571,9 +573,3 @@ impl Default for Cr3 {
         Self::new()
     }
 }
-
-// impl Into<u64> for MsrData {
-//     fn into(self) -> u64 {
-//         ((self.high as u64) << 32) | (self.low as u64)
-//     }
-// }

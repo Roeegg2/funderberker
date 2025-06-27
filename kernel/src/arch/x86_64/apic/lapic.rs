@@ -441,7 +441,7 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: u
 
     // SAFETY: This should be OK since we're mapping a physical address that is marked as
     // reserved, so the kernel shouldn't be tracking it
-    let virt_addr = unsafe {
+    let ptr = unsafe {
         X86_64::map_pages(
             base,
             1,
@@ -454,7 +454,7 @@ pub unsafe fn add(base: PhysAddr, acpi_processor_id: u32, apic_id: u32, flags: u
     let lapics = unsafe { LOCAL_APICS.get().as_mut().unwrap() };
 
     lapics.push(SpinLock::new(LocalApic::new(
-        virt_addr.into(),
+        ptr.cast::<u32>(),
         acpi_processor_id,
         apic_id,
     )));

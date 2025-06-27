@@ -1,4 +1,4 @@
-use core::marker::PhantomData;
+use core::{marker::PhantomData, num::NonZero, ptr::NonNull};
 use pmm::PmmAllocator;
 use utils::mem::{PhysAddr, VirtAddr};
 
@@ -55,7 +55,7 @@ pub trait PagingManager: Sized {
         page_count: usize,
         flags: Flags<Self>,
         page_size: PageSize<Self>,
-    ) -> Result<VirtAddr, PagingError> {
+    ) -> Result<NonNull<()>, PagingError> {
         let base_virt_addr = {
             let mut vaa = VAA.lock();
             let page_id = vaa.handout(page_count, page_size.page_alignment());
@@ -73,14 +73,18 @@ pub trait PagingManager: Sized {
             }
         }
 
-        Ok(base_virt_addr)
+
+        Ok(NonNull::without_provenance(
+            NonZero::new(base_virt_addr.0).unwrap(),
+        ))
     }
 
     unsafe fn free_pages(
-        virt_addr: VirtAddr,
+        ptr: NonNull<()>,
         count: usize,
         page_size: PageSize<Self>,
     ) -> Result<(), PagingError> {
+        let virt_addr = ptr.into();
         for i in 0..count {
             let addr = virt_addr + (i * page_size.size());
             let phys_addr = Self::translate(virt_addr).ok_or(PagingError::PageNotPresent)?;
@@ -102,8 +106,7 @@ pub trait PagingManager: Sized {
         page_count: usize,
         flags: Flags<Self>,
         page_size: PageSize<Self>,
-    ) -> Result<VirtAddr, PagingError> {
-        assert!(!cfg!(test), "Cannot map pages in test environment");
+    ) -> Result<*mut (), PagingError> {
 
         let virt_addr = {
             let mut vaa = VAA.lock();
@@ -114,7 +117,7 @@ pub trait PagingManager: Sized {
             Self::map_pages_to(phys_addr, virt_addr, page_count, flags, page_size)?;
         };
 
-        Ok(virt_addr)
+        Ok(core::ptr::without_provenance_mut(virt_addr.0))
     }
 
     #[cfg(feature = "limine")]
@@ -131,7 +134,7 @@ pub fn allocate_pages<P>(
     count: usize,
     flags: Flags<P>,
     page_size: PageSize<P>,
-) -> Result<VirtAddr, PagingError>
+) -> Result<NonNull<()>, PagingError>
 where
     P: PagingManager,
 {
@@ -140,14 +143,14 @@ where
 
 #[inline]
 pub unsafe fn free_pages<P>(
-    virt_addr: VirtAddr,
+    ptr: NonNull<()>,
     count: usize,
     page_size: PageSize<P>,
 ) -> Result<(), PagingError>
 where
     P: PagingManager,
 {
-    unsafe { P::free_pages(virt_addr, count, page_size) }
+    unsafe { P::free_pages(ptr, count, page_size) }
 }
 
 impl<P> PageSize<P>

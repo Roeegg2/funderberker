@@ -89,7 +89,9 @@ impl Entry {
 
     #[must_use]
     fn next_level_table(&mut self) -> &mut PageTable {
-        let ptr: *mut PageTable = self.get_addr(PageSize::size_4kb()).add_hhdm_offset().into();
+        let ptr: *mut PageTable = core::ptr::without_provenance_mut(
+            self.get_addr(PageSize::size_4kb()).add_hhdm_offset().0,
+        );
 
         unsafe {
             ptr.cast::<PageTable>()
@@ -113,33 +115,6 @@ impl Entry {
         self.set_flags(unsafe {
             flags
                 .set_present(true)
-                .set_last_entry(true)
-                .join(page_size.into())
-                .ok_or(PagingError::InvalidFlags)?
-        });
-
-        Ok(())
-    }
-
-    unsafe fn map_allocate(
-        &mut self,
-        flags: Flags<X86_64>,
-        page_size: PageSize<X86_64>,
-    ) -> Result<(), PagingError> {
-        if self.get_flags().get_present() {
-            return Err(PagingError::PageAlreadyPresent);
-        }
-
-        // Allocate a new physical page
-        let phys_addr = pmm::get()
-            .allocate(page_size.page_alignment(), 1)
-            .expect("Failed to allocate page");
-
-        self.set_addr(phys_addr, page_size);
-        self.set_flags(unsafe {
-            flags
-                .set_present(true)
-                .set_allocated(true)
                 .set_last_entry(true)
                 .join(page_size.into())
                 .ok_or(PagingError::InvalidFlags)?
@@ -178,7 +153,7 @@ impl PageTable {
             .expect("Failed to allocate page table");
 
         // For easier bootstrapping, we are HHDM mapping all page tables
-        let ptr: *mut u8 = phys_addr.add_hhdm_offset().into();
+        let ptr: *mut u8 = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
         // Memset to clear old stale data that might be in the page tables
         unsafe {
             memset(ptr, 0, size_of::<PageTable>());
@@ -240,7 +215,8 @@ impl PageTable {
             let flags = table[i].get_flags();
             if !flags.get_present() {
                 table[i].set_flags(flags.set_present(true).set_read_write(true));
-                table[i].set_addr(PageTable::new().1, PageSize::size_4kb());
+                let (_, phys_addr) = PageTable::new();
+                table[i].set_addr(phys_addr, PageSize::size_4kb());
             }
 
             table = table[i].next_level_table();
@@ -280,28 +256,6 @@ impl PageTable {
         Some(table)
     }
 
-    /// Maps the given virtual address range to a new allocated physical page.
-    pub fn map_allocate(
-        &mut self,
-        base_addr: VirtAddr,
-        count: usize,
-        page_size: PageSize<X86_64>,
-        flags: Flags<X86_64>,
-    ) -> Result<(), PagingError> {
-        // Get the parent page table
-        let table = self.get_create_table_range(base_addr, page_size);
-
-        // Find out how much to skip, and how much to take
-        let to_skip = next_level_index(base_addr, page_size.bottom_paging_level());
-        for entry in table.iter_mut().skip(to_skip).take(count) {
-            unsafe {
-                entry.map_allocate(flags, page_size)?;
-            }
-        }
-
-        Ok(())
-    }
-
     /// Maps the given virtual address to the given physical address
     pub unsafe fn map_pages(
         &mut self,
@@ -329,15 +283,15 @@ impl PageTable {
         Ok(())
     }
 
-    /// Unmaps the given virtual address range, as well as frees the physical page mapped to it if the page was
-    /// mapped with `map_allocate`
+    /// Unmaps the given virtual address range
     pub(super) unsafe fn unmap_pages(
         &mut self,
         base_addr: VirtAddr,
         page_count: usize,
         page_size: PageSize<X86_64>,
     ) -> Result<(), PagingError> {
-        let table = self.get_table_range(base_addr, page_size).unwrap();
+        let table = self.get_table_range(base_addr, page_size).
+            ok_or(PagingError::PageNotPresent)?;
 
         let to_skip = next_level_index(base_addr, page_size.bottom_paging_level());
         if to_skip + page_count > ENTRIES_PER_TABLE {
@@ -371,7 +325,7 @@ impl PageTable {
 pub(super) fn get_pml() -> &'static mut PageTable {
     let phys_addr = unsafe { PhysAddr((Cr3::read().top_pml() << 12) as usize) };
 
-    let ptr: *mut PageTable = phys_addr.add_hhdm_offset().into();
+    let ptr: *mut PageTable = core::ptr::without_provenance_mut(phys_addr.add_hhdm_offset().0);
 
     unsafe { ptr.cast::<PageTable>().as_mut().expect("Failed to get PML") }
 }
@@ -421,8 +375,7 @@ fn map_in_entry(
 
         unsafe {
             new_pml
-                .map_pages(base_virt_addr, base_phys_addr, 1, page_size, flags)
-                .unwrap();
+                .map_pages(base_virt_addr, base_phys_addr, 1, page_size, flags).unwrap()
         };
 
         total_size -= page_size.size();
@@ -446,19 +399,19 @@ pub(super) unsafe fn init_from_limine(
 
     let (new_pml, new_pml_addr) = PageTable::new();
 
-    // map_in_entry(
-    //     PhysAddr(used_by_pmm.base as usize).add_hhdm_offset(),
-    //     PhysAddr(used_by_pmm.base as usize),
-    //     used_by_pmm.length as usize,
-    //     new_pml,
-    //     Flags::new().set_read_write(true),
-    //     None,
-    // );
+    map_in_entry(
+        PhysAddr(used_by_pmm.base as usize).add_hhdm_offset(),
+        PhysAddr(used_by_pmm.base as usize),
+        used_by_pmm.length as usize,
+        new_pml,
+        Flags::new().set_read_write(true),
+        None,
+    );
 
     // NOTE: We are doing the `EXECUTABLE_AND_MODULES` mapping independently of the other sections,
     // since the kernel's view of this section is different than HHDM (even though this memory is
     // also HHDM mapped IIRC)
-    for entry in mem_map {
+    for entry in mem_map.iter().filter(|entry| entry.base != used_by_pmm.base) {
         match entry.entry_type {
             EntryType::EXECUTABLE_AND_MODULES => map_in_entry(
                 kernel_virt,
@@ -517,7 +470,7 @@ fn check_nx_support() {
 
     unsafe {
         assert!(
-            __cpuid(0x80000001).edx & NX_BIT != 0,
+            __cpuid(0x8000_0001).edx & NX_BIT != 0,
             "No-Execute (NX) bit is not supported by the CPU"
         );
     }
