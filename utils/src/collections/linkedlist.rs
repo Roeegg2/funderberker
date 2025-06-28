@@ -146,83 +146,82 @@ impl<T> LinkedList<T> {
         })
     }
 
-    #[must_use]
-    pub fn create_node(data: T) -> Box<Node<T>> {
-        Box::new(Node::new(data))
-    }
-
     /// Pushes a boxed node to the front. The node must not be part of another list.
-    pub fn push_node_front(&mut self, mut node: Box<Node<T>>) {
-        node.next = self.head;
-        node.prev = None;
-        let node_ptr = Box::into_raw(node);
-        let node_ptr = unsafe { NonNull::new_unchecked(node_ptr) };
+    ///
+    /// # Safety
+    /// The pointer to the node must be a valid pointer.
+    pub unsafe fn push_node_front(&mut self, mut node: NonNull<Node<T>>) {
         unsafe {
+            node.as_mut().next = self.head;
+            node.as_mut().prev = None;
             if let Some(mut old_head) = self.head {
-                old_head.as_mut().prev = Some(node_ptr);
+                old_head.as_mut().prev = Some(node);
             } else {
-                self.tail = Some(node_ptr);
+                self.tail = Some(node);
             }
         }
-        self.head = Some(node_ptr);
+        self.head = Some(node);
         self.len += 1;
     }
 
     /// Pushes a boxed node to the back. The node must not be part of another list.
-    pub fn push_node_back(&mut self, mut node: Box<Node<T>>) {
-        node.prev = self.tail;
-        node.next = None;
-        let node_ptr = Box::into_raw(node);
-        let node_ptr = unsafe { NonNull::new_unchecked(node_ptr) };
+    ///
+    /// # Safety
+    /// The pointer to the node must be a valid pointer.
+    pub unsafe fn push_node_back(&mut self, mut node: NonNull<Node<T>>) {
         unsafe {
+            node.as_mut().prev = self.tail;
+            node.as_mut().next = None;
             if let Some(mut old_tail) = self.tail {
-                old_tail.as_mut().next = Some(node_ptr);
+                old_tail.as_mut().next = Some(node);
             } else {
-                self.head = Some(node_ptr);
+                self.head = Some(node);
             }
         }
-        self.tail = Some(node_ptr);
+        self.tail = Some(node);
         self.len += 1;
     }
 
-    /// Pops the front node and returns it as Box<Node<T>>.
+    /// Pops the front node and returns it as NonNull<Node<T>>.
     #[must_use]
-    pub fn pop_node_front(&mut self) -> Option<Box<Node<T>>> {
-        self.head.map(|node| unsafe {
-            let mut boxed = Box::from_raw(node.as_ptr());
-            self.head = boxed.next;
+    pub fn pop_node_front(&mut self) -> Option<NonNull<Node<T>>> {
+        self.head.map(|mut node| unsafe {
+            self.head = node.as_mut().next;
             if let Some(mut new_head) = self.head {
                 new_head.as_mut().prev = None;
             } else {
                 self.tail = None;
             }
+
             self.len -= 1;
-            boxed.next = None;
-            boxed.prev = None;
-            boxed
+            node.as_mut().next = None;
+            node.as_mut().prev = None;
+
+            node
         })
     }
 
-    /// Pops the back node and returns it as Box<Node<T>>.
+    /// Pops the back node and returns it as NonNull<Node<T>>.
     #[must_use]
-    pub fn pop_node_back(&mut self) -> Option<Box<Node<T>>> {
-        self.tail.map(|node| unsafe {
-            let mut boxed = Box::from_raw(node.as_ptr());
-            self.tail = boxed.prev;
+    pub fn pop_node_back(&mut self) -> Option<NonNull<Node<T>>> {
+        self.tail.map(|mut node| unsafe {
+            self.tail = node.as_mut().prev;
             if let Some(mut new_tail) = self.tail {
                 new_tail.as_mut().next = None;
             } else {
                 self.head = None;
             }
+
             self.len -= 1;
-            boxed.next = None;
-            boxed.prev = None;
-            boxed
+            node.as_mut().next = None;
+            node.as_mut().prev = None;
+
+            node
         })
     }
 
-    // Remove node at the given index, returning it as Box<Node<T>>
-    pub fn remove_at_node(&mut self, index: usize) -> Option<Box<Node<T>>> {
+    // Remove node at the given index, returning it as NonNull<Node<T>>
+    pub fn remove_at_node(&mut self, index: usize) -> Option<NonNull<Node<T>>> {
         if index >= self.len {
             return None;
         }
@@ -244,10 +243,9 @@ impl<T> LinkedList<T> {
                 self.tail = curr.as_ref().prev;
             }
             self.len -= 1;
-            let mut boxed = Box::from_raw(curr.as_ptr());
-            boxed.next = None;
-            boxed.prev = None;
-            Some(boxed)
+            curr.as_mut().next = None;
+            curr.as_mut().prev = None;
+            Some(curr)
         }
     }
 

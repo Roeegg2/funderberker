@@ -26,7 +26,8 @@ pub enum PagingError {
     PageNotPresent,
     PageFault,
     InvalidPageSize,
-    InvalidAddress,
+    InvalidPhysicalAddress,
+    InvalidVirtualAddress,
     InvalidFlags,
     OutOfMemory,
     BadPageCountAndAddressCombination,
@@ -58,8 +59,7 @@ pub trait PagingManager: Sized {
     ) -> Result<NonNull<()>, PagingError> {
         let base_virt_addr = {
             let mut vaa = VAA.lock();
-            let page_id = vaa.handout(page_count, page_size.page_alignment());
-            VirtAddr(page_id.0 * page_size.size())
+            vaa.handout(page_count, page_size.page_alignment())
         };
 
         let basic_page_count = page_size.to_default_page_count();
@@ -72,7 +72,6 @@ pub trait PagingManager: Sized {
                 Self::map_pages_to(phys_addr, virt_addr, 1, flags, page_size)?;
             }
         }
-
 
         Ok(NonNull::without_provenance(
             NonZero::new(base_virt_addr.0).unwrap(),
@@ -107,7 +106,6 @@ pub trait PagingManager: Sized {
         flags: Flags<Self>,
         page_size: PageSize<Self>,
     ) -> Result<*mut (), PagingError> {
-
         let virt_addr = {
             let mut vaa = VAA.lock();
             vaa.handout(1, page_size.page_alignment())

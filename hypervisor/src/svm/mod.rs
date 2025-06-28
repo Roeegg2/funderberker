@@ -36,7 +36,7 @@ mod cpu;
 
 // TODO: Make sure the pages are writeback WB and not writethough WT
 // TODO: Make this a box to a dyn or something since we might use VMX or something isntead
-static VMCB_ALLOCATOR: SlabAllocator<Vmcb> = SlabAllocator::const_new();
+static VMCB_ALLOCATOR: SlabAllocator<Vmcb> = SlabAllocator::new();
 
 /// The ASID allocator for the guests.
 static ASID_ALLOCATOR: SpinLock<IdTracker> = SpinLock::new(IdTracker::uninit());
@@ -514,7 +514,11 @@ impl Svm {
 
         unsafe {
             // Map the physical page so we can write to it
-            memset(host_state_page.as_ptr().cast::<u8>(), 0x0, BASIC_PAGE_SIZE.size());
+            memset(
+                host_state_page.as_ptr().cast::<u8>(),
+                0x0,
+                BASIC_PAGE_SIZE.size(),
+            );
         };
 
         unsafe {

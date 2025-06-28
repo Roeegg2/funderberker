@@ -1,6 +1,6 @@
 //! A simple slab allocator implementation
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![feature(sync_unsafe_cell)]
 #![feature(allocator_api)]
 #![feature(pointer_is_aligned_to)]
@@ -11,7 +11,7 @@
 use core::{alloc::Layout, cell::SyncUnsafeCell, marker::PhantomData, ptr::NonNull};
 
 use alloc::alloc::{AllocError, Allocator};
-use internal::{InternalSlabAllocator, ObjectNode, SlabError};
+use internal::InternalSlabAllocator;
 use utils::sync::spinlock::SpinLockable;
 
 extern crate alloc;
@@ -36,22 +36,15 @@ impl<T> SlabAllocator<T>
 where
     T: SlabAllocatable,
 {
+    #[inline]
     #[must_use]
-    pub const fn const_new() -> Self {
+    pub const fn new() -> Self {
+        let allocator = InternalSlabAllocator::new(Layout::new::<T>());
+
         Self {
-            allocator: SyncUnsafeCell::new(InternalSlabAllocator::const_new(Layout::new::<T>())),
-            phantom_data: PhantomData,
-        }
-    }
-
-    #[must_use]
-    pub fn new() -> Result<Self, SlabError> {
-        let allocator = InternalSlabAllocator::new(Layout::new::<T>())?;
-
-        Ok(Self {
             allocator: SyncUnsafeCell::new(allocator),
             phantom_data: PhantomData,
-        })
+        }
     }
 }
 
@@ -89,12 +82,10 @@ where
 
         // Try getting the allocator
         if let Some(allocator) = unsafe { self.allocator.get().as_mut() } {
-            // Cast and then free :)
-            let ptr = ptr.cast::<ObjectNode>();
-
-            if unsafe { allocator.free(ptr).is_err() } {
-                panic!("Tried to deallocate a pointer that was not allocated by this allocator");
-            }
+            assert!(
+                !unsafe { allocator.free(ptr.cast()).is_err() },
+                "Tried to deallocate a pointer that was not allocated by this allocator"
+            );
         }
     }
 }

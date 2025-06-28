@@ -7,7 +7,6 @@ edition = "2024"
 utils = { version = "0.1.0", path = "../utils" }
 kernel = { version = "0.1.0", path = "../kernel" }
 limine = { version = "0.5.0", optional = true }
-logger = { version = "0.1.0", path = "../logger" }
 
 [lints.clippy]
 pedantic = "warn"

@@ -3,7 +3,7 @@
 use super::{AcpiError, AcpiTable, SdtHeader, hpet::Hpet, madt::Madt, mcfg::Mcfg};
 use core::ptr::from_ref;
 use kernel::{
-    arch::{x86_64::X86_64, BASIC_PAGE_SIZE},
+    arch::{BASIC_PAGE_SIZE, x86_64::X86_64},
     mem::paging::{Flags, PageSize, PagingManager},
 };
 use utils::mem::PhysAddr;

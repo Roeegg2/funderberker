@@ -35,11 +35,7 @@ impl Hpet {
             )
             .unwrap();
 
-            hpet::Hpet::init(
-                ptr.cast(),
-                self.minimum_tick,
-                InterruptRoutingMode::Legacy,
-            );
+            hpet::Hpet::init(ptr.cast(), self.minimum_tick, InterruptRoutingMode::Legacy);
         }
 
         logger::info!("Configured HPET as timer");

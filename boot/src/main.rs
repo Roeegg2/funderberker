@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-
 #![feature(pointer_is_aligned_to)]
 // TODO: Remove this once the modular_bitfield errors are taken care of
 #![allow(dead_code)]
@@ -21,6 +20,7 @@ mod boot;
 static HEAP: Heap = Heap::new();
 
 fn funderberker_start() -> ! {
+    logger::info!("Funderberker kernel started!");
     hcf();
 }
 

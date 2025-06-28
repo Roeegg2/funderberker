@@ -8,7 +8,10 @@ use core::{
 use page_size::MAX_BOTTOM_PAGING_LEVEL;
 use pat::{PatType, setup_pat};
 use pmm::PmmAllocator;
-use utils::mem::{PhysAddr, VirtAddr};
+use utils::{
+    mem::{PhysAddr, VirtAddr},
+    sanity_assert,
+};
 
 #[cfg(feature = "limine")]
 use limine::memory_map::{self, EntryType};
@@ -200,7 +203,7 @@ impl PageTable {
         base_addr: VirtAddr,
         page_size: PageSize<X86_64>,
     ) -> &mut PageTable {
-        assert!(
+        sanity_assert!(
             base_addr.0 % page_size.size() == 0,
             "Address is not aligned"
         );
@@ -234,7 +237,7 @@ impl PageTable {
         base_addr: VirtAddr,
         page_size: PageSize<X86_64>,
     ) -> Option<&mut PageTable> {
-        assert!(
+        sanity_assert!(
             base_addr.0 % page_size.size() == 0,
             "Address is not aligned"
         );
@@ -265,6 +268,12 @@ impl PageTable {
         page_size: PageSize<X86_64>,
         flags: Flags<X86_64>,
     ) -> Result<(), PagingError> {
+        if base_addr.0 % page_size.size() != 0 {
+            return Err(PagingError::InvalidVirtualAddress);
+        } else if phys_addr.0 % page_size.size() != 0 {
+            return Err(PagingError::InvalidPhysicalAddress);
+        }
+
         // Get the parent page table
         let table = self.get_create_table_range(base_addr, page_size);
 
@@ -290,8 +299,13 @@ impl PageTable {
         page_count: usize,
         page_size: PageSize<X86_64>,
     ) -> Result<(), PagingError> {
-        let table = self.get_table_range(base_addr, page_size).
-            ok_or(PagingError::PageNotPresent)?;
+        if base_addr.0 % page_size.size() != 0 {
+            return Err(PagingError::InvalidVirtualAddress);
+        }
+
+        let table = self
+            .get_table_range(base_addr, page_size)
+            .ok_or(PagingError::PageNotPresent)?;
 
         let to_skip = next_level_index(base_addr, page_size.bottom_paging_level());
         if to_skip + page_count > ENTRIES_PER_TABLE {
@@ -375,7 +389,8 @@ fn map_in_entry(
 
         unsafe {
             new_pml
-                .map_pages(base_virt_addr, base_phys_addr, 1, page_size, flags).unwrap()
+                .map_pages(base_virt_addr, base_phys_addr, 1, page_size, flags)
+                .unwrap()
         };
 
         total_size -= page_size.size();
@@ -411,7 +426,10 @@ pub(super) unsafe fn init_from_limine(
     // NOTE: We are doing the `EXECUTABLE_AND_MODULES` mapping independently of the other sections,
     // since the kernel's view of this section is different than HHDM (even though this memory is
     // also HHDM mapped IIRC)
-    for entry in mem_map.iter().filter(|entry| entry.base != used_by_pmm.base) {
+    for entry in mem_map
+        .iter()
+        .filter(|entry| entry.base != used_by_pmm.base)
+    {
         match entry.entry_type {
             EntryType::EXECUTABLE_AND_MODULES => map_in_entry(
                 kernel_virt,

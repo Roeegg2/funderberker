@@ -1,9 +1,6 @@
 //! A global heap allocator for the kernel. Structured as a bunch of uninitable object slab allocators
 
-use utils::{
-    collections::stacklist::Node,
-    sync::spinlock::{SpinLock, SpinLockGuard},
-};
+use utils::sync::spinlock::{SpinLock, SpinLockGuard};
 
 use super::internal::InternalSlabAllocator;
 
@@ -16,6 +13,7 @@ use core::{
 /// allocators
 #[derive(Debug)]
 pub struct Heap {
+    slab_32: SpinLock<InternalSlabAllocator>,
     slab_64: SpinLock<InternalSlabAllocator>,
     slab_128: SpinLock<InternalSlabAllocator>,
     slab_256: SpinLock<InternalSlabAllocator>,
@@ -34,47 +32,56 @@ impl Default for Heap {
 impl Heap {
     #[must_use]
     pub const fn new() -> Self {
+        // SAFETY: The sizes and alignments are guaranteed to be valid for the slab allocator
         unsafe {
             Self {
-                slab_64: SpinLock::new(InternalSlabAllocator::const_new(
-                    Layout::from_size_align_unchecked(64, 8),
+                slab_32: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(32, 32),
                 )),
-                slab_128: SpinLock::new(InternalSlabAllocator::const_new(
-                    Layout::from_size_align_unchecked(128, 8),
+                slab_64: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(64, 64),
                 )),
-                slab_256: SpinLock::new(InternalSlabAllocator::const_new(
-                    Layout::from_size_align_unchecked(256, 8),
+                slab_128: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(128, 128),
                 )),
-                slab_512: SpinLock::new(InternalSlabAllocator::const_new(
-                    Layout::from_size_align_unchecked(512, 8),
+                slab_256: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(256, 256),
                 )),
-                slab_1024: SpinLock::new(InternalSlabAllocator::const_new(
-                    Layout::from_size_align_unchecked(1024, 8),
+                slab_512: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(512, 512),
                 )),
-                slab_2048: SpinLock::new(InternalSlabAllocator::const_new(
-                    Layout::from_size_align_unchecked(2048, 8),
+                slab_1024: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(1024, 1024),
                 )),
-                slab_4096: SpinLock::new(InternalSlabAllocator::const_new(
-                    Layout::from_size_align_unchecked(4096, 8),
+                slab_2048: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(2048, 2048),
+                )),
+                slab_4096: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(4096, 4096),
                 )),
             }
         }
     }
 
-    fn layout_to_allocator(&self, layout: Layout) -> SpinLockGuard<'_, InternalSlabAllocator> {
-        if layout.size() <= 64 {
+    #[must_use]
+    fn layout_to_allocator(&self, mut layout: Layout) -> SpinLockGuard<'_, InternalSlabAllocator> {
+        // Padding since we're storing the slabs sequentially in memory
+        layout = layout.pad_to_align();
+        if layout.size() <= 32 && layout.align() <= 32 {
+            self.slab_32.lock()
+        } else if layout.size() <= 64 && layout.align() <= 64 {
             self.slab_64.lock()
-        } else if layout.size() <= 128 {
+        } else if layout.size() <= 128 && layout.align() <= 128 {
             self.slab_128.lock()
-        } else if layout.size() <= 256 {
+        } else if layout.size() <= 256 && layout.align() <= 256 {
             self.slab_256.lock()
-        } else if layout.size() <= 512 {
+        } else if layout.size() <= 512 && layout.align() <= 512 {
             self.slab_512.lock()
-        } else if layout.size() <= 1024 {
+        } else if layout.size() <= 1024 && layout.align() <= 1024 {
             self.slab_1024.lock()
-        } else if layout.size() <= 2048 {
+        } else if layout.size() <= 2048 && layout.align() <= 2048 {
             self.slab_2048.lock()
-        } else if layout.size() <= 4096 {
+        } else if layout.size() <= 4096 && layout.align() <= 4096 {
             self.slab_4096.lock()
         } else {
             panic!(
@@ -86,6 +93,7 @@ impl Heap {
     }
 
     #[cold]
+    #[must_use]
     pub fn reap(&self) -> usize {
         let reap_n_sum = |allocator: &SpinLock<InternalSlabAllocator>| {
             let mut allocator = allocator.lock();
@@ -119,13 +127,11 @@ unsafe impl GlobalAlloc for Heap {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let mut allocator = self.layout_to_allocator(layout);
 
-        let ptr = NonNull::new(ptr)
-            .expect("Tried to deallocate a null pointer")
-            .cast::<Node<()>>();
+        let ptr = NonNull::new(ptr).expect("Tried to deallocate a null pointer");
         // SAFETY: We are deallocating a pointer that was allocated by this allocator
         unsafe {
-            allocator.free(ptr).unwrap();
-        }
+            allocator.free(ptr.cast()).unwrap();
+        };
     }
 }
 

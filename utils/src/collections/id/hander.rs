@@ -52,6 +52,7 @@ impl IdHander {
 
     /// Handout the next ID and skip `count` IDs
     #[inline]
+    #[must_use]
     pub fn handout_and_skip(&mut self, count: usize) -> Option<Id> {
         if self.next.0 > self.max.0 {
             return None; // Exhausted
@@ -63,7 +64,7 @@ impl IdHander {
         Some(handed_out)
     }
 
-    /// Get
+    /// Get the next ID that will be handed out without modifying the state of the handler.
     #[inline]
     #[must_use]
     pub const fn peek_next(&self) -> Id {

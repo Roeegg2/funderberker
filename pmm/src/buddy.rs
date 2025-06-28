@@ -1,9 +1,8 @@
 //! A buddy allocator for the PMM
 
-use core::{cmp::min, slice::from_raw_parts_mut};
+use core::{cmp::min, ptr::NonNull, slice::from_raw_parts_mut};
 
 use crate::BASIC_PAGE_SIZE;
-use alloc::boxed::Box;
 #[cfg(feature = "limine")]
 use limine::memory_map::EntryType;
 use utils::{
@@ -274,15 +273,22 @@ impl BuddyAllocator<'_> {
     fn pop_from_zone(&mut self, zone_index: usize, node_index: usize) {
         let node = self.zones[zone_index].remove_at_node(node_index).unwrap();
 
-        self.freelist.push_node_back(node);
+        unsafe {
+            self.freelist.push_node_back(node);
+        }
     }
 
     /// Pushes the passed `buddy_addr` to the zone at the passed `zone_index`
     fn push_to_zone(&mut self, buddy_addr: PhysAddr, zone_index: usize) {
         // Move the node from the freelist to `zones[zone_index]`
         let mut buddy = self.freelist.pop_node_back().unwrap();
-        buddy.as_mut().data = buddy_addr;
-        self.zones[zone_index].push_node_back(buddy);
+        unsafe {
+            buddy.as_mut().data = buddy_addr;
+        }
+
+        unsafe {
+            self.zones[zone_index].push_node_back(buddy);
+        }
     }
 
     #[allow(unused)]
@@ -316,6 +322,8 @@ impl BuddyAllocator<'_> {
     pub fn new_from_limine<'a>(
         mem_map: &'a [&'a limine::memory_map::Entry],
     ) -> (Self, &'a limine::memory_map::Entry, usize) {
+        use core::num::NonZero;
+
         let zones_count = {
             let total_page_count = super::get_page_count_from_mem_map(mem_map);
 
@@ -333,8 +341,9 @@ impl BuddyAllocator<'_> {
         let entry = *mem_map.iter().find(|&&entry| matches!(entry.entry_type, EntryType::USABLE if entry.length as usize >= total_buffer_size)).unwrap();
 
         // Create a pointer to it
-        let zones_ptr =
-            PhysAddr(entry.base as usize).add_hhdm_offset().0 as *mut LinkedList<PhysAddr>;
+        let zones_ptr = NonNull::without_provenance(
+            NonZero::new(PhysAddr(entry.base as usize).add_hhdm_offset().0).unwrap(),
+        );
 
         let ret = Self {
             zones: Self::create_zones(zones_ptr, zones_count),
@@ -347,10 +356,10 @@ impl BuddyAllocator<'_> {
 
     #[allow(unused)]
     fn create_zones<'a>(
-        zones_ptr: *mut LinkedList<PhysAddr>,
+        zones_ptr: NonNull<LinkedList<PhysAddr>>,
         zones_count: usize,
     ) -> &'a mut [LinkedList<PhysAddr>] {
-        let zones = unsafe { from_raw_parts_mut(zones_ptr, zones_count) };
+        let zones = unsafe { from_raw_parts_mut(zones_ptr.as_ptr(), zones_count) };
 
         for zone in zones.iter_mut() {
             *zone = LinkedList::new();
@@ -361,7 +370,7 @@ impl BuddyAllocator<'_> {
 
     #[allow(unused)]
     fn create_freelist(
-        zones_ptr: *mut LinkedList<PhysAddr>,
+        zones_ptr: NonNull<LinkedList<PhysAddr>>,
         max_zone_level: usize,
     ) -> LinkedList<PhysAddr> {
         let mut freelist = LinkedList::new();
@@ -377,7 +386,7 @@ impl BuddyAllocator<'_> {
         let buckets_count = FREELIST_BUCKETS_SIZE / size_of::<Node<PhysAddr>>();
         for i in 0..buckets_count {
             unsafe {
-                freelist.push_node_back(Box::from_raw(ptr.add(i)));
+                freelist.push_node_back(ptr.add(i));
             }
         }
 
@@ -392,11 +401,9 @@ impl SpinLockable for BuddyAllocator<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use core::ops::{Deref, DerefMut};
-
-    use alloc::{vec, vec::Vec};
-
     use super::*;
+    use alloc::{boxed::Box, vec, vec::Vec};
+    use core::ops::{Deref, DerefMut};
 
     const BASE_ADDR: PhysAddr = PhysAddr(0x1000000); // 16MB base address for testing
 
@@ -436,7 +443,9 @@ mod tests {
             for i in 0..400 {
                 let addr = PhysAddr(i * BASIC_PAGE_SIZE);
                 let node = Node::new(addr);
-                freelist.push_node_back(Box::new(node));
+                unsafe {
+                    freelist.push_node_back(Box::into_non_null(Box::new(node)));
+                };
             }
 
             let mut ret = BuddyAllocator {
