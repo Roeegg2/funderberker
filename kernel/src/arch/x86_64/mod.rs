@@ -76,20 +76,6 @@ impl PagingManager for X86_64 {
             init_from_limine(mem_map, kernel_virt, kernel_phys, used_by_pmm);
         }
     }
-
-    unsafe fn init_vaa_from_limine(mem_map: &[&limine::memory_map::Entry]) {
-        assert!(!cfg!(test), "Cannot initialize VAA in test environment");
-        // Get the last entry in the memory map
-
-        use crate::mem::vaa::{VAA, VirtualAddressAllocator};
-
-        let last_entry = mem_map.last().unwrap();
-        let addr = VirtAddr(last_entry.base as usize + last_entry.length as usize);
-
-        let mut vaa = VAA.lock();
-        *vaa = VirtualAddressAllocator::new(addr);
-    }
-
     unsafe fn map_pages_to(
         phys_addr: PhysAddr,
         virt_addr: VirtAddr,
@@ -97,8 +83,6 @@ impl PagingManager for X86_64 {
         flags: Flags<Self>,
         page_size: PageSize<Self>,
     ) -> Result<(), PagingError> {
-        assert!(!cfg!(test), "Cannot map pages in test environment");
-
         let pml = get_pml();
         unsafe { pml.map_pages(virt_addr, phys_addr, count, page_size, flags) }
     }
@@ -108,8 +92,6 @@ impl PagingManager for X86_64 {
         page_count: usize,
         page_size: PageSize<Self>,
     ) -> Result<(), PagingError> {
-        assert!(!cfg!(test), "Cannot map pages in test environment");
-
         let pml = get_pml();
         // TODO: Change this to unmap_page
         unsafe { pml.unmap_pages(virt_addr, page_count, page_size) }
@@ -164,10 +146,14 @@ fn find_cpu_vendor() {
     logger::info!("CPU Vendor found: `{:?}`", CPU_VENDOR.get());
 }
 
-impl From<DescriptorTablePtr> for VirtAddr {
+impl<T> From<DescriptorTablePtr> for *const T {
     fn from(value: DescriptorTablePtr) -> Self {
-        // SAFETY: The value stored here should be the linear address, so we just put it into
-        // `VirtAddr`
-        Self(value.base as usize)
+        core::ptr::without_provenance(value.base as usize)
+    }
+}
+
+impl<T> From<DescriptorTablePtr> for *mut T {
+    fn from(value: DescriptorTablePtr) -> Self {
+        core::ptr::without_provenance_mut(value.base as usize)
     }
 }

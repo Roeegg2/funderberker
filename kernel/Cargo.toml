@@ -16,12 +16,8 @@ alloc = { version = "1.0.0", package = "rustc-std-workspace-alloc" }
 pedantic = "warn"
 
 [features]
-default = ["limine", "framebuffer"]
+default = []
 
 limine = ["dep:limine"]
 
 framebuffer = []
-
-mock = []
-
-

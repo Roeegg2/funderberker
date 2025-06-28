@@ -69,12 +69,16 @@ impl Flags<X86_64> {
     /// that we know the last level we can combine that with the `PS` flag to determine the size
     pub(super) const FLAG_LAST_ENTRY: usize = 1 << 10;
 
+    /// Create a new, empty `Flags` instance
     #[inline]
+    #[must_use]
     pub const fn new() -> Self {
         unsafe { Self::from_raw(Self::FLAGS_NONE) }
     }
 
+    /// Set the bits matching the specified `PatType`, when the page is of `PageSize`.
     #[inline]
+    #[must_use]
     pub fn set_pat(self, pat_type: PatType, page_size: PageSize<X86_64>) -> Self {
         let pat: PatEntry = pat_type.into();
         if page_size == PageSize::size_4kb() {
@@ -87,141 +91,169 @@ impl Flags<X86_64> {
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_present(self, status: bool) -> Self {
         self.set(Self::FLAG_P, status)
     }
 
     #[inline]
+    #[must_use]
     pub const fn set_read_write(self, status: bool) -> Self {
         self.set(Self::FLAG_RW, status)
     }
 
     #[inline]
+    #[must_use]
     pub const fn set_user_supervisor(self, status: bool) -> Self {
         self.set(Self::FLAG_US, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_pwt(self, status: bool) -> Self {
         self.set(Self::FLAG_PWT, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_pcd(self, status: bool) -> Self {
         self.set(Self::FLAG_PCD, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_pat_big_pages(self, status: bool) -> Self {
         self.set(Self::FLAG_BIG_PAGES_PAT, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_pat_4kb(self, status: bool) -> Self {
         self.set(Self::FLAG_4KB_PAT, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_accessed(self, status: bool) -> Self {
         self.set(Self::FLAG_A, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_dirty(self, status: bool) -> Self {
         self.set(Self::FLAG_D, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_page_size(self, status: bool) -> Self {
         self.set(Self::FLAG_PS, status)
     }
 
     #[inline]
+    #[must_use]
     pub const fn set_global(self, status: bool) -> Self {
         self.set(Self::FLAG_G, status)
     }
 
     #[inline]
+    #[must_use]
     pub const fn set_hlat(self, status: bool) -> Self {
         self.set(Self::HLAT, status)
     }
 
     #[inline]
+    #[must_use]
     pub const fn set_execute_disable(self, status: bool) -> Self {
         self.set(Self::FLAG_XD, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_allocated(self, status: bool) -> Self {
         self.set(Self::FLAG_ALLOCATED, status)
     }
 
     #[inline]
+    #[must_use]
     pub(super) const fn set_last_entry(self, status: bool) -> Self {
         self.set(Self::FLAG_LAST_ENTRY, status)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_present(self) -> bool {
         self.get(Self::FLAG_P)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_read_write(self) -> bool {
         self.get(Self::FLAG_RW)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_user_supervisor(self) -> bool {
         self.get(Self::FLAG_US)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_write_through(self) -> bool {
         self.get(Self::FLAG_PWT)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_cache_disable(self) -> bool {
         self.get(Self::FLAG_PCD)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_accessed(self) -> bool {
         self.get(Self::FLAG_A)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_dirty(self) -> bool {
         self.get(Self::FLAG_D)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_page_size(self) -> bool {
         self.get(Self::FLAG_PS)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_global(self) -> bool {
         self.get(Self::FLAG_G)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_hlat(self) -> bool {
         self.get(Self::HLAT)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_execute_disable(self) -> bool {
         self.get(Self::FLAG_XD)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_allocated(self) -> bool {
         self.get(Self::FLAG_ALLOCATED)
     }
 
     #[inline]
+    #[must_use]
     pub const fn get_last_entry(self) -> bool {
         self.get(Self::FLAG_LAST_ENTRY)
     }

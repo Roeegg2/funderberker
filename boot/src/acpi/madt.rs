@@ -243,7 +243,7 @@ impl Madt {
                         PageSize::size_4kb(),
                     )
                     .unwrap()
-                    .into();
+                    .cast();
                     lapic::override_base(ptr);
                 },
                 EntryType::PROCESSOR_LOCAL_X2APIC => unsafe {

@@ -76,11 +76,13 @@ impl Iterator for Iter {
             return None;
         }
 
-        let ptr: *const SdtHeader = unsafe {
+        let ptr = unsafe {
             let addr = self.ptr.read_unaligned();
-            let diff = addr.0 % BASIC_PAGE_SIZE;
-            (X86_64::map_pages(addr - diff, 1, Flags::new(), PageSize::size_4kb()).unwrap() + diff)
-                .into()
+            let diff = addr.0 % BASIC_PAGE_SIZE.size();
+            X86_64::map_pages(addr - diff, 1, Flags::new(), PageSize::size_4kb())
+                .unwrap()
+                .cast::<SdtHeader>()
+                .byte_add(diff)
         };
 
         self.ptr = unsafe { self.ptr.add(1) };

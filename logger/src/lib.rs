@@ -4,13 +4,14 @@
 // TODO: Remove this once you fix the `as` conversion warnings
 #![allow(clippy::cast_possible_truncation)]
 
-use core::fmt::Write;
-#[cfg(feature = "limine")]
-use limine::framebuffer::Framebuffer;
+// #![cfg(not(any(feature = "framebuffer", feature = "serial")))]
+// compile_error!("At least one of the 'framebuffer' or 'serial' features must be enabled for the logger module.");
+
+use core::fmt::{self, Write};
 #[cfg(feature = "framebuffer")]
-mod framebuffer;
+pub mod framebuffer;
 #[cfg(feature = "serial")]
-mod serial;
+pub mod serial;
 
 /// Empty struct to implement 'Write' on
 pub struct Writer;
@@ -47,42 +48,24 @@ macro_rules! warn {
     }
 }
 
-impl Writer {
-    #[cfg(feature = "limine")]
-    pub fn init_from_limine(fb: Option<&Framebuffer<'static>>) {
-        #[cfg(feature = "serial")]
-        {
-            #[allow(static_mut_refs)]
-            unsafe {
-                serial::SERIAL_WRITER.init();
-            }
-        }
-
-        #[cfg(feature = "framebuffer")]
-        {
-            if let Some(fb) = fb {
-                #[allow(static_mut_refs)]
-                unsafe {
-                    framebuffer::FRAMEBUFFER_WRITER.init_from_limine(fb);
-                }
-            } else {
-                panic!("Framebuffer is not available, but framebuffer feature is enabled.");
-            }
-        }
+/// A macro to print a debug message to the serial port or framebuffer
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        $crate::println!("-> DEBUG: {}", format_args!($($arg)*));
     }
 }
 
 impl Write for Writer {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        #[cfg(feature = "serial")]
+    fn write_str(&mut self, s: &str) -> fmt::Result {
         for byte in s.bytes() {
+            #[cfg(feature = "serial")]
             #[allow(static_mut_refs)]
             unsafe {
                 serial::SERIAL_WRITER.write_byte_all(byte);
             };
-        }
-        #[cfg(feature = "framebuffer")]
-        for byte in s.as_bytes() {
+            #[cfg(feature = "framebuffer")]
             #[allow(static_mut_refs)]
             unsafe {
                 framebuffer::FRAMEBUFFER_WRITER.draw_char(*byte).unwrap();

@@ -211,7 +211,7 @@ impl Idt {
 pub unsafe fn install_isr(
     isr_stub: IsrStub,
     segment_selector: SegmentSelector,
-    ist: u8,
+    ist_field: u8,
     gate_type: GateType,
     dpl: Dpl,
     present: Present,
@@ -228,7 +228,7 @@ pub unsafe fn install_isr(
     entry.install(
         isr_stub as usize as u64,
         segment_selector,
-        ist,
+        ist_field,
         gate_type,
         dpl,
         present,

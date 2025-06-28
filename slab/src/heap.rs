@@ -1,105 +1,138 @@
 //! A global heap allocator for the kernel. Structured as a bunch of uninitable object slab allocators
 
-use utils::sanity_assert;
+use utils::sync::spinlock::{SpinLock, SpinLockGuard};
 
-use super::internal::{InternalSlabAllocator, ObjectNode};
+use super::internal::InternalSlabAllocator;
 
 use core::{
     alloc::{GlobalAlloc, Layout},
-    cell::UnsafeCell,
     ptr::{NonNull, null_mut},
 };
 
 /// A global heap allocator for the kernel. Structured as a bunch of uninitable object slab
 /// allocators
 #[derive(Debug)]
-pub struct KernelHeapAllocator([UnsafeCell<InternalSlabAllocator>; Self::SIZE]);
-
-/// A macro to make creating slab allocators easier
-macro_rules! create_slab_allocators {
-    ($($size:expr),*) => {
-        [
-            $(UnsafeCell::new( InternalSlabAllocator::new(Layout::new::<[u8; $size]>())),)*
-        ]
-    };
+pub struct Heap {
+    slab_32: SpinLock<InternalSlabAllocator>,
+    slab_64: SpinLock<InternalSlabAllocator>,
+    slab_128: SpinLock<InternalSlabAllocator>,
+    slab_256: SpinLock<InternalSlabAllocator>,
+    slab_512: SpinLock<InternalSlabAllocator>,
+    slab_1024: SpinLock<InternalSlabAllocator>,
+    slab_2048: SpinLock<InternalSlabAllocator>,
+    slab_4096: SpinLock<InternalSlabAllocator>,
 }
 
-impl Default for KernelHeapAllocator {
+impl Default for Heap {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl KernelHeapAllocator {
-    const MIN_POW: usize = 6;
-    const MAX_POW: usize = 15;
-    const SIZE: usize = 10;
-
-    /// Create a new instance of the kernel heap allocator
-    #[rustfmt::skip]
-    #[must_use]    pub const fn new() -> Self {
-        // TODO: Use a const array::from_fn here!
-        // TODO: Benchmark and possibly change the slab allocator sizes
-        Self(create_slab_allocators!(
-            2_usize.pow(6),
-            2_usize.pow(7),
-            2_usize.pow(8),
-            2_usize.pow(9),
-            2_usize.pow(10),
-            2_usize.pow(11),
-            2_usize.pow(12),
-            2_usize.pow(13),
-            2_usize.pow(14),
-            2_usize.pow(15)
-        ))
+impl Heap {
+    #[must_use]
+    pub const fn new() -> Self {
+        // SAFETY: The sizes and alignments are guaranteed to be valid for the slab allocator
+        unsafe {
+            Self {
+                slab_32: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(32, 32),
+                )),
+                slab_64: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(64, 64),
+                )),
+                slab_128: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(128, 128),
+                )),
+                slab_256: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(256, 256),
+                )),
+                slab_512: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(512, 512),
+                )),
+                slab_1024: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(1024, 1024),
+                )),
+                slab_2048: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(2048, 2048),
+                )),
+                slab_4096: SpinLock::new(InternalSlabAllocator::new(
+                    Layout::from_size_align_unchecked(4096, 4096),
+                )),
+            }
+        }
     }
 
-    /// Get the index of the allocator that is closest to the total size layout requires
-    #[inline]
-    const fn get_matching_allocator_index(layout: Layout) -> usize {
-        let pow = layout.pad_to_align().size().next_power_of_two().ilog2() as usize;
-        assert!(pow <= Self::MAX_POW);
-        if pow <= Self::MIN_POW {
-            return 0;
+    #[must_use]
+    fn layout_to_allocator(&self, mut layout: Layout) -> SpinLockGuard<'_, InternalSlabAllocator> {
+        // Padding since we're storing the slabs sequentially in memory
+        layout = layout.pad_to_align();
+        if layout.size() <= 32 && layout.align() <= 32 {
+            self.slab_32.lock()
+        } else if layout.size() <= 64 && layout.align() <= 64 {
+            self.slab_64.lock()
+        } else if layout.size() <= 128 && layout.align() <= 128 {
+            self.slab_128.lock()
+        } else if layout.size() <= 256 && layout.align() <= 256 {
+            self.slab_256.lock()
+        } else if layout.size() <= 512 && layout.align() <= 512 {
+            self.slab_512.lock()
+        } else if layout.size() <= 1024 && layout.align() <= 1024 {
+            self.slab_1024.lock()
+        } else if layout.size() <= 2048 && layout.align() <= 2048 {
+            self.slab_2048.lock()
+        } else if layout.size() <= 4096 && layout.align() <= 4096 {
+            self.slab_4096.lock()
+        } else {
+            panic!(
+                "No allocator for size {} and alignment {}",
+                layout.size(),
+                layout.align()
+            );
         }
+    }
 
-        pow - Self::MIN_POW
+    #[cold]
+    #[must_use]
+    pub fn reap(&self) -> usize {
+        let reap_n_sum = |allocator: &SpinLock<InternalSlabAllocator>| {
+            let mut allocator = allocator.lock();
+            allocator.reap()
+        };
+
+        let mut total_reaped = 0;
+        total_reaped += reap_n_sum(&self.slab_64);
+        total_reaped += reap_n_sum(&self.slab_128);
+        total_reaped += reap_n_sum(&self.slab_256);
+        total_reaped += reap_n_sum(&self.slab_512);
+        total_reaped += reap_n_sum(&self.slab_1024);
+        total_reaped += reap_n_sum(&self.slab_2048);
+        total_reaped += reap_n_sum(&self.slab_4096);
+
+        total_reaped
     }
 }
 
-// XXX: Make this actually Syncable
-unsafe impl Sync for KernelHeapAllocator {}
-
-unsafe impl GlobalAlloc for KernelHeapAllocator {
+unsafe impl GlobalAlloc for Heap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // Use the allocator that is closest to the total size layout requires
-        let index = KernelHeapAllocator::get_matching_allocator_index(layout);
+        let mut allocator = self.layout_to_allocator(layout);
 
-        // Try accessing allocators, and then also try to allocate
-        if let Some(allocator) = unsafe { self.0[index].get().as_mut() }
-            && let Ok(ptr) = allocator.allocate()
-        {
+        if let Ok(ptr) = allocator.allocate() {
             return ptr.as_ptr().cast::<u8>();
         }
 
-        // Returning NULL indicates an error
         null_mut()
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        // Use the allocator that is closest to the total size layout requires
-        let index = KernelHeapAllocator::get_matching_allocator_index(layout);
+        let mut allocator = self.layout_to_allocator(layout);
 
-        // Convert ptr to a NonNull one + cast, get the allocator and pass the pointer to the
-        // allocator
-        sanity_assert!(ptr.is_aligned_to(layout.align()));
-        #[allow(clippy::cast_ptr_alignment)]
-        if let Some(non_null_ptr) = NonNull::new(ptr.cast::<ObjectNode>())
-            && let Some(allocator) = unsafe { self.0[index].get().as_mut() }
-        {
-            unsafe {
-                let _ = allocator.free(non_null_ptr);
-            };
-        }
+        let ptr = NonNull::new(ptr).expect("Tried to deallocate a null pointer");
+        // SAFETY: We are deallocating a pointer that was allocated by this allocator
+        unsafe {
+            allocator.free(ptr.cast()).unwrap();
+        };
     }
 }
+
+unsafe impl Sync for Heap {}

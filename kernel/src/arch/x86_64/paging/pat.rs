@@ -112,9 +112,9 @@ fn check_pat_support() {
     }
 }
 
-impl Into<PatEntry> for PatType {
-    fn into(self) -> PatEntry {
-        match self {
+impl From<PatType> for PatEntry {
+    fn from(pat_type: PatType) -> Self {
+        match pat_type {
             PatType::WriteBack => PatEntry::Pat0,
             PatType::WriteThrough => PatEntry::Pat1,
             PatType::Uncached => PatEntry::Pat2,

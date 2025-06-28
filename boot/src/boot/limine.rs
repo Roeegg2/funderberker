@@ -1,9 +1,10 @@
 //! Everything needed to boot the kernel with Limine.
 
+use kernel::mem::{paging::PagingManager, vaa::init_vaa_from_limine};
+
 use crate::{acpi, funderberker_start};
 use kernel::arch::Arch;
 use kernel::arch::x86_64::X86_64;
-use kernel::mem::paging::PagingManager;
 use utils::mem::{HHDM_OFFSET, PhysAddr, VirtAddr};
 
 #[cfg(feature = "framebuffer")]
@@ -59,7 +60,8 @@ unsafe extern "C" fn kmain() -> ! {
     // removed by the linker.
     assert!(BASE_REVISION.is_supported());
 
-    logger::Writer::init_from_limine(
+    #[cfg(feature = "framebuffer")]
+    logger::framebuffer::init_from_limine(
         FRAMEBUFFER_REQUEST
             .get_response()
             .unwrap()
@@ -86,7 +88,7 @@ unsafe extern "C" fn kmain() -> ! {
 
         X86_64::early_boot_init();
 
-        X86_64::init_vaa_from_limine(mem_map.entries());
+        init_vaa_from_limine(mem_map.entries());
 
         let used_by_pmm = pmm::init_from_limine(mem_map.entries());
 
@@ -97,7 +99,7 @@ unsafe extern "C" fn kmain() -> ! {
             used_by_pmm,
         );
 
-        acpi::init(PhysAddr(rsdp.address())).expect("Failed to initialize ACPI");
+        acpi::init(PhysAddr(rsdp.address())).unwrap();
     };
 
     // XXX: As I've stated in the comment in the function below, this is technically bad since

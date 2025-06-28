@@ -10,17 +10,17 @@
 // this CPU.
 
 use core::arch::asm;
-use core::panic::PanicInfo;
-use slab::heap::KernelHeapAllocator;
+use slab::heap::Heap;
 
 mod acpi;
 mod boot;
 
 /// The global instance of the kernel heap allocator
 #[global_allocator]
-pub static KERNEL_HEAP_ALLOCATOR: KernelHeapAllocator = KernelHeapAllocator::new();
+static HEAP: Heap = Heap::new();
 
 fn funderberker_start() -> ! {
+    logger::info!("Funderberker kernel started!");
     hcf();
 }
 
@@ -37,7 +37,7 @@ fn hcf() -> ! {
 }
 
 #[panic_handler]
-pub fn panic_handler(info: &PanicInfo) -> ! {
+pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     logger::err!("{}", info);
 
     hcf();

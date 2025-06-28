@@ -281,14 +281,14 @@ struct RawFramebuffer {
 }
 
 /// The `FramebufferWriter` struct is used to write to the framebuffer.
-pub(super) struct FramebufferWriter {
+pub struct FramebufferWriter {
     framebuffer: RawFramebuffer,
     curr_y: u64,
     curr_x: u64,
     disabled: bool,
 }
 
-pub static mut FRAMEBUFFER_WRITER: FramebufferWriter = FramebufferWriter {
+pub(super) static mut FRAMEBUFFER_WRITER: FramebufferWriter = FramebufferWriter {
     framebuffer: RawFramebuffer {
         ptr: core::ptr::null_mut(),
         width: 0,
@@ -302,16 +302,22 @@ pub static mut FRAMEBUFFER_WRITER: FramebufferWriter = FramebufferWriter {
 };
 
 impl FramebufferWriter {
-    /// Initializes the framebuffer writer with the given framebuffer using Limine's `Framebuffer`
-    /// structure.
-    #[cfg(feature = "limine")]
+    /// Create a new framebuffer writer
     #[inline]
-    pub(super) fn init_from_limine(&mut self, fb: &Framebuffer<'static>) {
-        self.framebuffer.ptr = fb.addr().cast::<u32>();
-        self.framebuffer.width = fb.width();
-        self.framebuffer.height = fb.height();
-        self.framebuffer.pitch = fb.pitch();
-        self.framebuffer.bpp = fb.bpp();
+    #[must_use]
+    pub fn new(ptr: *mut u32, width: u64, height: u64, pitch: u64, bpp: u16) -> Self {
+        Self {
+            framebuffer: RawFramebuffer {
+                ptr,
+                width,
+                height,
+                pitch,
+                bpp,
+            },
+            curr_y: 0,
+            curr_x: 0,
+            disabled: false,
+        }
     }
 
     /// Draws a pixel at the given coordinates with the given color.
@@ -344,7 +350,7 @@ impl FramebufferWriter {
 
     /// Draws a character at the current cursor position.
     /// The character is drawn using the 8x16 bitmap font.
-    pub fn draw_char(&mut self, character: u8) -> Result<(), FramebufferError> {
+    pub(super) fn draw_char(&mut self, character: u8) -> Result<(), FramebufferError> {
         if self.disabled {
             return Ok(());
         }
@@ -367,4 +373,16 @@ impl FramebufferWriter {
 
         Ok(())
     }
+}
+
+#[inline]
+#[cfg(feature = "limine")]
+pub unsafe fn init_framebuffer_from_limine(fb: &Framebuffer<'static>) {
+    FRAMEBUFFER_WRITER = FramebufferWriter::new(
+        fb.buffer.as_mut_ptr(),
+        fb.width,
+        fb.height,
+        fb.pitch,
+        fb.bpp,
+    );
 }

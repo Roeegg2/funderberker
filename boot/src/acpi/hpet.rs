@@ -27,7 +27,7 @@ impl Hpet {
         // reserved, so the kernel shouldn't be tracking it
         let phys_addr = PhysAddr(self.base_addr.addr as usize);
         unsafe {
-            let virt_addr = X86_64::map_pages(
+            let ptr = X86_64::map_pages(
                 phys_addr,
                 1,
                 Flags::new().set_read_write(true),
@@ -35,11 +35,7 @@ impl Hpet {
             )
             .unwrap();
 
-            hpet::Hpet::init(
-                virt_addr.into(),
-                self.minimum_tick,
-                InterruptRoutingMode::Legacy,
-            );
+            hpet::Hpet::init(ptr.cast(), self.minimum_tick, InterruptRoutingMode::Legacy);
         }
 
         logger::info!("Configured HPET as timer");

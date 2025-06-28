@@ -1,4 +1,4 @@
-use core::marker::PhantomData;
+use core::{marker::PhantomData, num::NonZero, ptr::NonNull};
 use pmm::PmmAllocator;
 use utils::mem::{PhysAddr, VirtAddr};
 
@@ -20,13 +20,17 @@ where
     _arch: PhantomData<P>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PagingError {
+    PageAlreadyPresent,
     PageNotPresent,
     PageFault,
     InvalidPageSize,
-    InvalidAddress,
+    InvalidPhysicalAddress,
+    InvalidVirtualAddress,
+    InvalidFlags,
     OutOfMemory,
+    BadPageCountAndAddressCombination,
 }
 
 pub trait PagingManager: Sized {
@@ -52,11 +56,10 @@ pub trait PagingManager: Sized {
         page_count: usize,
         flags: Flags<Self>,
         page_size: PageSize<Self>,
-    ) -> Result<VirtAddr, PagingError> {
+    ) -> Result<NonNull<()>, PagingError> {
         let base_virt_addr = {
             let mut vaa = VAA.lock();
-            let page_id = vaa.handout(page_count, page_size.alignment());
-            VirtAddr(page_id.0 * page_size.size())
+            vaa.handout(page_count, page_size.page_alignment())
         };
 
         let basic_page_count = page_size.to_default_page_count();
@@ -70,14 +73,17 @@ pub trait PagingManager: Sized {
             }
         }
 
-        Ok(base_virt_addr)
+        Ok(NonNull::without_provenance(
+            NonZero::new(base_virt_addr.0).unwrap(),
+        ))
     }
 
     unsafe fn free_pages(
-        virt_addr: VirtAddr,
+        ptr: NonNull<()>,
         count: usize,
         page_size: PageSize<Self>,
     ) -> Result<(), PagingError> {
+        let virt_addr = ptr.into();
         for i in 0..count {
             let addr = virt_addr + (i * page_size.size());
             let phys_addr = Self::translate(virt_addr).ok_or(PagingError::PageNotPresent)?;
@@ -99,19 +105,17 @@ pub trait PagingManager: Sized {
         page_count: usize,
         flags: Flags<Self>,
         page_size: PageSize<Self>,
-    ) -> Result<VirtAddr, PagingError> {
-        assert!(!cfg!(test), "Cannot map pages in test environment");
-
+    ) -> Result<*mut (), PagingError> {
         let virt_addr = {
             let mut vaa = VAA.lock();
-            vaa.handout(1, page_size.alignment())
+            vaa.handout(1, page_size.page_alignment())
         };
 
         unsafe {
             Self::map_pages_to(phys_addr, virt_addr, page_count, flags, page_size)?;
         };
 
-        Ok(virt_addr)
+        Ok(core::ptr::without_provenance_mut(virt_addr.0))
     }
 
     #[cfg(feature = "limine")]
@@ -121,9 +125,6 @@ pub trait PagingManager: Sized {
         kernel_phys: PhysAddr,
         used_by_pmm: &limine::memory_map::Entry,
     );
-
-    #[cfg(feature = "limine")]
-    unsafe fn init_vaa_from_limine(mem_map: &[&limine::memory_map::Entry]);
 }
 
 #[inline]
@@ -131,7 +132,7 @@ pub fn allocate_pages<P>(
     count: usize,
     flags: Flags<P>,
     page_size: PageSize<P>,
-) -> Result<VirtAddr, PagingError>
+) -> Result<NonNull<()>, PagingError>
 where
     P: PagingManager,
 {
@@ -140,14 +141,14 @@ where
 
 #[inline]
 pub unsafe fn free_pages<P>(
-    virt_addr: VirtAddr,
+    ptr: NonNull<()>,
     count: usize,
     page_size: PageSize<P>,
 ) -> Result<(), PagingError>
 where
     P: PagingManager,
 {
-    unsafe { P::free_pages(virt_addr, count, page_size) }
+    unsafe { P::free_pages(ptr, count, page_size) }
 }
 
 impl<P> PageSize<P>
@@ -160,7 +161,7 @@ where
     }
 
     #[inline]
-    pub const fn alignment(self) -> usize {
+    pub const fn page_alignment(self) -> usize {
         self.size / P::BASIC_PAGE_SIZE.size
     }
 
@@ -183,16 +184,19 @@ where
     P: PagingManager,
 {
     #[inline]
+    #[must_use]
     pub const fn data(self) -> usize {
         self.data
     }
 
     #[inline]
+    #[must_use]
     pub(crate) const fn get(self, data: usize) -> bool {
         (self.data & data) != 0
     }
 
     #[inline]
+    #[must_use]
     pub(crate) const fn set(mut self, data: usize, status: bool) -> Self {
         if status {
             self.data |= data;
@@ -204,11 +208,20 @@ where
     }
 
     #[inline]
+    #[must_use]
     pub(crate) const unsafe fn from_raw(data: usize) -> Self {
         Self {
             data,
             _arch: PhantomData,
         }
+    }
+
+    pub const unsafe fn join(self, other: Flags<P>) -> Option<Self> {
+        if self.data & other.data != 0 {
+            return None; // Overlapping flags
+        }
+
+        Some(self.set(other.data, true))
     }
 }
 

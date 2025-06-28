@@ -14,3 +14,8 @@ utils = { version = "0.1.0", path = "../utils" }
 scheduler = { version = "0.1.0", path = "../scheduler" }
 logger = { version = "0.1.0", path = "../logger" }
 slab = { version = "0.1.0", path = "../slab" }
+
+[features]
+default = ["constant"]
+
+constant = []

@@ -18,11 +18,9 @@ slab = { version = "0.1.0", path = "../slab" }
 pedantic = "warn"
 
 [features]
-default = ["limine", "serial", "framebuffer"]
-
-# logging methods
-serial = []
-framebuffer = []
+default = []
 
 # Booting method
 limine = ["dep:limine"]
+
+framebuffer = []

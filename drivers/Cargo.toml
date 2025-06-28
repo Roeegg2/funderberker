@@ -16,7 +16,6 @@ logger = { version = "0.1.0", path = "../logger" }
 pedantic = "warn"
 
 [features]
-
 # PCI Express support
 pcie = []
 
@@ -28,4 +27,3 @@ hpet = []
 apic = []
 pit = []
 rtc = []
-

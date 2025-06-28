@@ -10,7 +10,7 @@ limine = { version = "0.5.0", optional = true }
 pedantic = "warn"
 
 [features]
-default = ["limine", "serial", "framebuffer"]
+default = ["serial"]
 
 # Booting method
 limine = ["dep:limine"]

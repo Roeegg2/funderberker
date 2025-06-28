@@ -218,7 +218,7 @@ fn get_ioapics() -> &'static Vec<SpinLock<IoApic>> {
 pub unsafe fn add(phys_addr: PhysAddr, gsi_base: u32, apic_id: u8) {
     // SAFETY: This should be OK since we're mapping a physical address that is marked as
     // reserved, so the kernel shouldn't be tracking it
-    let virt_addr = unsafe {
+    let ptr = unsafe {
         X86_64::map_pages(
             phys_addr,
             1,
@@ -230,7 +230,7 @@ pub unsafe fn add(phys_addr: PhysAddr, gsi_base: u32, apic_id: u8) {
 
     let ioapics = unsafe { IO_APICS.get().as_mut().unwrap() };
     ioapics.push(SpinLock::new(IoApic::new(
-        virt_addr.into(),
+        ptr.cast::<u32>(),
         gsi_base,
         apic_id,
     )));
