@@ -68,7 +68,7 @@ impl Write for Writer {
             #[cfg(feature = "framebuffer")]
             #[allow(static_mut_refs)]
             unsafe {
-                framebuffer::FRAMEBUFFER_WRITER.draw_char(*byte).unwrap();
+                framebuffer::FRAMEBUFFER_WRITER.draw_char(byte).unwrap();
             };
         }
 
