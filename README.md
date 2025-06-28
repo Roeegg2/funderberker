@@ -1,4 +1,4 @@
-[![GitHub stars](https://img.shields.io/github/stars/roeegg2/funderberker.svg)](https://github.com/funderberker-org/funderberker/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/funderberker-org/funderberker.svg)](https://github.com/funderberker-org/funderberker/stargazers)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 ![CI Status](https://img.shields.io/github/actions/workflow/status/funderberker-org/funderberker/ci.yaml?logo=github)
 

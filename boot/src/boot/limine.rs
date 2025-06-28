@@ -67,7 +67,7 @@ unsafe extern "C" fn kmain() -> ! {
             .unwrap()
             .framebuffers()
             .next()
-            .as_ref(),
+            .unwrap(),
     );
 
     let hhdm = HHDM_REQUEST

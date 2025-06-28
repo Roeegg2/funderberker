@@ -377,12 +377,15 @@ impl FramebufferWriter {
 
 #[inline]
 #[cfg(feature = "limine")]
-pub unsafe fn init_framebuffer_from_limine(fb: &Framebuffer<'static>) {
-    FRAMEBUFFER_WRITER = FramebufferWriter::new(
-        fb.buffer.as_mut_ptr(),
-        fb.width,
-        fb.height,
-        fb.pitch,
-        fb.bpp,
-    );
+pub fn init_from_limine(fb: Framebuffer<'static>) {
+    #[allow(static_mut_refs)]
+    unsafe {
+        FRAMEBUFFER_WRITER = FramebufferWriter::new(
+            fb.addr().cast(),
+            fb.width(),
+            fb.height(),
+            fb.pitch(),
+            fb.bpp(),
+        );
+    }
 }
